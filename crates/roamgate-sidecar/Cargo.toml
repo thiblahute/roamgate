@@ -18,6 +18,7 @@ roamgate-exec = { path = "../roamgate-exec" }
 roamgate-protocol = { path = "../roamgate-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+socket2 = "0.6"
 thiserror = "2"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"

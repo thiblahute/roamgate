@@ -132,7 +132,7 @@ impl BrowserClients {
                     }
                 }
             }
-            _ => push.message.to_string(),
+            _ => json_text(&push.message),
         };
         let targets: Vec<u64> = self
             .clients
@@ -350,7 +350,7 @@ pub fn parse_request(raw: &str) -> Result<RpcRequest, Refusal> {
             serialize_connection_envelope(&connection_id, &body, generation.and_then(Result::ok))
                 .unwrap_or_else(|_| Value::Object(body.clone()).to_string())
         }
-        _ => Value::Object(body).to_string(),
+        _ => json_text(&body),
     };
     Err(Refusal {
         payload,
@@ -383,7 +383,7 @@ pub fn route_request(
                 }
                 RouteError::Other(_) => None,
             }
-            .unwrap_or_else(|| Value::Object(body).to_string());
+            .unwrap_or_else(|| json_text(&body));
             Refusal {
                 payload,
                 context: "connection-routing-error",
@@ -434,7 +434,7 @@ impl ReplyPublisher {
             .map(str::to_owned);
         let RpcRoute::Connection(resolved) = &self.route else {
             return Some(Outgoing {
-                payload: Value::Object(message).to_string(),
+                payload: json_text(&message),
                 context: context.to_owned(),
                 error,
             });
@@ -447,7 +447,7 @@ impl ReplyPublisher {
                     &message,
                     Some(lease.generation),
                 )
-                .unwrap_or_else(|_| Value::Object(message).to_string()),
+                .unwrap_or_else(|_| json_text(&message)),
                 context: context.to_owned(),
                 error,
             });
@@ -462,7 +462,7 @@ impl ReplyPublisher {
                 &body,
                 Some(lease.generation),
             )
-            .unwrap_or_else(|_| Value::Object(body).to_string()),
+            .unwrap_or_else(|_| json_text(&body)),
             context: format!("{context}-stale"),
             error: Some(CONNECTION_CHANGED_DURING_REQUEST.to_owned()),
         })
@@ -593,6 +593,15 @@ pub fn log_rpc(logger: &Logger, outcome: &RpcOutcome) {
         return;
     }
     let level = rpc_log_level(outcome.method, !failed, outcome.error);
+    // The fields cost a pass of the sanitizer's patterns each: not for a
+    // line the level drops.
+    let emitted = match level {
+        LogLevel::Warn => LogLevel::Warn,
+        _ => LogLevel::Debug,
+    };
+    if !logger.enabled(emitted) {
+        return;
+    }
     let mut fields = LogFields::new();
     fields.insert("status".into(), if failed { "error" } else { "ok" }.into());
     fields.insert("client".into(), outcome.client.into());
@@ -617,6 +626,13 @@ pub fn log_rpc(logger: &Logger, outcome: &RpcOutcome) {
         LogLevel::Warn => logger.warn("rpc completed", Some(&fields)),
         _ => logger.debug("rpc completed", Some(&fields)),
     }
+}
+
+/// A value's JSON text, as `JSON.stringify` writes it: written straight to
+/// a buffer (`Value`'s `Display` goes through a formatter, slower on the
+/// large replies).
+fn json_text<T: serde::Serialize + ?Sized>(value: &T) -> String {
+    serde_json::to_string(value).unwrap_or_default()
 }
 
 #[cfg(test)]

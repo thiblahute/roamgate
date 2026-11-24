@@ -214,15 +214,28 @@ pub fn serialize_connection_envelope(
             ));
         }
     }
-    let mut out = Map::new();
-    out.insert("connection_id".into(), connection_id.into());
+    // Written as the object `{connection_id, connection_generation?,
+    // ...message}` serialises, without copying the message (a reply can be
+    // hundreds of kilobytes).
+    let mut out: Vec<u8> = Vec::with_capacity(256);
+    out.extend_from_slice(b"{\"connection_id\":");
+    write_json(&mut out, connection_id)?;
     if let Some(generation) = connection_generation {
-        out.insert("connection_generation".into(), generation.into());
+        out.extend_from_slice(b",\"connection_generation\":");
+        write_json(&mut out, &generation)?;
     }
     for (key, value) in message {
-        out.insert(key.clone(), value.clone());
+        out.push(b',');
+        write_json(&mut out, key)?;
+        out.push(b':');
+        write_json(&mut out, value)?;
     }
-    Ok(Value::Object(out).to_string())
+    out.push(b'}');
+    String::from_utf8(out).map_err(|error| error.to_string())
+}
+
+fn write_json<T: serde::Serialize + ?Sized>(out: &mut Vec<u8>, value: &T) -> Result<(), String> {
+    serde_json::to_writer(out, value).map_err(|error| error.to_string())
 }
 
 const HERDR_EVENT_RESERVED_FIELDS: [&str; 10] = [

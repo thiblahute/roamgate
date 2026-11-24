@@ -7532,6 +7532,7 @@ dependencies = [
  "roamgate-protocol",
  "serde",
  "serde_json",
+ "socket2 0.6.5",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

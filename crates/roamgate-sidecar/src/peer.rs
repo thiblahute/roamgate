@@ -21,9 +21,10 @@ use tokio::task::AbortHandle;
 
 use crate::frames::read_frame;
 use crate::protocol::{
-    BODY_WINDOW, Ctx, FLAG_END, FLAG_RESPONSE, Headers, KIND_BODY, KIND_MESSAGE, MAX_CHANNEL_FRAME,
-    MAX_CHUNK, Message, OutboundQueue, PROTOCOL, Push, RpcError, ShadowSettings, Side, decode_body,
-    encode_body, encode_message,
+    BODY_WINDOW, Ctx, FLAG_END, FLAG_RESPONSE, Headers, KIND_BODY, KIND_MESSAGE, KIND_RAW_DATA,
+    MAX_CHANNEL_FRAME, MAX_CHUNK, Message, OutboundQueue, PROTOCOL, Push, RAW_DATA_MIN, RpcError,
+    ShadowSettings, Side, decode_body, decode_raw_data, encode_body, encode_message,
+    encode_raw_data,
 };
 use crate::transport::BoxStream;
 
@@ -146,6 +147,9 @@ pub struct PeerOptions {
     pub ping_after: Option<Duration>,
     /// Close after this long without receiving (the front: 30 s).
     pub dead_after: Option<Duration>,
+    /// The other side reads kind 3 frames (its `welcome` said `raw_data`):
+    /// a large `ws_send` goes with its `data` apart.
+    pub raw_data: bool,
 }
 
 impl PeerOptions {
@@ -158,6 +162,7 @@ impl PeerOptions {
             clock,
             ping_after: Some(Duration::from_secs(10)),
             dead_after: None,
+            raw_data: false,
         }
     }
 
@@ -167,6 +172,7 @@ impl PeerOptions {
             clock,
             ping_after: Some(Duration::from_secs(10)),
             dead_after: Some(Duration::from_secs(30)),
+            raw_data: false,
         }
     }
 }
@@ -500,6 +506,33 @@ impl Peer {
 
     /// Queues a message.
     pub fn send(&self, message: &Message) {
+        if self.inner.options.raw_data
+            && let Message::WsSend {
+                socket_id,
+                data,
+                binary,
+                context,
+                key,
+            } = message
+            && data.len() >= RAW_DATA_MIN
+        {
+            // Escaping a large reply into the JSON, then reading it back,
+            // were two more passes over it.
+            let mut header = serde_json::Map::new();
+            header.insert("t".into(), "ws_send".into());
+            header.insert("socket_id".into(), (*socket_id).into());
+            if *binary {
+                header.insert("binary".into(), true.into());
+            }
+            if let Some(context) = context {
+                header.insert("context".into(), context.as_str().into());
+            }
+            if let Some(key) = key {
+                header.insert("key".into(), key.as_str().into());
+            }
+            self.enqueue(encode_raw_data(&header, data.as_bytes()), None);
+            return;
+        }
         self.enqueue(encode_message(message), None);
     }
 
@@ -745,6 +778,13 @@ impl Peer {
             self.inner.last_rx.store(self.now(), Ordering::Release);
             let keep_going = match frame {
                 (KIND_MESSAGE, payload) => self.on_message(&payload),
+                (KIND_RAW_DATA, payload) => match decode_raw_data(&payload) {
+                    Some(value) => self.on_value(value),
+                    None => {
+                        self.close("a raw data frame that is not one");
+                        false
+                    }
+                },
                 (KIND_BODY, payload) => self.on_body(&payload),
                 (kind, _) => {
                     self.close(&format!("a frame of unknown kind {kind}"));
@@ -853,6 +893,11 @@ impl Peer {
                 return false;
             }
         };
+        self.on_value(value)
+    }
+
+    /// Returns false once the channel is to close.
+    fn on_value(&self, value: Value) -> bool {
         let kind = value
             .get("t")
             .and_then(Value::as_str)

@@ -75,6 +75,7 @@ channel accepts frames up to 64 MiB (length field, kind byte included).
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | One message: a compact JSON object, UTF-8                                                                                                                            |
 | 2    | A body chunk: the stream's u32 (little-endian), a flags byte, then the bytes. Flags: bit 0 `END` (last chunk), bit 1 `RESPONSE` (a response's body, not a request's) |
+| 3    | A message with its `data` apart: the JSON's length (u32, little-endian), the message as kind 0 has it without `data`, then `data`'s UTF-8 bytes. Only to a front whose `welcome` has `raw_data`, and only for a `ws_send` of 4 KiB or more: escaping a large reply into the JSON and reading it back were two more passes over it |
 
 Other kinds are an error that closes the channel. Body chunks carry at most
 256 KiB of bytes each.
@@ -91,7 +92,7 @@ other breaking.
 | `t`            | From                | Fields                                                                                                                               | Meaning                                                                                                                                                                                                                                                                                |
 | -------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `hello`        | core, first         | `protocol` (1), `token`, `side` (`rust` or `bun`), `version`, `pid`, `families` (the families it implements), `test` (bool)          | The core introduces itself.                                                                                                                                                                                                                                                            |
-| `welcome`      | front               | `protocol`, `side`, `owners`, `shadow`, `clock` (optional)                                                                           | The token and protocol are right; `owners` and `shadow` as in `owner`. `clock`: the front runs on the test clock (contract/wire/test-clock.md), whose time this is; see Families in the core.                                                                                          |
+| `welcome`      | front               | `protocol`, `side`, `owners`, `shadow`, `clock` (optional), `raw_data` (optional)                                                            | The token and protocol are right; `owners` and `shadow` as in `owner`. `clock`: the front runs on the test clock (contract/wire/test-clock.md), whose time this is; see Families in the core. `raw_data`: the front reads kind 3 frames (the Rust front's).                              |
 | `refused`      | front               | `reason`                                                                                                                             | Wrong token or protocol; the front closes the channel.                                                                                                                                                                                                                                 |
 | `owner`        | front               | `owners` (`{family: "rust" \| "bun"}`), `shadow` (`{enabled, rate}`)                                                                 | The owners table changed.                                                                                                                                                                                                                                                              |
 | `call`         | front               | `id`, `method`, `params`, `ctx`, `shadow` (bool, optional)                                                                           | A browser RPC the core answers. `shadow: true`: a shadow read, whose answer is only compared.                                                                                                                                                                                          |
@@ -643,8 +644,10 @@ The core runs on the real clock, but its families follow the front's test
 clock: when the front runs on one, `welcome.clock` is its time, and after
 each `advance` the front calls `internal.clock.advance {to}` (the test
 clock's new time) and waits for its reply, which comes once the families'
-timers due by then ran. A release core ignores `welcome.clock` and answers
-`internal.clock.advance` with the error code `no_test_clock`.
+timers due by then ran. A release core (not a test build: debug, or built
+with `roamgate-base/test-clock`, as the front that honours the clock)
+ignores `welcome.clock` and answers `internal.clock.advance` with the error
+code `no_test_clock`.
 
 ### The host family
 

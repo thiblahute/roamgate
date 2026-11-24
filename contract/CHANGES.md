@@ -6,6 +6,18 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.38
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+The core channel's frame kind 3 (S25 cut-over, WP6; wire/core-channel.md,
+Frames): a `ws_send` of 4 KiB or more goes with its `data` apart,
+unescaped, to a front whose `welcome` says `raw_data` (the Rust front's);
+a Bun front gets kind 0 as before. A core built with
+`roamgate-base/test-clock` follows the front's test clock as a debug one
+does. Hybrid modes and the browser surface are unchanged; the inventory
+too.
+
 ## 1.37
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

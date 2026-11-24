@@ -53,6 +53,7 @@ async fn says_hello_and_exits_when_the_channel_closes() {
         owners: BTreeMap::new(),
         shadow: ShadowSettings::default(),
         clock: None,
+        raw_data: false,
     })
     .await
     .unwrap();

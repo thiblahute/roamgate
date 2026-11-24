@@ -27,6 +27,7 @@ pub async fn connect(address: &str) -> io::Result<BoxStream> {
     #[cfg(unix)]
     {
         let stream = tokio::net::UnixStream::connect(address).await?;
+        widen(&stream);
         Ok(Box::new(stream))
     }
     #[cfg(not(unix))]
@@ -78,6 +79,7 @@ impl Listener {
         #[cfg(unix)]
         if let Some((listener, _)) = &self.unix {
             let (stream, _) = listener.accept().await?;
+            widen(&stream);
             return Ok(Box::new(stream));
         }
         #[cfg(windows)]
@@ -85,6 +87,21 @@ impl Listener {
             return pipe.accept().await;
         }
         Err(io::Error::other("listener closed"))
+    }
+}
+
+/// What a side may have written and the other not read yet. A reply of a
+/// few hundred kilobytes (a review) then goes in one write: with the
+/// default (208 KiB on Linux, 8 KiB on macOS) the writer waited for the
+/// reader between parts. The system caps it (`net.core.wmem_max`).
+#[cfg(unix)]
+const SEND_BUFFER: usize = 4 * 1024 * 1024;
+
+#[cfg(unix)]
+fn widen(stream: &tokio::net::UnixStream) {
+    let socket = socket2::SockRef::from(stream);
+    if let Err(error) = socket.set_send_buffer_size(SEND_BUFFER) {
+        tracing::debug!(%error, "the channel's send buffer stays as it is");
     }
 }
 

@@ -37,6 +37,7 @@ fn welcome(_: &Message) -> Message {
         owners: BTreeMap::new(),
         shadow: ShadowSettings::default(),
         clock: None,
+        raw_data: false,
     }
 }
 
@@ -61,6 +62,7 @@ fn pair() -> (BoxStream, BoxStream) {
 #[derive(Default)]
 struct Front {
     pushes: Mutex<Vec<Push>>,
+    sent: Mutex<Vec<Message>>,
     pushed: tokio::sync::Notify,
 }
 
@@ -83,6 +85,11 @@ impl Handler for Front {
 
     fn push(&self, push: Push) {
         self.pushes.lock().unwrap().push(push);
+        self.pushed.notify_waiters();
+    }
+
+    fn socket(&self, _peer: &Peer, message: Message) {
+        self.sent.lock().unwrap().push(message);
         self.pushed.notify_waiters();
     }
 }
@@ -465,6 +472,54 @@ async fn queued_pushes_with_a_key_coalesce_to_the_newest() {
     );
 }
 
+#[tokio::test]
+async fn a_large_ws_send_goes_with_its_data_apart_to_a_front_that_reads_it() {
+    let (a, b) = pair();
+    let receiver = Arc::new(Front::default());
+    let core = Peer::start(
+        a,
+        Arc::new(Nothing),
+        PeerOptions {
+            raw_data: true,
+            ..PeerOptions::core(clock())
+        },
+    );
+    let _front = Peer::start(b, receiver.clone(), PeerOptions::front(clock()));
+    // Quotes, backslashes, newlines and characters past ASCII arrive as sent.
+    let large = format!("{{\"result\":\"{}\"}}", "a\\\"b\né 🎉 ".repeat(2000));
+    let sent = [
+        Message::WsSend {
+            socket_id: 7,
+            data: large.clone(),
+            binary: false,
+            context: Some("core".into()),
+            key: Some("review".into()),
+        },
+        Message::WsSend {
+            socket_id: 7,
+            data: "small".into(),
+            binary: false,
+            context: None,
+            key: None,
+        },
+    ];
+    for message in &sent {
+        core.send(message);
+    }
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let notified = receiver.pushed.notified();
+            if receiver.sent.lock().unwrap().len() >= 2 {
+                break;
+            }
+            notified.await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(*receiver.sent.lock().unwrap(), sent.to_vec());
+}
+
 #[tokio::test(start_paused = true)]
 async fn the_front_pings_and_drops_a_silent_core() {
     // Tokio's paused time, which moves by itself while the runtime idles.
@@ -547,6 +602,7 @@ fn welcome_on_a_test_clock(_: &Message) -> Message {
         owners: BTreeMap::from([("limit_resume".into(), Side::Rust)]),
         shadow: ShadowSettings::default(),
         clock: Some(1_000_000),
+        raw_data: false,
     }
 }
 

@@ -115,6 +115,7 @@ pub(super) fn welcome(_hello: &Message) -> Message {
             rate: 0.0,
         },
         clock: None,
+        raw_data: true,
     }
 }
 
@@ -133,6 +134,7 @@ fn standalone_welcome(core: &StandaloneCore) -> Message {
             rate: 0.0,
         },
         clock: core.test_clock.as_ref().map(|clock| clock.now()),
+        raw_data: true,
     }
 }
 

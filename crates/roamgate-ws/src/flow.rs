@@ -166,12 +166,15 @@ where
 
 /// UTF-16 length of a string, as JavaScript's `length` gives it.
 pub fn utf16_len(text: &str) -> usize {
-    text.bytes()
-        .map(|byte| match byte {
-            0x80..=0xbf => 0,
-            0xf0..=0xff => 2,
-            _ => 1,
-        })
+    units(text.as_bytes())
+}
+
+/// UTF-16 units of whole characters' bytes: a unit per lead byte, two for
+/// a 4-byte character's (branch-free: it runs over large replies).
+fn units(bytes: &[u8]) -> usize {
+    bytes
+        .iter()
+        .map(|&byte| usize::from((byte as i8) >= -64) + usize::from(byte >= 0xf0))
         .sum()
 }
 
@@ -179,19 +182,36 @@ pub fn utf16_len(text: &str) -> usize {
 /// `max_chars` UTF-16 units without splitting a character, and its length.
 fn chunk_end(text: &str, start: usize, max_chars: usize) -> (usize, usize) {
     let bytes = text.as_bytes();
+    // A block at a time while it fits, then back to the character it cut
+    // (counted whole in the block), then a character at a time.
+    const BLOCK: usize = 64;
     let mut end = start;
     let mut chars = 0;
+    while end + BLOCK <= bytes.len() {
+        let block = units(&bytes[end..end + BLOCK]);
+        if chars + block > max_chars {
+            break;
+        }
+        chars += block;
+        end += BLOCK;
+    }
+    if !text.is_char_boundary(end) {
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        chars -= units(&bytes[end..end + 1]);
+    }
     while end < bytes.len() {
-        let (width, units) = match bytes[end] {
+        let (width, count) = match bytes[end] {
             0x00..=0x7f => (1, 1),
             0xf0..=0xff => (4, 2),
             0xe0..=0xef => (3, 1),
             _ => (2, 1),
         };
-        if chars + units > max_chars {
+        if chars + count > max_chars {
             break;
         }
-        chars += units;
+        chars += count;
         end += width;
     }
     (end, chars)
@@ -571,5 +591,52 @@ fn close_socket(target: &mut impl Target, close: Option<(u16, &str)>, context: &
         target.warn(format!(
             "[bridge] websocket close failed during {context}: {error}"
         ));
+    }
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::{chunk_end, utf16_len};
+
+    /// A character at a time, as the chunking was written first.
+    fn naive_end(text: &str, start: usize, max_chars: usize) -> (usize, usize) {
+        let mut end = start;
+        let mut chars = 0;
+        for c in text[start..].chars() {
+            let count = c.len_utf16();
+            if chars + count > max_chars {
+                break;
+            }
+            chars += count;
+            end += c.len_utf8();
+        }
+        (end, chars)
+    }
+
+    #[test]
+    fn chunks_end_on_characters_and_count_utf16_units() {
+        let pieces = ["a", "é", "€", "🎉", "\"", "abcdefghij"];
+        let mut text = String::new();
+        let mut seed = 7u32;
+        for _ in 0..5000 {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            text.push_str(pieces[(seed >> 16) as usize % pieces.len()]);
+        }
+        assert_eq!(utf16_len(&text), text.encode_utf16().count());
+        for max in [1, 2, 3, 63, 64, 65, 127, 1000, 4096, 100_000] {
+            let mut start = 0;
+            while start < text.len() {
+                let (end, chars) = chunk_end(&text, start, max);
+                assert_eq!(
+                    (end, chars),
+                    naive_end(&text, start, max),
+                    "max {max} at {start}"
+                );
+                if end == start {
+                    break;
+                }
+                start = end;
+            }
+        }
     }
 }

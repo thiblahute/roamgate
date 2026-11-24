@@ -21,6 +21,12 @@ pub const MAX_CHANNEL_FRAME: usize = 64 * 1024 * 1024;
 pub const KIND_MESSAGE: u8 = frames::JSON;
 /// A body chunk: stream id, flags, bytes.
 pub const KIND_BODY: u8 = 2;
+/// A message with its `data` apart: the JSON's length (u32, little-endian),
+/// the message's compact JSON without `data`, then `data`'s UTF-8 bytes.
+/// Sent only to a side whose `welcome` has `raw_data`.
+pub const KIND_RAW_DATA: u8 = 3;
+/// The shortest `data` sent apart: below it, escaping it costs little.
+pub const RAW_DATA_MIN: usize = 4096;
 /// The last chunk of a body.
 pub const FLAG_END: u8 = 1;
 /// A response's body, not a request's.
@@ -168,6 +174,10 @@ pub enum Message {
         /// core's families follow it (`internal.clock.advance`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         clock: Option<i64>,
+        /// The front reads kind 3 frames (`KIND_RAW_DATA`): the core may
+        /// send a large `ws_send`'s `data` apart, unescaped.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        raw_data: bool,
     },
     Refused {
         reason: String,
@@ -315,6 +325,30 @@ pub struct Push {
 pub fn encode_message<T: Serialize + ?Sized>(message: &T) -> Vec<u8> {
     let payload = serde_json::to_vec(message).expect("a channel message serialises");
     frames::encode(KIND_MESSAGE, &payload)
+}
+
+/// A message's frame with its `data` apart (`KIND_RAW_DATA`): `header` is
+/// the message without `data`.
+pub fn encode_raw_data<T: Serialize + ?Sized>(header: &T, data: &[u8]) -> Vec<u8> {
+    let json = serde_json::to_vec(header).expect("a channel message serialises");
+    let mut payload = Vec::with_capacity(4 + json.len() + data.len());
+    payload.extend_from_slice(&(json.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&json);
+    payload.extend_from_slice(data);
+    frames::encode(KIND_RAW_DATA, &payload)
+}
+
+/// A `KIND_RAW_DATA` payload as the message it carries (`data` put back);
+/// None when it is not one.
+pub fn decode_raw_data(payload: &[u8]) -> Option<Value> {
+    let length = u32::from_le_bytes(payload.get(..4)?.try_into().ok()?) as usize;
+    let json = payload.get(4..4 + length)?;
+    let data = std::str::from_utf8(&payload[4 + length..]).ok()?;
+    let mut message: Value = serde_json::from_slice(json).ok()?;
+    message
+        .as_object_mut()?
+        .insert("data".into(), Value::String(data.to_owned()));
+    Some(message)
 }
 
 /// A body chunk's frame.
