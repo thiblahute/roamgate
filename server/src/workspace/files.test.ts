@@ -321,6 +321,89 @@ describe("workspace file handlers", () => {
     ]);
   });
 
+  test("finds the repository of another pane when none of the workspace is focused", async () => {
+    // Herdr focuses one pane in all of its workspaces: here another
+    // workspace's. The workspace's folder holds repositories without being
+    // one; its second pane is in one of them.
+    const calls: string[][] = [];
+    const handlers = createFileHandlers({
+      herdr: {
+        call: async (method: string) => {
+          if (method === "workspace.get")
+            return { workspace: { workspace_id: "w1", label: "blog" } };
+          if (method === "pane.list")
+            return {
+              panes: [
+                { workspace_id: "other", focused: true, cwd: "/elsewhere" },
+                {
+                  workspace_id: "w1",
+                  cwd: "/devel",
+                  foreground_cwd: "/devel",
+                },
+                {
+                  workspace_id: "w1",
+                  cwd: "/devel/blog",
+                  foreground_cwd: "/devel/blog",
+                },
+              ],
+            };
+          throw new Error(`unexpected call ${method}`);
+        },
+      } as any,
+      sshHost: () => undefined,
+      runProcessWithCodeTimeout: async (argv) => {
+        calls.push(argv);
+        return argv[2] === "/devel/blog"
+          ? { code: 0, stdout: "/devel/blog\n", stderr: "" }
+          : {
+              code: 128,
+              stdout: "",
+              stderr:
+                "fatal: not a git repository (or any of the parent directories): .git",
+            };
+      },
+      shQuote,
+    });
+
+    await expect(
+      handlers.resolveWorkspaceGitRoot({ workspace_id: "w1" }),
+    ).resolves.toMatchObject({ root: "/devel/blog" });
+    expect(calls).toEqual([
+      ["git", "-C", "/devel", "rev-parse", "--show-toplevel"],
+      ["git", "-C", "/devel/blog", "rev-parse", "--show-toplevel"],
+    ]);
+  });
+
+  test("tries the focused pane of the workspace before its others", async () => {
+    const handlers = createFileHandlers({
+      herdr: {
+        call: async (method: string) => {
+          if (method === "workspace.get")
+            return { workspace: { workspace_id: "w1" } };
+          if (method === "pane.list")
+            return {
+              panes: [
+                { workspace_id: "w1", cwd: "/first" },
+                { workspace_id: "w1", focused: true, cwd: "/focused" },
+              ],
+            };
+          throw new Error(`unexpected call ${method}`);
+        },
+      } as any,
+      sshHost: () => undefined,
+      runProcessWithCodeTimeout: async (argv) => ({
+        code: 0,
+        stdout: `${argv[2]}\n`,
+        stderr: "",
+      }),
+      shQuote,
+    });
+
+    await expect(
+      handlers.resolveWorkspaceGitRoot({ workspace_id: "w1" }),
+    ).resolves.toMatchObject({ root: "/focused" });
+  });
+
   test("reads another repository of the workspace when asked by its root, and no other", async () => {
     const calls: string[][] = [];
     const handlers = createFileHandlers({

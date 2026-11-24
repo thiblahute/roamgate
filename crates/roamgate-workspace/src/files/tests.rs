@@ -324,6 +324,69 @@ async fn prefers_pane_cwd_over_an_agent_foreground_directory_for_git_operations(
     );
 }
 
+#[tokio::test]
+async fn finds_the_repository_of_another_pane_when_none_of_the_workspace_is_focused() {
+    // Herdr focuses one pane in all of its workspaces: here another
+    // workspace's. The workspace's folder holds repositories without being
+    // one; its second pane is in one of them.
+    let runner = Scripted::new(|request: &Request| {
+        let argv = crate::test_support::local_argv(&request.invocation);
+        let at = argv.iter().position(|w| w == "-C").unwrap();
+        if argv[at + 1] == "/devel/blog" {
+            ok("/devel/blog\n")
+        } else {
+            Ok(Ran::new(
+                128,
+                "",
+                "fatal: not a git repository (or any of the parent directories): .git",
+            ))
+        }
+    });
+    let (conn, _) = connection(None, runner.clone(), |method, _| match method {
+        "workspace.get" => Ok(json!({ "workspace": { "workspace_id": "w1", "label": "blog" } })),
+        "pane.list" => Ok(json!({ "panes": [
+            { "workspace_id": "other", "focused": true, "cwd": "/elsewhere" },
+            { "workspace_id": "w1", "cwd": "/devel", "foreground_cwd": "/devel" },
+            { "workspace_id": "w1", "cwd": "/devel/blog", "foreground_cwd": "/devel/blog" },
+        ] })),
+        other => unexpected(other),
+    });
+    let resolved = Files::new()
+        .workspace_git_root(&conn, &json!({ "workspace_id": "w1" }))
+        .await
+        .unwrap();
+    assert_eq!(resolved.root, "/devel/blog");
+    assert_eq!(
+        runner.argvs(),
+        [
+            ["git", "-C", "/devel", "rev-parse", "--show-toplevel"],
+            ["git", "-C", "/devel/blog", "rev-parse", "--show-toplevel"],
+        ]
+    );
+}
+
+#[tokio::test]
+async fn tries_the_focused_pane_of_the_workspace_before_its_others() {
+    let runner = Scripted::new(|request: &Request| {
+        let argv = crate::test_support::local_argv(&request.invocation);
+        let at = argv.iter().position(|w| w == "-C").unwrap();
+        ok(&format!("{}\n", argv[at + 1]))
+    });
+    let (conn, _) = connection(None, runner.clone(), |method, _| match method {
+        "workspace.get" => Ok(json!({ "workspace": { "workspace_id": "w1" } })),
+        "pane.list" => Ok(json!({ "panes": [
+            { "workspace_id": "w1", "cwd": "/first" },
+            { "workspace_id": "w1", "focused": true, "cwd": "/focused" },
+        ] })),
+        other => unexpected(other),
+    });
+    let resolved = Files::new()
+        .workspace_git_root(&conn, &json!({ "workspace_id": "w1" }))
+        .await
+        .unwrap();
+    assert_eq!(resolved.root, "/focused");
+}
+
 fn top_level_runner(map_lib: bool) -> Arc<Scripted> {
     Scripted::new(move |request: &Request| {
         let argv = crate::test_support::local_argv(&request.invocation);

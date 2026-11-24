@@ -654,13 +654,19 @@ export function createFileHandlers({
     const panes = Array.isArray((paneResult as any)?.panes)
       ? (paneResult as any).panes
       : [];
-    const pane =
-      panes.find(
-        (item: any) => item?.workspace_id === workspaceId && item?.focused,
-      ) ?? panes.find((item: any) => item?.workspace_id === workspaceId);
-    for (const candidate of [pane?.cwd, pane?.foreground_cwd]) {
-      const root = await resolveCandidate(candidate);
-      if (root) return root;
+    // Each of the workspace's panes, the focused one first: Herdr focuses one
+    // pane in all of its workspaces, and a workspace's folder may hold
+    // repositories without being one, with a pane in one of them.
+    const own = panes.filter((item: any) => item?.workspace_id === workspaceId);
+    const ordered = [
+      ...own.filter((item: any) => item?.focused),
+      ...own.filter((item: any) => !item?.focused),
+    ];
+    for (const pane of ordered) {
+      for (const candidate of [pane?.cwd, pane?.foreground_cwd]) {
+        const root = await resolveCandidate(candidate);
+        if (root) return root;
+      }
     }
     if (tried.size === 0) throw new Error("workspace has no directory path");
     throw new Error(lastError);

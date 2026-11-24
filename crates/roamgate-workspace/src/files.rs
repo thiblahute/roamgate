@@ -403,8 +403,21 @@ fn rev_parse(conn: &WorkspaceConnection, directory: &str) -> Invocation {
     }
 }
 
+/// The workspace's panes, the focused one first: Herdr focuses one pane in
+/// all of its workspaces, so this workspace often has none focused.
+fn workspace_panes_focused_first<'a>(panes: &'a [Value], workspace_id: &str) -> Vec<&'a Value> {
+    let mut own: Vec<&Value> = panes
+        .iter()
+        .filter(|pane| pane.get("workspace_id").and_then(Value::as_str) == Some(workspace_id))
+        .collect();
+    own.sort_by_key(|pane| !truthy(pane.get("focused")));
+    own
+}
+
 /// `gitRoot`: the Git top level of the workspace's checkout, else of its
-/// pane's directory, the agent's foreground directory last.
+/// panes' directories, the focused pane's first, each pane's agent
+/// foreground directory after its own: a workspace's folder may hold
+/// repositories without being one, with a pane in one of them.
 async fn git_root(
     conn: &WorkspaceConnection,
     workspace_id: &str,
@@ -424,9 +437,10 @@ async fn git_root(
             // rather than the checkout: pane cwd first, foreground last.
             panes_read = true;
             let panes = pane_list(conn).await?;
-            let pane = workspace_pane(&panes, workspace_id);
-            candidates.push(pane.and_then(|p| text_of(p.get("cwd"))));
-            candidates.push(pane.and_then(|p| text_of(p.get("foreground_cwd"))));
+            for pane in workspace_panes_focused_first(&panes, workspace_id) {
+                candidates.push(text_of(pane.get("cwd")));
+                candidates.push(text_of(pane.get("foreground_cwd")));
+            }
             continue;
         }
         let candidate = candidates[index].clone();
