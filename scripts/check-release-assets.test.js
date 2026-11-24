@@ -9,8 +9,9 @@ import {
 describe("Roamgate release boundary", () => {
   const names = releaseAssetNames("0.7.0");
 
-  test("publishes exactly six Roamgate targets and no legacy discovery paths", () => {
-    expect(names).toHaveLength(30);
+  test("publishes exactly the seven Roamgate targets and no legacy discovery paths", () => {
+    expect(names).toHaveLength(35);
+    expect(names).toContain("roamgate-linux-x64-musl.update.json");
     expect(names).toContain("roamgate-linux-x64.update.json");
     expect(names).toContain("roamgate-v0.7.0-windows-arm64.tar.xz.sha256");
     expect(() => verifyReleaseAssetNames(names, "0.7.0")).not.toThrow();

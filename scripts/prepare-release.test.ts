@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+  RELEASE_FILES,
   parseCargoVersion,
   parseManifestVersion,
   parsePackageVersion,
@@ -188,4 +189,13 @@ describe("Cargo workspace version", () => {
     const lock = readFileSync(new URL("Cargo.lock", root), "utf8");
     expect(replaceCargoLockVersions(lock, version, version)).toBe(lock);
   });
+});
+
+test("the Prepare Release workflow commits every file it bumps", () => {
+  const workflow = readFileSync(
+    new URL("../.github/workflows/prepare-release.yml", import.meta.url),
+    "utf8",
+  );
+  const added = /git add ([^\n]+)/.exec(workflow)?.[1].split(" ") ?? [];
+  expect([...added].sort()).toEqual([...RELEASE_FILES].sort());
 });

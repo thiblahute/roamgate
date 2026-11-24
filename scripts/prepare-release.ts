@@ -26,7 +26,8 @@ const CARGO_MANIFEST_FILE = "Cargo.toml";
 const CARGO_LOCK_FILE = "Cargo.lock";
 /** The crates whose version is the workspace's (`version.workspace = true`). */
 export const WORKSPACE_VERSION_CRATES = ["roamgate"];
-const RELEASE_FILES = [
+/** The files a release PR commits (prepare-release.yml adds them). */
+export const RELEASE_FILES = [
   ...PACKAGE_FILES,
   PLUGIN_MANIFEST_FILE,
   CARGO_MANIFEST_FILE,

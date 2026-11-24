@@ -18,6 +18,7 @@ jobs:
   validate:
     name: Validate release
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -39,23 +40,31 @@ jobs:
           test "$GITHUB_REF_NAME" = "v$package_version"
           test "$web_version" = "$package_version"
           test "$server_version" = "$package_version"
+          # The binary's version is the Cargo workspace's.
+          test "$(cargo xtask version)" = "$package_version"
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - run: bun run precommit
 
-  package:
-    name: Package ${{ matrix.platform }}
+  targets:
+    name: Targets
     needs: validate
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - linux-x64
-          - linux-arm64
-          - darwin-x64
-          - darwin-arm64
-          - windows-x64
-          - windows-arm64
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      targets: ${{ steps.targets.outputs.targets }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # Every target of targets.toml, each built on its runner.
+      - id: targets
+        run: echo "targets=$(cargo xtask targets --json)" >> "$GITHUB_OUTPUT"
+
+  web:
+    name: Web app
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -65,95 +74,174 @@ jobs:
           bun-version: "1.4.4"
           no-cache: true
       - run: bun install --frozen-lockfile
-      - name: Build release package
-        run: bun run package:${{ matrix.platform }}
+      # Built once; every target embeds the same web app.
+      - run: bun run build:web
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: web
+          path: server/public
+          if-no-files-found: error
+          retention-days: 7
+
+  package:
+    name: Package ${{ matrix.target.platform }}
+    needs: [targets, web]
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.targets) }}
+    runs-on: ${{ matrix.target.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # Bun compiles the Pi sidecar roamgate-pi from the workspace's
+      # packages for the target.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.4"
+          no-cache: true
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: web
+          path: server/public
+      - name: Install Rust and the builder
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add "${{ matrix.target.triple }}"
+          case "${{ matrix.target.builder }}" in
+            zigbuild)
+              python3 -m pip install --user ziglang
+              cargo install --locked cargo-zigbuild
+              ;;
+            xwin)
+              cargo install --locked cargo-xwin
+              ;;
+          esac
+      - name: Build, package and verify
+        shell: bash
+        run: cargo xtask package "${{ matrix.target.platform }}" --version "${GITHUB_REF_NAME#v}"
       - name: Verify release package
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          platform="${{ matrix.platform }}"
+          platform="${{ matrix.target.platform }}"
+          dist="target/dist"
           package_dir="roamgate-$platform"
           versioned_archive="roamgate-v$version-$platform.tar.xz"
           latest_archive="roamgate-$platform.tar.xz"
 
           for archive in "$versioned_archive" "$latest_archive"; do
-            test -f "dist/$archive"
-            test -f "dist/$archive.sha256"
+            test -f "$dist/$archive"
+            test -f "$dist/$archive.sha256"
             if command -v sha256sum >/dev/null 2>&1; then
-              (cd dist && sha256sum -c "$archive.sha256")
+              (cd "$dist" && sha256sum -c "$archive.sha256")
             else
-              (cd dist && shasum -a 256 -c "$archive.sha256")
+              (cd "$dist" && shasum -a 256 -c "$archive.sha256")
             fi
           done
 
-          manifest="dist/roamgate-$platform.update.json"
+          manifest="$dist/roamgate-$platform.update.json"
           test -f "$manifest"
           if command -v sha256sum >/dev/null 2>&1; then
-            archive_digest="$(sha256sum "dist/$latest_archive" | awk '{ print $1 }')"
+            archive_digest="$(sha256sum "$dist/$latest_archive" | awk '{ print $1 }')"
           else
-            archive_digest="$(shasum -a 256 "dist/$latest_archive" | awk '{ print $1 }')"
+            archive_digest="$(shasum -a 256 "$dist/$latest_archive" | awk '{ print $1 }')"
           fi
           expected_manifest="{\"schema\":1,\"name\":\"roamgate\",\"version\":\"$version\",\"platform\":\"$platform\",\"archive\":\"$latest_archive\",\"sha256\":\"$archive_digest\"}"
           grep -Fx "$expected_manifest" "$manifest"
 
+          binary="${{ matrix.target.binary }}"
+          pi="roamgate-pi"
+          case "$binary" in
+            *.exe) pi="roamgate-pi.exe" ;;
+          esac
+          tar -tJf "$dist/$versioned_archive" | sort > "$RUNNER_TEMP/entries"
+          printf '%s\n' "$package_dir/" "$package_dir/$binary" "$package_dir/$pi" "$package_dir/VERSION" |
+            sort | diff - "$RUNNER_TEMP/entries"
           extract_dir="$RUNNER_TEMP/roamgate-release"
           mkdir -p "$extract_dir"
-          tar -xJf "dist/$versioned_archive" -C "$extract_dir"
+          tar -xJf "$dist/$versioned_archive" -C "$extract_dir"
           grep -Fx "roamgate $version $platform" "$extract_dir/$package_dir/VERSION"
-          binary_name="roamgate"
-          case "$platform" in
-            windows-*) binary_name="roamgate.exe" ;;
-          esac
-          binary="$extract_dir/$package_dir/$binary_name"
-          case "$platform" in
-            linux-x64)
-              test "$("$binary" --version)" = "roamgate $version"
-              ;;
-            linux-arm64)
-              file "$binary" | grep -Eq 'ELF 64-bit.*ARM aarch64'
-              ;;
-            darwin-x64)
-              file "$binary" | grep -Eq 'Mach-O 64-bit.*x86_64'
-              ;;
-            darwin-arm64)
-              file "$binary" | grep -Eq 'Mach-O 64-bit.*arm64'
-              ;;
-            windows-x64)
-              file "$binary" | grep -Eq 'PE32\+ executable.*x86-64.*MS Windows'
-              ;;
-            windows-arm64)
-              file "$binary" | grep -Eq 'PE32\+ executable.*Aarch64.*MS Windows'
-              ;;
-          esac
-      - name: Build debug executable
-        run: |
-          bun run --cwd server compile:${{ matrix.platform }} --sourcemap
-          debug_binary="roamgate-${{ matrix.platform }}"
-          case "${{ matrix.platform }}" in
-            windows-*) debug_binary="$debug_binary.exe" ;;
-          esac
-          tar -C server -cf "$RUNNER_TEMP/debug-roamgate-${{ matrix.platform }}.tar" \
-            "$debug_binary" "roamgate-${{ matrix.platform }}.map"
-      - name: Retain debug executable and source map
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: debug-roamgate-${{ github.ref_name }}-${{ matrix.platform }}
-          path: ${{ runner.temp }}/debug-roamgate-${{ matrix.platform }}.tar
-          if-no-files-found: error
-          retention-days: 30
+          test -x "$extract_dir/$package_dir/$binary"
+          test -x "$extract_dir/$package_dir/$pi"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: roamgate-${{ matrix.platform }}
+          name: roamgate-${{ matrix.target.platform }}
           path: |
-            dist/roamgate-*.tar.xz*
-            dist/roamgate-*.update.json
+            target/dist/roamgate-v*-${{ matrix.target.platform }}.tar.xz*
+            target/dist/roamgate-${{ matrix.target.platform }}.tar.xz*
+            target/dist/roamgate-${{ matrix.target.platform }}.update.json
           if-no-files-found: error
           retention-days: 7
 
+  check:
+    name: Run ${{ matrix.target.platform }}
+    needs: [targets, web, package]
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.targets) }}
+    runs-on: ${{ matrix.target.check }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: roamgate-${{ matrix.target.platform }}
+          path: target/dist
+      - name: Run the packaged binary
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          platform="${{ matrix.target.platform }}"
+          dir="$RUNNER_TEMP/run"
+          mkdir -p "$dir"
+          tar -xJf "target/dist/roamgate-v$version-$platform.tar.xz" -C "$dir"
+          test "$("$dir/roamgate-$platform/${{ matrix.target.binary }}" --version | tr -d '\r')" = "roamgate $version"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: matrix.target.update
+        with:
+          name: web
+          path: server/public
+      # Existing installs update in place: the last published release's
+      # binary updates itself to this package in a sandbox.
+      - name: Update the last release to it
+        if: matrix.target.update
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          command -v cargo >/dev/null || {
+            curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+            export PATH="$HOME/.cargo/bin:$PATH"
+          }
+          platform="${{ matrix.target.platform }}"
+          previous="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '[.[] | select(.tagName != env.GITHUB_REF_NAME)][0].tagName // ""')"
+          if [ -z "$previous" ]; then
+            echo "No earlier release to update from."
+            exit 0
+          fi
+          from="$RUNNER_TEMP/previous"
+          mkdir -p "$from"
+          gh release download "$previous" --repo "$GITHUB_REPOSITORY" \
+            --pattern "roamgate-$platform.tar.xz" --dir "$from"
+          tar -xJf "$from/roamgate-$platform.tar.xz" -C "$from" "roamgate-$platform/roamgate"
+          cargo xtask update-proof "$platform" \
+            --from "$from/roamgate-$platform/roamgate" \
+            --version "${GITHUB_REF_NAME#v}"
+
   publish:
     name: Publish GitHub Release
-    needs: package
+    needs: [package, check]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:

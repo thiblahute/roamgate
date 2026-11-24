@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolveUpdateTarget } from "../server/src/http/update";
+import { releaseAssetNames } from "./check-release-assets.mjs";
 
 // targets.toml is the release targets' single list (`cargo xtask`, the Rust
 // CI). Until the cut-over the Bun build keeps its own lists; these tests pin
@@ -81,20 +82,45 @@ test("the updater serves exactly the update targets", () => {
   }
 });
 
-test("package-release.sh, release.yml and the installers name targets.toml's platforms", () => {
+test("release.yml publishes every target of targets.toml; the Bun build packages the others", () => {
+  const release = Bun.YAML.parse(read(".github/workflows/release.yml")) as {
+    jobs: Record<
+      string,
+      { strategy?: { matrix: { target: string } }; steps: { run?: string }[] }
+    >;
+  };
+  for (const name of ["package", "check"]) {
+    expect(release.jobs[name].strategy?.matrix.target).toBe(
+      "${{ fromJSON(needs.targets.outputs.targets) }}",
+    );
+  }
+  expect(release.jobs.targets.steps.map((step) => step.run)).toContain(
+    'echo "targets=$(cargo xtask targets --json)" >> "$GITHUB_OUTPUT"',
+  );
+  expect(
+    release.jobs.package.steps.some((step) =>
+      step.run?.startsWith("cargo xtask package "),
+    ),
+  ).toBe(true);
+  const published = new Set(
+    releaseAssetNames("1.0.0").map(
+      (name) =>
+        /^roamgate-(?:v1\.0\.0-)?([a-z0-9-]+?)(?:\.tar\.xz.*|\.update\.json)$/.exec(
+          name,
+        )?.[1],
+    ),
+  );
+  expect([...published].sort()).toEqual([...platforms].sort());
+  // `bun run package:<target>` (the Bun build, local only) has no musl build.
   const packaged = [
     ...read("scripts/package-release.sh").matchAll(/^ {2}([a-z0-9-]+)\)$/gm),
   ].map((match) => match[1]);
-  const released = (
-    Bun.YAML.parse(read(".github/workflows/release.yml")) as {
-      jobs: { package: { strategy: { matrix: { platform: string[] } } } };
-    }
-  ).jobs.package.strategy.matrix.platform;
-  expect(packaged.sort()).toEqual([...released].sort());
-  // The Bun release does not publish the musl build yet.
-  expect(platforms.filter((platform) => !released.includes(platform))).toEqual([
+  expect(platforms.filter((platform) => !packaged.includes(platform))).toEqual([
     "linux-x64-musl",
   ]);
+});
+
+test("the installers name targets.toml's platforms", () => {
   const installed = [
     "scripts/install-roamgate.sh",
     "scripts/install-herdr-gui.sh",

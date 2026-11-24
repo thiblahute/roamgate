@@ -11,6 +11,7 @@ export function releaseAssetNames(version) {
     "darwin-x64",
     "linux-arm64",
     "linux-x64",
+    "linux-x64-musl",
     "windows-arm64",
     "windows-x64",
   ].flatMap((platform) => [

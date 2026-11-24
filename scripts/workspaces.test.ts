@@ -101,8 +101,13 @@ test("CI and release jobs install once from the workspace root", () => {
       const installs = job.steps.filter((step) =>
         step.run?.includes("bun install"),
       );
+      // Jobs without Bun: the release's publish, its target list and the
+      // runs of its packages.
+      const withoutBun =
+        name === "publish" ||
+        (file === "release.yml" && (name === "targets" || name === "check"));
       expect(installs).toEqual(
-        name === "publish" ? [] : [{ run: "bun install --frozen-lockfile" }],
+        withoutBun ? [] : [{ run: "bun install --frozen-lockfile" }],
       );
     }
   }

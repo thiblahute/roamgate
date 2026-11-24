@@ -52,7 +52,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
-          git add package.json web/package.json server/package.json herdr-plugin.toml
+          git add package.json web/package.json server/package.json herdr-plugin.toml Cargo.toml Cargo.lock
           git commit -m "Release $VERSION"
           gh auth setup-git
           git push origin "$branch"
@@ -61,4 +61,4 @@ jobs:
             --base main \
             --head "$branch" \
             --title "Release $VERSION" \
-            --body "Prepare $TAG by updating package versions. Release notes are generated from merged PRs when the release is published. Review this PR, select **Approve workflows to run**, and wait for CI to pass before merging. Then run the Publish Release workflow for $VERSION."
+            --body "Prepare $TAG by updating the package and Cargo workspace versions. Release notes are generated from merged PRs when the release is published. Review this PR, select **Approve workflows to run**, and wait for CI to pass before merging. Then run the Publish Release workflow for $VERSION."
