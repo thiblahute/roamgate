@@ -149,6 +149,23 @@ fn reload_after_setup(helper: VoiceHelper) -> roamgate_voice_server::setup::Relo
     })
 }
 
+/// The people the helper knows again across calls, one file each in
+/// `<data>/voice-profiles` (index.ts: `voiceHelper.speakers.useLibrary(new
+/// VoiceProfiles(voiceProfilesDir()))`).
+fn remember_speakers(
+    helper: &VoiceHelper,
+    data: &std::path::Path,
+    clock: roamgate_base::clock::SharedClock,
+    log: roamgate_base::log::Logger,
+) {
+    let mut library = roamgate_voice_server::profiles::VoiceProfiles::with_clock(
+        roamgate_voice_server::profiles::voice_profiles_dir(data),
+        Arc::new(move || clock.now() as f64),
+    );
+    library.set_logger(log);
+    helper.speakers().use_library(Some(library));
+}
+
 /// The errands' sessions, reached through Bun's own code for them.
 struct ReverseErrands {
     cx: FamilyContext,
@@ -311,6 +328,7 @@ impl VoiceServer {
                 Arc::new(move || roamgate_voice_server::config::stored_voice_settings(&path))
             })
             .with_errors(errors.clone());
+        remember_speakers(&helper, &data, clock.clone(), log.clone());
         let models_dir = default_models_dir(&runtime.home, &runtime.platform, app_data);
         let low_gpu = VoiceLowGpu::new(LowGpuDeps {
             game_mode: Some(Arc::new(|| {
@@ -920,6 +938,42 @@ pub async fn setup_cli(args: &[String]) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_helper_knows_the_speakers_of_the_voice_profiles() {
+        let data = tempfile::tempdir().unwrap();
+        let dir = roamgate_voice_server::profiles::voice_profiles_dir(data.path());
+        // A person named on an earlier call, kept in its file.
+        let mut earlier = roamgate_voice_server::profiles::VoiceProfiles::new(&dir);
+        let id = earlier.create(
+            Some("Ada"),
+            roamgate_voice_server::profiles::VoiceRole::Family,
+        );
+        earlier.learn(&id, 1.0, vec![0.5; 256], 12.0);
+        let helper = VoiceHelper::new(
+            Arc::new(|| Err("no voice.json".into())),
+            Arc::new(|_| Err("no helper".into())),
+        );
+        let clock: roamgate_base::clock::SharedClock = Arc::new(roamgate_base::clock::SystemClock);
+        remember_speakers(
+            &helper,
+            data.path(),
+            clock,
+            roamgate_base::log::Logger::silent(),
+        );
+        let mut speakers = helper.speakers();
+        let library = speakers.library().expect("a library");
+        assert_eq!(library.dir, dir);
+        let known = library.get(&id).expect("the person named before");
+        assert_eq!(known.name.as_deref(), Some("Ada"));
+        // What it learns is written there.
+        let new = library.create(
+            Some("Bo"),
+            roamgate_voice_server::profiles::VoiceRole::Other,
+        );
+        library.learn(&new, 2.0, vec![0.25; 256], 8.0);
+        assert!(dir.join(format!("{new}.json")).exists());
+    }
 
     async fn body_of(response: HttpResponse) -> Vec<u8> {
         let mut all = Vec::new();
