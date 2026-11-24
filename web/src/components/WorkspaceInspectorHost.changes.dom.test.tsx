@@ -215,6 +215,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
     reviewGoTo?: Props["reviewGoTo"];
     /** The comments the host writes. */
     created?: Record<string, unknown>[];
+    /** Where the host is told each comment goes (its capture). */
+    captures?: unknown[];
     /** The file Changes shows. */
     entry?: { path: string; kind: string };
     /** Calls of the host's onBack (the diff back to its tree). */
@@ -287,8 +289,10 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
               ...(options.onReviewGone
                 ? { onReviewGone: options.onReviewGone }
                 : {}),
-              onCreateAnnotation: (input) =>
-                options.created?.push(input as Record<string, unknown>),
+              onCreateAnnotation: (input, capture) => {
+                options.created?.push(input as Record<string, unknown>);
+                options.captures?.push(capture);
+              },
               onViewChange: (next) => {
                 views.push(next);
                 view = next;
@@ -486,6 +490,38 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       } finally {
         await inspector.unmount();
         localStorage.removeItem(PREFS_KEY);
+      }
+    });
+
+    test("a comment in Changes goes to the review of the repository shown, the workspace's own too, not to the workspace's directory", async () => {
+      // A workspace whose directory holds checkouts without being one
+      // (~/devel), showing the repository it found in it.
+      const captures: unknown[] = [];
+      const inspector = await mountInspector({
+        workspace: inspectorWorkspace({ cwd: "/home/me/devel" }),
+        root: "/home/me/devel/misc/blog",
+        captures,
+      });
+      const note = {
+        source: "diff",
+        path: "index.md",
+        kind: "unstaged",
+        side: "new",
+        line: 16,
+        hunk: "",
+        quote: "x",
+        comment: "Reword",
+      };
+      try {
+        await act(async () => {});
+        expect(diffSeen.repo).toEqual({
+          root: "/home/me/devel/misc/blog",
+          own: true,
+        });
+        diffSeen.onCreateAnnotation?.(note);
+        expect(captures[0]).toEqual({ root: "/home/me/devel/misc/blog" });
+      } finally {
+        await inspector.unmount();
       }
     });
 

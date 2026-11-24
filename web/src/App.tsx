@@ -3387,8 +3387,10 @@ export default function App() {
   );
   /** An image pasted in the review's comment box in Changes. */
   const addReviewImage = useCallback(
-    async (file: File) => {
-      const place = inspectorState ? feedbackPlace(inspectorState.scope) : null;
+    async (file: File, root?: string) => {
+      const place = inspectorState
+        ? feedbackPlace(inspectorState.scope, root)
+        : null;
       if (!place) throw new Error("no checkout to keep the image with");
       return addFeedbackImage(
         <T,>(method: string, params: Record<string, unknown>) =>

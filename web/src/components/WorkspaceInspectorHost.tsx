@@ -339,8 +339,11 @@ export function WorkspaceInspectorHost({
     input: NewReviewAnnotation,
     capture?: { root?: string; kind?: ReviewThreadKind },
   ) => void;
-  /** Stores an image pasted in the review's comment box in Changes. */
-  onAddReviewImage?: (file: File) => Promise<string>;
+  /**
+   * Stores an image pasted in the review's comment box in Changes; `root`:
+   * the repository shown.
+   */
+  onAddReviewImage?: (file: File, root?: string) => Promise<string>;
   /** Shows a file of a checkout (absolute path) in its code review. */
   onShowInReview?: (path: string, line?: number) => void;
   /** Where Changes' cursor goes (Files' Review, the toggle). */
@@ -2084,11 +2087,14 @@ export function WorkspaceInspectorHost({
                                   ...(changesRoot ? { root: changesRoot } : {}),
                                 }
                               : input,
-                            // Another repository's comments go to its
-                            // review; a question asked is a discussion.
-                            changesRoot || written?.kind
+                            // The comments go to the review of the
+                            // repository shown, its own too: the
+                            // workspace's directory may hold checkouts
+                            // without being one. A question asked is a
+                            // discussion.
+                            shownRoot || written?.kind
                               ? {
-                                  ...(changesRoot ? { root: changesRoot } : {}),
+                                  ...(shownRoot ? { root: shownRoot } : {}),
                                   ...(written?.kind
                                     ? { kind: written.kind }
                                     : {}),
@@ -2157,7 +2163,13 @@ export function WorkspaceInspectorHost({
                         reviewOnly={changesOnly}
                         agentPanes={agentPanes}
                         {...(onFocusAgentPane ? { onFocusAgentPane } : {})}
-                        {...(onAddReviewImage ? { onAddReviewImage } : {})}
+                        {...(onAddReviewImage
+                          ? {
+                              // Kept with the shown repository's review.
+                              onAddReviewImage: (file: File) =>
+                                onAddReviewImage(file, shownRoot),
+                            }
+                          : {})}
                         onSearchMatchesChange={(paths) =>
                           diffViewerRef.current?.markSearchMatches(paths)
                         }
