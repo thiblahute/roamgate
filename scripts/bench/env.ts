@@ -681,6 +681,32 @@ export function serverCommand(): string[] {
   return [process.execPath, join(REPO, "server/src/index.ts")];
 }
 
+/**
+ * The server a run on the test clock measures: BENCH_TEST_CLOCK_SERVER_CMD,
+ * else the server's. A release build of the Rust server refuses
+ * ROAMGATE_TEST_CLOCK; this names the same release built with the
+ * `roamgate-base/test-clock` feature (Bun honours it from source).
+ */
+export function testClockServerCommand(): string[] {
+  const custom = process.env.BENCH_TEST_CLOCK_SERVER_CMD;
+  if (custom) return custom.split(" ").filter(Boolean);
+  return serverCommand();
+}
+
+/**
+ * The command line (`roamgate archive ...`): BENCH_CLI_CMD, else the
+ * server's command, without the `front` of the Rust server's (the CLI is
+ * the binary itself, its front refuses other arguments).
+ */
+export function cliCommand(): string[] {
+  const custom = process.env.BENCH_CLI_CMD;
+  if (custom) return custom.split(" ").filter(Boolean);
+  const server = serverCommand();
+  return server.length > 1 && server.at(-1) === "front"
+    ? server.slice(0, -1)
+    : server;
+}
+
 export async function startServer(
   env: BenchEnv,
   options: ServerOptions = {},
@@ -691,7 +717,9 @@ export async function startServer(
     "logs",
     `server-${options.label ?? "run"}-${port}.log`,
   );
-  const command = options.command ?? serverCommand();
+  const command =
+    options.command ??
+    (options.testClock ? testClockServerCommand() : serverCommand());
   writeOwners(env);
   const core = coreBin();
   const start = performance.now();
@@ -863,6 +891,26 @@ export async function destroyEnv(env: BenchEnv, keep = false) {
     } catch {}
   if (mine.length) env.log(`killed ${mine.length} leftover processes`);
   if (!keep) rmSync(env.root, { recursive: true, force: true });
+}
+
+/**
+ * Connects to the test clock of a server starting: a server that exits
+ * first (its clock socket never shows up) fails with its own error.
+ */
+export async function connectClock(
+  clock: TestClock,
+  server: Promise<ServerHandle>,
+) {
+  let failed: unknown = null;
+  server.catch((error) => {
+    failed = error;
+  });
+  try {
+    await clock.connect();
+  } catch (error) {
+    await Bun.sleep(0);
+    throw failed ?? error;
+  }
 }
 
 /** Waits until the default connection answers workspace.list; ms waited. */

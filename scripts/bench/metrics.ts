@@ -13,14 +13,15 @@ import { BenchClient, byteCounter, login } from "./client";
 import {
   archiveRaw,
   type BenchEnv,
+  cliCommand,
   connect,
+  connectClock,
   herdr,
   PASSWORD,
   REPO,
   reportClaudeIdle,
   rssTree,
   type ServerHandle,
-  serverCommand,
   sha256,
   startServer,
   TestClock,
@@ -606,7 +607,7 @@ export async function measureForge(env: BenchEnv) {
     label: "forge",
     testClock: clock.path,
   });
-  await clock.connect();
+  await connectClock(clock, serverPromise);
   clock.startPump();
   const server = await serverPromise;
   const summarize = (entries: Record<string, any>[]) => {
@@ -843,8 +844,8 @@ export async function measureArchive(env: BenchEnv, options: Options) {
   const cli = (args: string[]) => {
     const start = performance.now();
     const result = spawnSync(
-      serverCommand()[0]!,
-      [...serverCommand().slice(1), "archive", ...args],
+      cliCommand()[0]!,
+      [...cliCommand().slice(1), "archive", ...args],
       {
         cwd: join(REPO, "server"),
         env: {
@@ -887,9 +888,18 @@ export async function measureArchive(env: BenchEnv, options: Options) {
     }
     search[term] = { ms: stats(runs), result_lines: lines };
   }
+  // The old SQLite index (--index) is gone from both servers' CLI: a
+  // usage error (2) records it as such instead of failing the metric.
   const indexRuns: number[] = [];
-  for (let index = 0; index < repeats; index++)
-    indexRuns.push(cli(["search", "--index", "herdr", "-n", "50"]).ms);
+  let indexSkipped: string | null = null;
+  for (let index = 0; index < repeats && !indexSkipped; index++) {
+    try {
+      indexRuns.push(cli(["search", "--index", "herdr", "-n", "50"]).ms);
+    } catch (error) {
+      if (!/: 2 /.test(String(error))) throw error;
+      indexSkipped = "search --index is not a CLI option any more";
+    }
+  }
   return {
     corpus: {
       sessions: corpus.length,
@@ -901,7 +911,9 @@ export async function measureArchive(env: BenchEnv, options: Options) {
     ingest_report: ingested.agents ?? null,
     rebuild_text_ms: text.ms,
     search,
-    search_index_ms: stats(indexRuns),
+    search_index_ms: indexSkipped
+      ? { skipped: indexSkipped }
+      : stats(indexRuns),
   };
 }
 

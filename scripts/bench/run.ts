@@ -11,6 +11,11 @@
  * repositories, copies of the user's review and work stores, fake ssh, glab
  * and gh) under ~/.claude/tmp, measures the server named by BENCH_SERVER_CMD
  * (default: this checkout's Bun server from source), and deletes the world.
+ * The Rust server: BENCH_SERVER_CMD="<roamgate> front" (the CLI, for the
+ * archive, is then the binary itself; BENCH_CLI_CMD overrides it), and
+ * BENCH_TEST_CLOCK_SERVER_CMD the same release built with the
+ * `roamgate-base/test-clock` feature for the runs on the test clock (forge,
+ * the voice helper's ping): a plain release refuses ROAMGATE_TEST_CLOCK.
  * On Linux it waits while GameMode reports a game (results would be noise).
  *
  * The hybrid (a Rust core behind the Bun front, contract/wire/
@@ -25,6 +30,7 @@ import { cpus, hostname, loadavg, platform, release, totalmem } from "node:os";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import {
+  cliCommand,
   coreBin,
   createEnv,
   destroyEnv,
@@ -32,6 +38,7 @@ import {
   REPO,
   rustFamilies,
   serverCommand,
+  testClockServerCommand,
 } from "./env";
 import {
   measureArchive,
@@ -130,6 +137,16 @@ function machine() {
     bun: Bun.version,
     herdr: sh(["herdr", "--version"]),
     server_command: serverCommand()
+      .map((part) => part.replace(REPO, "."))
+      .join(" "),
+    ...(process.env.BENCH_TEST_CLOCK_SERVER_CMD
+      ? {
+          test_clock_server_command: testClockServerCommand()
+            .map((part) => part.replace(REPO, "."))
+            .join(" "),
+        }
+      : {}),
+    cli_command: cliCommand()
       .map((part) => part.replace(REPO, "."))
       .join(" "),
     source_commit: sh(["git", "-C", REPO, "rev-parse", "HEAD"]),

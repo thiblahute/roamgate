@@ -14,10 +14,11 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { login } from "./client";
 import {
   type BenchEnv,
+  connectClock,
   PASSWORD,
   REPO,
   type ServerHandle,
@@ -45,15 +46,27 @@ const nowUs = () => (performance.timeOrigin + performance.now()) * 1000;
 export function parityFake(log: (line: string) => void): string {
   const given = process.env.BENCH_PARITY_FAKE;
   if (given) return given;
-  const built = join(REPO, "target/release/parity-fake");
+  // Where cargo puts it: CARGO_TARGET_DIR (relative to the checkout) or
+  // the checkout's target/.
+  const target = process.env.CARGO_TARGET_DIR
+    ? resolve(REPO, process.env.CARGO_TARGET_DIR)
+    : join(REPO, "target");
+  const built = join(target, "release/parity-fake");
   log("building parity-fake (cargo build --release)");
   const result = spawnSync(
     "cargo",
     ["build", "--release", "-p", "roamgate-parity", "--bin", "parity-fake"],
-    { cwd: REPO, stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" },
+    {
+      cwd: REPO,
+      stdio: ["ignore", "ignore", "pipe"],
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    },
   );
   if (result.status !== 0 || !existsSync(built))
-    throw new Error(`cargo build of parity-fake failed: ${result.stderr}`);
+    throw new Error(
+      `cargo build of parity-fake failed (status ${result.status}, ${built}${existsSync(built) ? "" : " missing"}): ${result.stderr.slice(-2000)}`,
+    );
   return built;
 }
 
@@ -323,7 +336,7 @@ async function helperPing(env: BenchEnv, fake: string, rounds: number) {
     testClock: clock.path,
     extraEnv: voice.extraEnv,
   });
-  await clock.connect();
+  await connectClock(clock, serverPromise);
   let server: ServerHandle | null = null;
   const samples: {
     round_trip_ms: number;
