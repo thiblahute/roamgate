@@ -1519,36 +1519,6 @@ const coreReverseTargets = {
   "assistant.host": assistantReverse(async (args: unknown) =>
     assistantHost((args ?? {}) as Record<string, unknown>),
   ),
-  "assistant.workspace_tree": assistantReverse(
-    async (args: unknown, _ctx: unknown, signal: AbortSignal) => {
-      const { kind, params } = (args ?? {}) as {
-        kind?: unknown;
-        params?: unknown;
-      };
-      if (typeof kind !== "string")
-        throw new Error("assistant.workspace_tree needs a kind");
-      return assistantWorkspaceTree(
-        kind as Parameters<typeof assistantWorkspaceTree>[0],
-        (params ?? {}) as Record<string, unknown>,
-        signal,
-      );
-    },
-  ),
-  "assistant.archive": assistantReverse(
-    async (args: unknown, _ctx: unknown, signal: AbortSignal) => {
-      const { kind, params } = (args ?? {}) as {
-        kind?: unknown;
-        params?: unknown;
-      };
-      if (typeof kind !== "string")
-        throw new Error("assistant.archive needs a kind");
-      return assistantArchive(
-        kind as Parameters<typeof assistantArchive>[0],
-        (params ?? {}) as Record<string, unknown>,
-        signal,
-      );
-    },
-  ),
   "assistant.chat_thread_reply": assistantReverse(async (args: unknown) => {
     const { session_id, params } = (args ?? {}) as {
       session_id?: unknown;

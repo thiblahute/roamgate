@@ -6,6 +6,17 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.27
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+Ranger's archive and Workspaces arrangement tools run in the Rust core on
+the archive and workspace families' code (Phase 11, S23), so the core no
+longer asks Bun for them.
+
+- wire, reverse targets: `assistant.workspace_tree` and `assistant.archive`
+  are gone.
+
 ## 1.26
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
