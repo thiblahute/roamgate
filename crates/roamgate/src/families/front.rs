@@ -56,7 +56,7 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use super::host::HostHandle;
-use super::standalone::{FrontConfig, Layer};
+use super::standalone::{FrontConfig, Layer, browser};
 
 /// How long a request waits for the connections to start (hostSettling).
 const SETTLE_WAIT: Duration = Duration::from_secs(10);
@@ -65,23 +65,11 @@ const SETTLE_WAIT: Duration = Duration::from_secs(10);
 /// declares and the standalone core does not serve yet (S25 step 1,
 /// item 2): exact names, or prefixes ending in a dot.
 const UNPORTED: &[&str] = &[
-    "agent.list",
-    "connections.agent_sessions",
-    "connections.agent_tasks",
     "forge.status",
     "forge.session",
     "forward.",
-    "integration.list",
-    "pane.send_input",
-    "pane.send_text",
-    "pane.send_keys",
     "settings.",
-    "tab.create",
-    "tab.rename",
     "terminal.",
-    "workspace.create",
-    "workspace.list",
-    "workspace.path",
 ];
 
 fn unported(method: &str) -> bool {
@@ -451,6 +439,9 @@ impl Inner {
 
     fn closed_ws(&self, cx: &FamilyContext, socket_id: u64, code: Option<u16>, reason: &str) {
         self.deltas.lock().unwrap().remove(&socket_id);
+        if let Some(layer) = self.layer.get() {
+            layer.session_versions.socket_closed(socket_id);
+        }
         let Some(clients) = self.clients() else {
             return;
         };
@@ -586,6 +577,22 @@ impl Inner {
         };
         // A family's method: it answers.
         if family_of(method, declared_families()).is_some_and(|family| family != FRONT_FAMILY) {
+            // The user's own turn, as Bun's chat handler noted it.
+            if (method == "agent_chat.send" || method == "agent_chat.voice")
+                && request.params["stop"] != Value::Bool(true)
+                && let Some(pane) = request.params["pane_id"].as_str()
+            {
+                let connection = ctx
+                    .connection_id
+                    .clone()
+                    .or_else(|| self.host.manager_now().map(|manager| manager.default_id()))
+                    .unwrap_or_else(|| LEGACY_DEFAULT_CONNECTION_ID.to_owned());
+                super::voice::note_turn_cause(
+                    &connection,
+                    pane,
+                    &json!({"by": "user", "via": "chat"}),
+                );
+            }
             return match standalone.call(method, request.params, ctx).await {
                 Ok(result) => {
                     if method == "bridge.ui_settings.update" {
@@ -623,13 +630,14 @@ impl Inner {
             }
             _ => {}
         }
+        let Some(layer) = self.layer.get().cloned() else {
+            return send(publisher.error("no standalone core", None, "core-error"));
+        };
+        if let Some(reply) = browser::bridge(&layer, cx, socket_id, method, &request.params).await {
+            return send(reply_of(&publisher, reply));
+        }
         if unported(method) {
-            note_served(&ProcessEnv, "unported", method);
-            return send(publisher.error(
-                &format!("{method} is not served by the standalone core"),
-                Some("standalone_unported"),
-                &format!("{method}-error"),
-            ));
+            return send(reply_of(&publisher, browser::unported(method, method)));
         }
         let RpcRoute::Connection(resolved) = publisher.route().clone() else {
             return send(publisher.error(
@@ -638,37 +646,41 @@ impl Inner {
                 "unknown-bridge-method",
             ));
         };
-        // The connection's Herdr answers; a page holding a topology list
-        // sends its stamp, which Herdr never sees.
+        // A page holding a topology list sends its stamp, which Herdr
+        // never sees.
         let mut params = request.params;
         let since = match (&mut params, shape_of(method)) {
             (Value::Object(object), Some(_)) => object.remove("since"),
             _ => None,
         };
-        let call = json!({
-            "connection_id": resolved.lease.connection_id,
-            "generation": resolved.lease.generation,
-            "method": method,
-            "params": params,
-        });
-        match standalone
-            .call("internal.host.herdr_call", call, Ctx::default())
-            .await
-        {
-            Ok(mut result) => {
-                if let Some(since) = since {
-                    result = self
-                        .deltas
-                        .lock()
-                        .unwrap()
-                        .entry(socket_id)
-                        .or_default()
-                        .reply(&resolved.lease.connection_id, method, result, &since);
-                }
-                send(publisher.result(result, method))
-            }
-            Err(error) => send(publisher.error(&error.message, None, &format!("{method}-error"))),
+        let lease = resolved.lease.clone();
+        let mut reply = browser::connection(
+            &layer,
+            cx,
+            browser::Request {
+                method: method.to_owned(),
+                params,
+                connection_id: resolved.lease.connection_id.clone(),
+                generation: resolved.lease.generation,
+                is_current: Arc::new(move || lease.is_current()),
+            },
+        )
+        .await;
+        if let (Some(since), Ok(result)) = (since, &mut reply.result) {
+            *result = self
+                .deltas
+                .lock()
+                .unwrap()
+                .entry(socket_id)
+                .or_default()
+                .reply(
+                    &resolved.lease.connection_id,
+                    method,
+                    std::mem::take(result),
+                    &since,
+                );
         }
+        send(reply_of(&publisher, reply))
     }
 
     /// `/api/health`, and the connection-scoped routes.
@@ -810,6 +822,14 @@ impl Inner {
     }
 }
 
+/// A browser call's answer, published in its connection's envelope.
+fn reply_of(publisher: &ReplyPublisher, reply: browser::Reply) -> Option<Outgoing> {
+    match reply.result {
+        Ok(result) => publisher.result(result, &reply.context),
+        Err(error) => publisher.error(&error.message, error.code.as_deref(), &reply.context),
+    }
+}
+
 /// createHerdrInfoHandler: `{version, protocol}` of a valid identity.
 fn herdr_identity(answer: Result<Value, String>) -> Result<Value, String> {
     let info = answer?;
@@ -930,16 +950,17 @@ mod tests {
 
     #[test]
     fn the_methods_bun_answered_itself_are_named() {
-        for method in [
-            "agent.list",
-            "terminal.attach",
-            "forward.open",
-            "settings.profiles.get",
-            "workspace.list",
-        ] {
+        for method in ["terminal.attach", "forward.open", "settings.profiles.get"] {
             assert!(unported(method), "{method}");
         }
-        for method in ["pane.list", "tab.list", "workspace.focus", "terminal"] {
+        for method in [
+            "agent.list",
+            "pane.list",
+            "tab.list",
+            "workspace.list",
+            "workspace.focus",
+            "terminal",
+        ] {
             assert!(!unported(method), "{method}");
         }
     }

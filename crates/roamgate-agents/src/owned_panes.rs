@@ -156,6 +156,69 @@ pub fn overlay_owned_panes(
     }
 }
 
+/// Herdr's panes with the conversations stopped as shell jobs in them
+/// (agent-sessions.ts `overlaySuspendedPanes`): the pane says so
+/// (`suspended_conversation`), for its terminal's banner and fg button;
+/// its agent is left as Herdr sees it (a shell). A suspended pane is
+/// conversation mode's record: `pane_id`, `session_id`, `title?`,
+/// `suspended_at`.
+pub fn overlay_suspended_panes(method: &str, result: Value, suspended: &[Value]) -> Value {
+    if suspended.is_empty() || (method != "pane.list" && method != "pane.get") {
+        return result;
+    }
+    let by_pane: HashMap<&str, &Value> = suspended
+        .iter()
+        .filter_map(|each| Some((text(each, "pane_id")?, each)))
+        .collect();
+    let over = |item: &Value| -> Value {
+        let Some(mine) = text(item, "pane_id").and_then(|pane| by_pane.get(pane)) else {
+            return item.clone();
+        };
+        let Some(record) = item.as_object() else {
+            return item.clone();
+        };
+        let mut stopped = Map::new();
+        stopped.insert(
+            "session_id".into(),
+            mine.get("session_id").cloned().unwrap_or(Value::Null),
+        );
+        if let Some(title) = mine
+            .get("title")
+            .filter(|title| title.as_str().is_some_and(|title| !title.is_empty()))
+        {
+            stopped.insert("title".into(), title.clone());
+        }
+        stopped.insert(
+            "suspended_at".into(),
+            mine.get("suspended_at").cloned().unwrap_or(Value::Null),
+        );
+        let mut record = record.clone();
+        record.insert("suspended_conversation".into(), Value::Object(stopped));
+        Value::Object(record)
+    };
+    let Some(record) = result.as_object() else {
+        return result;
+    };
+    if method == "pane.list" {
+        let Some(Value::Array(panes)) = record.get("panes") else {
+            return result;
+        };
+        let panes: Vec<Value> = panes.iter().map(over).collect();
+        let mut record = record.clone();
+        record.insert("panes".into(), Value::Array(panes));
+        return Value::Object(record);
+    }
+    match record.get("pane") {
+        Some(pane @ Value::Object(_)) => {
+            let pane = over(pane);
+            let mut record = record.clone();
+            record.insert("pane".into(), pane);
+            Value::Object(record)
+        }
+        _ => result,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

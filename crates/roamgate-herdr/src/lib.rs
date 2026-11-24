@@ -9,6 +9,7 @@
 //! | [`service`] | the user service running `herdr server` | herdr/service |
 //! | [`bootstrap`] | detection and managed setup | herdr/bootstrap |
 //! | [`http`] | the status, setup and info answers | http/herdr-setup, http/herdr-info |
+//! | [`integration_versions`] | integration versions from the host's CLI | herdr/integration-versions |
 //! | [`client`] | the control socket's one-shot request (ping) | bridge/herdr-client `request` |
 //! | [`control`] | the control client: shared and reused reads, subscriptions | bridge/herdr-client |
 //! | [`endpoint`] | the endpoint's boot id, read by a passive handshake | bridge/endpoint-client (connect, its welcome and first snapshot) |
@@ -23,6 +24,7 @@ pub mod client;
 pub mod control;
 pub mod endpoint;
 pub mod http;
+pub mod integration_versions;
 pub mod protocol;
 pub mod release;
 pub mod service;

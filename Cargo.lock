@@ -6997,6 +6997,7 @@ dependencies = [
  "roamgate-http",
  "roamgate-mr-reviews",
  "roamgate-notify",
+ "roamgate-protocol",
  "roamgate-review",
  "roamgate-sidecar",
  "roamgate-voice-server",

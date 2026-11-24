@@ -73,6 +73,7 @@ pub(super) const TARGETS: &[(&str, Target)] = &[
                     &method,
                     params,
                     args.get("timeout_ms").and_then(Value::as_u64),
+                    None,
                 )
                 .await
                 .map_err(RpcError::new)

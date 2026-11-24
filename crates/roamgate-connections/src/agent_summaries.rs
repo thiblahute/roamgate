@@ -11,7 +11,9 @@ use futures_util::future::join_all;
 use serde_json::{Map, Value, json};
 
 use crate::BoxFuture;
-use crate::manager::{ConnectionManager, ConnectionRuntime, sanitize_connection_error};
+use crate::manager::{
+    ConnectionManager, ConnectionRuntime, ReadyRuntimeLease, sanitize_connection_error,
+};
 
 /// What a summary reads of a connection's runtime.
 pub trait SummaryRuntime: Send + Sync {
@@ -43,14 +45,31 @@ fn windows(runtime: &dyn SummaryRuntime) -> bool {
 /// connections still current once read.
 pub async fn read_connection_agent_sessions<R>(manager: &ConnectionManager<R>) -> Value
 where
-    R: ConnectionRuntime + SummaryRuntime,
+    R: ConnectionRuntime + SummaryRuntime + 'static,
 {
+    read_connection_agent_sessions_with(manager, |lease| {
+        lease.runtime.clone() as Arc<dyn SummaryRuntime>
+    })
+    .await
+}
+
+/// [`read_connection_agent_sessions`] with each ready runtime read
+/// through `summary` (a runtime whose readers live elsewhere).
+pub async fn read_connection_agent_sessions_with<R, F>(
+    manager: &ConnectionManager<R>,
+    summary: F,
+) -> Value
+where
+    R: ConnectionRuntime,
+    F: Fn(&ReadyRuntimeLease<R>) -> Arc<dyn SummaryRuntime>,
+{
+    let summary = &summary;
     let reads = manager.list().into_iter().map(|connection| async move {
         let lease = manager.ready_runtime_lease(&connection.id).ok().flatten()?;
         let mut identity = Map::new();
         identity.insert("connection_id".into(), json!(connection.id));
         identity.insert("connection_generation".into(), json!(lease.generation));
-        let runtime = lease.runtime.clone();
+        let runtime = summary(&lease);
         let snapshot = match read_one(runtime.as_ref()).await {
             Ok((workspaces, tabs, panes, agents)) => {
                 let mut snapshot = identity;

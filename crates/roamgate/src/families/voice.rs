@@ -944,6 +944,14 @@ pub(crate) fn note_turn_cause(connection_id: &str, pane_id: &str, cause: &Value)
     }
 }
 
+/// voice/turn-causes.ts `noteUser`: the user did something in the
+/// session (a key typed, for one).
+pub(crate) fn note_user_turn(connection_id: &str, pane_id: &str) {
+    if let Some(causes) = CAUSES.lock().unwrap().upgrade() {
+        causes.note_user(connection_id, pane_id);
+    }
+}
+
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
     Some(Arc::new(VoiceFamily {
         server: OnceLock::new(),

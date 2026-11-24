@@ -9,12 +9,14 @@
 //! - [`forward`]: SSH port forwards as the browser sees them.
 //! - [`voice`]: the voice helper's events.
 //! - [`notify`]: task events of the notification feed.
+//! - [`state_delta`]: a JSON state's changes, as the page applies them.
 //! - `vectors` (feature `vectors`, for tests): the reader of
 //!   `contract/vectors/*.json`, the T0 cases `bun test` reads too.
 
 pub mod forward;
 pub mod frames;
 pub mod notify;
+pub mod state_delta;
 /// A field that must be there but may be null (`x: T | null` in TS):
 /// serde's `Option` alone would take a missing one as `None`.
 pub(crate) fn nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>

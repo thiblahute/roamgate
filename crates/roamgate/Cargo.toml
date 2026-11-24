@@ -35,6 +35,7 @@ roamgate-git = { path = "../roamgate-git" }
 roamgate-herdr = { path = "../roamgate-herdr" }
 roamgate-history = { path = "../roamgate-history" }
 roamgate-mr-reviews = { path = "../roamgate-mr-reviews" }
+roamgate-protocol = { path = "../roamgate-protocol" }
 roamgate-http = { path = "../roamgate-http" }
 roamgate-notify = { path = "../roamgate-notify" }
 roamgate-review = { path = "../roamgate-review" }

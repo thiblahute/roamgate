@@ -25,6 +25,9 @@
 //!   [`reviews_agent`]'s; [`forge`]: the forge CLIs and one gate.
 //! - [`work`]: `work.*`, `voice.errand_*`, `voice.work_*`,
 //!   `voice.session_cookie`, `notifications.*`.
+//! - [`browser`]: the browser RPCs Bun answered with its own code
+//!   (`agent.list`, `workspace.*`, Herdr's pass-through with its overlays,
+//!   `connections.agent_sessions`, `.agent_tasks`).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -47,6 +50,7 @@ use serde_json::{Value, json};
 use super::host::HostHandle;
 
 mod assistant;
+pub(crate) mod browser;
 mod connections;
 mod conversation;
 mod forge;
@@ -108,6 +112,10 @@ pub(crate) struct Layer {
     /// The review agents' state the review family was told last.
     review_agents: Mutex<String>,
     pub(crate) runtimes: runtime::Runtimes,
+    /// Each connection's Herdr protocol, by generation.
+    protocols: Mutex<HashMap<String, (u64, i64)>>,
+    /// The `connections.agent_sessions` answers each socket holds.
+    pub(crate) session_versions: browser::SessionVersions,
 }
 
 /// Agent starts typed into a pane, one use each (Bun's `launchRegistry()`):
@@ -177,6 +185,8 @@ impl Layer {
             settings: Mutex::default(),
             review_agents: Mutex::default(),
             runtimes: runtime::Runtimes::default(),
+            protocols: Mutex::default(),
+            session_versions: browser::SessionVersions::default(),
         }
     }
 
@@ -260,6 +270,7 @@ impl Layer {
         method: &str,
         params: Value,
         timeout_ms: Option<u64>,
+        before_send: Option<roamgate_herdr::control::BeforeSend>,
     ) -> Result<Value, String> {
         let id = &lease.connection_id;
         let answer = lease
@@ -269,7 +280,7 @@ impl Layer {
                 method,
                 params.clone(),
                 timeout_ms.unwrap_or(roamgate_herdr::control::DEFAULT_CALL_TIMEOUT_MS),
-                None,
+                before_send,
                 false,
             )
             .await;
