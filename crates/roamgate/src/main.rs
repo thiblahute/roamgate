@@ -1,28 +1,24 @@
-//! The `roamgate` executable. For now the skeleton the release targets are
-//! built, packaged and updated with (migration plan, phase 1): it answers
-//! `--version` as the Bun build does, which `roamgate update` checks, and
-//! serves the embedded web app with `/healthz`.
+//! The `roamgate` executable: the server (`roamgate [server flags]`, the
+//! front with its standalone core), the management commands
+//! (`roamgate <command> [arguments]`) and the hidden `core` and `owners`.
 
-use std::net::SocketAddr;
+use std::collections::BTreeMap;
 use std::process::ExitCode;
 
-use roamgate::{Options, USAGE, parse_args, version_line};
+use roamgate::{Options, parse_args};
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let options = match parse_args(&args, |name| std::env::var(name).ok()) {
+    let options = match parse_args(&args) {
         Ok(options) => options,
         Err(message) => {
-            eprintln!("roamgate: {message}\n\n{USAGE}");
+            eprintln!("roamgate: {message}");
             return ExitCode::from(2);
         }
     };
     match options {
-        Options::Version => {
-            println!("{}", version_line());
-            ExitCode::SUCCESS
-        }
+        Options::Server(args) => ExitCode::from(roamgate::front::run(&args, BTreeMap::new()).await),
         Options::Core => {
             let env = roamgate_base::env::ProcessEnv;
             let families = if roamgate_sidecar::core::standalone_on(&env) {
@@ -34,7 +30,6 @@ async fn main() -> ExitCode {
                 roamgate_sidecar::core::run_core(&env, roamgate::VERSION, families).await,
             )
         }
-        Options::Front(args) => ExitCode::from(roamgate::front::run(&args).await),
         Options::Owners(args) => {
             let (code, out, err) =
                 roamgate::owners_cmd::run(&roamgate_base::env::ProcessEnv, &args);
@@ -52,54 +47,15 @@ async fn main() -> ExitCode {
             "voice" => roamgate::families::voice::cli(&args),
             "setup" => roamgate::families::voice::setup_cli(&args).await,
             "update" | "rollback" => roamgate::families::update::cli(&command, &args).await,
+            // `roamgate help herdr` is herdr's own help (DELEGATED_HELP),
+            // which its family's code prints.
+            "help" if args.first().map(String::as_str) == Some("herdr") => {
+                roamgate::families::herdr::cli(&["--help".to_owned()]).await
+            }
             _ => match roamgate::cli::run(&command, &args).await {
                 roamgate::cli::Done::Exit(code) => code,
-                roamgate::cli::Done::Serve(entries) => {
-                    let env = |name: &str| roamgate::cli::serve_env(&entries, name);
-                    return match parse_args(&[], env) {
-                        Ok(Options::Serve { host, port }) => serve(host, port).await,
-                        _ => ExitCode::FAILURE,
-                    };
-                }
+                roamgate::cli::Done::Serve(entries) => roamgate::front::run(&[], entries).await,
             },
         }),
-        Options::Help => {
-            print!("{USAGE}");
-            ExitCode::SUCCESS
-        }
-        Options::Serve { host, port } => serve(host, port).await,
-    }
-}
-
-/// Serves the web app on `host:port` until a signal.
-async fn serve(host: String, port: u16) -> ExitCode {
-    let listener = match tokio::net::TcpListener::bind((host.as_str(), port)).await {
-        Ok(listener) => listener,
-        Err(error) => {
-            eprintln!("roamgate: cannot listen on {host}:{port}: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let address: SocketAddr = listener.local_addr().expect("listener address");
-    println!("{} listening on http://{address}", version_line());
-    let shutdown = async {
-        #[cfg(unix)]
-        {
-            use tokio::signal::unix::{SignalKind, signal};
-            let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {}
-                _ = term.recv() => {}
-            }
-        }
-        #[cfg(not(unix))]
-        let _ = tokio::signal::ctrl_c().await;
-    };
-    match roamgate::serve(listener, shutdown).await {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("roamgate: {error}");
-            ExitCode::FAILURE
-        }
     }
 }

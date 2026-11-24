@@ -1,12 +1,6 @@
-//! The skeleton server: version, arguments and the embedded web app.
+//! The `roamgate` binary's library: its version, command line and the web
+//! build it carries; the server is [`front`], the core its families.
 
-use std::future::Future;
-
-use axum::Router;
-use axum::body::Body;
-use axum::http::{HeaderValue, StatusCode, Uri, header};
-use axum::response::{IntoResponse, Response};
-use axum::routing::get;
 use rust_embed::RustEmbed;
 
 pub mod cli;
@@ -31,178 +25,66 @@ pub fn version_line() -> String {
     format!("roamgate {VERSION}")
 }
 
-pub const USAGE: &str = "Usage:
-  roamgate [--host <addr>] [--port <n>]   serve the web app
-  roamgate --version                      print the version
-  roamgate --help                         print this help
-
-Options:
-  --host <addr>  listen address (env HOST, default 127.0.0.1)
-  --port <n>     listen port    (env PORT, default 8787)
-";
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum Options {
-    Version,
-    Help,
-    Serve {
-        host: String,
-        port: u16,
-    },
-    /// `roamgate core`: the portless core the Bun server spawns
-    /// (contract/wire/core-channel.md). Not in the usage: only the server
-    /// runs it.
+    /// `roamgate [server flags]`: the server (no arguments, or a first
+    /// word that is a flag); `roamgate front [server flags]` is its hidden
+    /// alias. Its flags are the front's to read ([`front::run`]): `--help`
+    /// and `--version` too, as the Bun server's `loadServerConfig`.
+    Server(Vec<String>),
+    /// `roamgate core`: the portless core the front (or the Bun server)
+    /// spawns (contract/wire/core-channel.md). Not in the usage: only the
+    /// server runs it.
     Core,
-    /// `roamgate front [server flags]`: the Rust front with the Bun server
-    /// as its core (contract/wire/core-channel.md, Stage 2). Hidden until
-    /// the switch.
-    Front(Vec<String>),
     /// `roamgate owners ...`: the owners table (hidden, temporary).
     Owners(Vec<String>),
-    /// A CLI command a family answers (`update`, `rollback`, `herdr`):
-    /// its name and the arguments after it. The Bun CLI passes these
-    /// through while Rust owns the family (contract/wire/core-channel.md,
-    /// CLI pass-through).
+    /// A management command (`roamgate <command> [arguments]`, `help`
+    /// included): its name and the words after it.
     Command(String, Vec<String>),
 }
 
-/// The CLI commands this binary answers itself, by family.
+/// The commands a family's code answers in this binary, outside
+/// roamgate-cli's router (main.rs dispatches them; the Bun CLI passes these
+/// through while Rust owns the family: contract/wire/core-channel.md, CLI
+/// pass-through).
 pub const FAMILY_COMMANDS: &[&str] = &[
-    "update",
-    "rollback",
-    "herdr",
-    "push",
-    "activity",
-    "archive",
-    "history",
-    "service",
-    "doctor",
-    "url",
-    "config",
-    "auth",
-    "connections",
-    "plugin",
-    "completion",
-    "reviews",
-    "voice",
+    "update", "rollback", "herdr", "push", "activity", "archive", "history", "reviews", "voice",
+    "setup",
 ];
 
-/// The commands this binary answers for one first word only, by family
-/// (families.json's `setup voice`): `setup`'s other words are not ours.
-pub const FAMILY_SUBCOMMANDS: &[(&str, &str)] = &[("setup", "voice")];
-
-/// Reads the command line; `env` gives the environment's HOST and PORT.
-pub fn parse_args(
-    args: &[String],
-    env: impl Fn(&str) -> Option<String>,
-) -> Result<Options, String> {
-    let mut host = env("HOST").unwrap_or_else(|| "127.0.0.1".into());
-    let mut port = env("PORT").unwrap_or_else(|| "8787".into());
+/// Reads the command line as index.ts does: a first word that is not a
+/// flag is a command, anything else the server's.
+pub fn parse_args(args: &[String]) -> Result<Options, String> {
     match args.first().map(String::as_str) {
-        Some("core") => {
-            return match args.get(1) {
-                None => Ok(Options::Core),
-                Some(extra) => Err(format!("unknown argument {extra}")),
-            };
+        Some("core") => match args.get(1) {
+            None => Ok(Options::Core),
+            Some(extra) => Err(format!("unknown argument {extra}")),
+        },
+        Some("owners") => Ok(Options::Owners(args[1..].to_vec())),
+        Some("front") => Ok(Options::Server(args[1..].to_vec())),
+        Some(command) if !command.starts_with('-') => {
+            Ok(Options::Command(command.to_owned(), args[1..].to_vec()))
         }
-        Some("owners") => return Ok(Options::Owners(args[1..].to_vec())),
-        Some("front") => return Ok(Options::Front(args[1..].to_vec())),
-        Some(command) if FAMILY_COMMANDS.contains(&command) => {
-            return Ok(Options::Command(command.to_owned(), args[1..].to_vec()));
-        }
-        Some(command)
-            if FAMILY_SUBCOMMANDS.iter().any(|(name, word)| {
-                *name == command && args.get(1).map(String::as_str) == Some(word)
-            }) =>
-        {
-            return Ok(Options::Command(command.to_owned(), args[1..].to_vec()));
-        }
-        _ => {}
+        _ => Ok(Options::Server(args.to_vec())),
     }
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        match arg.as_str() {
-            "--version" | "-v" | "-V" | "version" => return Ok(Options::Version),
-            "--help" | "-h" | "help" => return Ok(Options::Help),
-            "--host" => host = rest.next().ok_or("--host needs a value")?.clone(),
-            "--port" => port = rest.next().ok_or("--port needs a value")?.clone(),
-            other => {
-                if let Some(value) = other.strip_prefix("--host=") {
-                    host = value.into();
-                } else if let Some(value) = other.strip_prefix("--port=") {
-                    port = value.into();
-                } else {
-                    return Err(format!("unknown argument {other}"));
-                }
-            }
-        }
-    }
-    let port = port.parse().map_err(|_| format!("invalid port {port}"))?;
-    Ok(Options::Serve { host, port })
 }
 
 #[derive(RustEmbed)]
 #[folder = "$ROAMGATE_WEB_DIST"]
 struct Web;
 
-/// Whether the binary was built with a web app (its index.html).
-pub fn has_web() -> bool {
-    Web::get("index.html").is_some()
-}
-
-async fn healthz() -> Response {
-    (
-        [(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("text/plain; charset=utf-8"),
-        )],
-        "Ok",
-    )
-        .into_response()
-}
-
-fn asset(path: &str) -> Option<Response> {
-    let file = Web::get(path)?;
-    let mime = file.metadata.mimetype().to_owned();
-    let mut response = Response::new(Body::from(file.data.into_owned()));
-    if let Ok(value) = HeaderValue::from_str(&mime) {
-        response.headers_mut().insert(header::CONTENT_TYPE, value);
-    }
-    Some(response)
-}
-
-/// A file of the web app, else its index.html for an app route (a path
-/// whose last part has no extension).
-async fn web(uri: Uri) -> Response {
-    let path = uri.path().trim_start_matches('/');
-    let path = if path.is_empty() { "index.html" } else { path };
-    if let Some(response) = asset(path) {
-        return response;
-    }
-    let last = path.rsplit('/').next().unwrap_or_default();
-    if !last.contains('.')
-        && let Some(response) = asset("index.html")
-    {
-        return response;
-    }
-    (StatusCode::NOT_FOUND, "Not found").into_response()
-}
-
-pub fn app() -> Router {
-    Router::new()
-        .route("/health", get(healthz))
-        .route("/healthz", get(healthz))
-        .fallback(get(web))
-}
-
-/// Serves until `shutdown` completes.
-pub async fn serve(
-    listener: tokio::net::TcpListener,
-    shutdown: impl Future<Output = ()> + Send + 'static,
-) -> std::io::Result<()> {
-    axum::serve(listener, app())
-        .with_graceful_shutdown(shutdown)
-        .await
+/// The web build this binary carries (build.rs: `ROAMGATE_WEB_DIST`, else
+/// server/public), served by the front after the public directory. A
+/// release build holds it in memory; a debug build reads that directory
+/// (rust-embed's development mode), so a new `bun run build:web` is served
+/// without building the binary again.
+pub fn embedded_web() -> roamgate_http::static_files::EmbeddedFiles {
+    roamgate_http::static_files::EmbeddedFiles(std::sync::Arc::new(|name: &str| {
+        Web::get(name).map(|file| match file.data {
+            std::borrow::Cow::Borrowed(bytes) => bytes::Bytes::from_static(bytes),
+            std::borrow::Cow::Owned(bytes) => bytes::Bytes::from(bytes),
+        })
+    }))
 }
 
 #[cfg(test)]
@@ -219,87 +101,62 @@ mod tests {
         assert!(!VERSION.is_empty());
     }
 
+    /// runCli's split: no arguments or a flag first is the server's; any
+    /// other first word a command, `help` and unknown words included.
     #[test]
-    fn flags_override_the_environment() {
-        let env = |name: &str| match name {
-            "HOST" => Some("0.0.0.0".to_owned()),
-            "PORT" => Some("9000".to_owned()),
-            _ => None,
-        };
+    fn a_flag_first_is_the_server_s_and_a_word_a_command() {
+        assert_eq!(parse_args(&args(&[])), Ok(Options::Server(vec![])));
         assert_eq!(
-            parse_args(&args(&[]), env),
-            Ok(Options::Serve {
-                host: "0.0.0.0".into(),
-                port: 9000
-            })
+            parse_args(&args(&["--port", "1234", "--host=::1"])),
+            Ok(Options::Server(args(&["--port", "1234", "--host=::1"])))
         );
         assert_eq!(
-            parse_args(&args(&["--port", "1234", "--host=::1"]), env),
-            Ok(Options::Serve {
-                host: "::1".into(),
-                port: 1234
-            })
+            parse_args(&args(&["-h"])),
+            Ok(Options::Server(args(&["-h"])))
         );
         assert_eq!(
-            parse_args(&args(&[]), |_| None),
-            Ok(Options::Serve {
-                host: "127.0.0.1".into(),
-                port: 8787
-            })
+            parse_args(&args(&["front", "--port", "9"])),
+            Ok(Options::Server(args(&["--port", "9"])))
         );
-    }
-
-    #[test]
-    fn version_and_help_win() {
+        assert_eq!(parse_args(&args(&["core"])), Ok(Options::Core));
         assert_eq!(
-            parse_args(&args(&["--version"]), |_| None),
-            Ok(Options::Version),
-        );
-        assert_eq!(parse_args(&args(&["core"]), |_| None), Ok(Options::Core));
-        assert_eq!(
-            parse_args(&args(&["core", "x"]), |_| None),
+            parse_args(&args(&["core", "x"])),
             Err("unknown argument x".into())
         );
         assert_eq!(
-            parse_args(&args(&["--port", "1", "-h"]), |_| None),
-            Ok(Options::Help)
-        );
-        assert!(parse_args(&args(&["--port", "x"]), |_| None).is_err());
-        assert!(parse_args(&args(&["--nope"]), |_| None).is_err());
-        assert!(parse_args(&args(&["--port"]), |_| None).is_err());
-    }
-
-    /// A family's command goes to its family with the words after it;
-    /// nothing else does (runHerdrCommand's null for other commands).
-    #[test]
-    fn family_commands_go_to_their_family_and_nothing_else_does() {
-        assert_eq!(
-            parse_args(&args(&["herdr", "status", "--socket-path", "/x"]), |_| None),
+            parse_args(&args(&["herdr", "status", "--socket-path", "/x"])),
             Ok(Options::Command(
                 "herdr".into(),
                 args(&["status", "--socket-path", "/x"])
             ))
         );
         assert_eq!(
-            parse_args(&args(&["rollback"]), |_| None),
-            Ok(Options::Command("rollback".into(), vec![]))
+            parse_args(&args(&["setup"])),
+            Ok(Options::Command("setup".into(), vec![]))
         );
         assert_eq!(
-            parse_args(&args(&["service", "install"]), |_| None),
-            Ok(Options::Command("service".into(), args(&["install"])))
+            parse_args(&args(&["help", "herdr"])),
+            Ok(Options::Command("help".into(), args(&["herdr"])))
         );
         assert_eq!(
-            parse_args(&args(&["setup", "voice", "list"]), |_| None),
-            Ok(Options::Command("setup".into(), args(&["voice", "list"])))
+            parse_args(&args(&["nope"])),
+            Ok(Options::Command("nope".into(), vec![]))
         );
-        assert!(parse_args(&args(&["setup"]), |_| None).is_err());
-        assert!(parse_args(&args(&["setup", "--help"]), |_| None).is_err());
-        for command in roamgate_cli::index::RUST_COMMANDS {
-            assert!(FAMILY_COMMANDS.contains(command), "{command}");
+    }
+
+    /// Every command of the contract is answered: by roamgate-cli's
+    /// router, or by a family's code here.
+    #[test]
+    fn every_contract_command_has_its_code() {
+        let commands = roamgate_cli::index::cli_commands(roamgate_cli::index::rust_runner);
+        assert!(!commands.is_empty());
+        for command in commands {
+            assert!(
+                roamgate_cli::index::RUST_COMMANDS.contains(&command.name.as_str())
+                    || FAMILY_COMMANDS.contains(&command.name.as_str()),
+                "{}",
+                command.name
+            );
         }
-        assert!(matches!(
-            parse_args(&args(&[]), |_| None),
-            Ok(Options::Serve { .. })
-        ));
     }
 }

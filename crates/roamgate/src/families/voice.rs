@@ -967,10 +967,14 @@ pub fn cli(args: &[String]) -> u8 {
     emit(roamgate_cli::voice::voice(&runtime, args))
 }
 
-/// `roamgate setup voice ...` (`args` from `voice`); returns the exit
-/// code. Its output is written as it goes: a download shows its progress.
+/// `roamgate setup ...` (`args` after `setup`); returns the exit code. Its
+/// output is written as it goes: a download shows its progress. Only
+/// `setup voice` is the voice family's (families.json); setup's other
+/// words, or none, are refused as the Bun CLI did.
 pub async fn setup_cli(args: &[String]) -> u8 {
-    roamgate_sidecar::core::note_served(&ProcessEnv, "voice", "cli setup voice");
+    if args.first().map(String::as_str) == Some("voice") {
+        roamgate_sidecar::core::note_served(&ProcessEnv, "voice", "cli setup voice");
+    }
     let runtime = cli_runtime(Arc::new(ProcessEnv));
     let deps = roamgate_cli::setup_voice::SetupCommandDeps::system();
     let mut out = roamgate_cli::archive::ProcessOutput;

@@ -1,6 +1,6 @@
 [package]
 name = "roamgate"
-description = "Roamgate's server: for now the skeleton the release targets are built, packaged and updated with"
+description = "Roamgate's server: its front, its core and the management commands"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

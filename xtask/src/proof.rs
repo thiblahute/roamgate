@@ -125,6 +125,11 @@ struct Sandbox {
 
 impl Sandbox {
     fn command(&self, program: &Path, args: &[&str]) -> Command {
+        self.command_with(&[], program, args)
+    }
+
+    /// [`Sandbox::command`] with `extra` variables over the sandbox's.
+    fn command_with(&self, extra: &[(&str, &str)], program: &Path, args: &[&str]) -> Command {
         let mut command = match self.prefix.split_first() {
             Some((first, rest)) => {
                 let mut command = Command::new(first);
@@ -135,6 +140,9 @@ impl Sandbox {
         };
         command.arg("-i");
         for (key, value) in &self.env {
+            command.arg(format!("{key}={value}"));
+        }
+        for (key, value) in extra {
             command.arg(format!("{key}={value}"));
         }
         command.arg(program).args(args).current_dir(&self.home);
@@ -312,16 +320,20 @@ pub fn run(proof: &Proof) -> Result<()> {
     let port = free_port()?;
     let port_text = port.to_string();
     let serve = ["--host", "127.0.0.1", "--port", &port_text];
+    // No login on the loopback in development: the web app answers `/`
+    // instead of the login page. No Herdr either: the server serves all the
+    // same.
+    let open = [("NODE_ENV", "development")];
     // A prefix may not pass signals on (a container started through a
     // toolbox's host-spawn): there the server ends itself.
     let mut command = if sandbox.prefix.is_empty() {
-        sandbox.command(&bin, &serve)
+        sandbox.command_with(&open, &bin, &serve)
     } else {
         let mut args = vec!["-s", "TERM", "90"];
         let bin_text = bin.to_string_lossy();
         args.push(&bin_text);
         args.extend(serve);
-        sandbox.command(Path::new("timeout"), &args)
+        sandbox.command_with(&open, Path::new("timeout"), &args)
     };
     let server = Server(
         command
@@ -342,16 +354,24 @@ pub fn run(proof: &Proof) -> Result<()> {
         health == (200, b"Ok".to_vec()),
         "/healthz answered {health:?}"
     );
-    let index = std::fs::read(proof.web.join("index.html"))?;
+    // The entry document is served named after the instance: the build's
+    // own, known by its module script.
+    let index = std::fs::read_to_string(proof.web.join("index.html"))?;
+    let script = entry_script(&index).context("the web app's index.html has no module script")?;
     let (status, body) = get(address, "/")?;
     ensure!(
-        status == 200 && body == index,
+        status == 200 && String::from_utf8_lossy(&body).contains(script),
         "/ is not the embedded web app (status {status})"
     );
     let (status, body) = get(address, "/settings")?;
     ensure!(
-        status == 200 && body == index,
+        status == 200 && String::from_utf8_lossy(&body).contains(script),
         "an app route is not the web app (status {status})"
+    );
+    let (status, body) = get(address, script)?;
+    ensure!(
+        status == 200 && !body.is_empty(),
+        "{script} is not served (status {status})"
     );
     drop(server);
 
@@ -360,6 +380,13 @@ pub fn run(proof: &Proof) -> Result<()> {
         target.platform, proof.version, mirror_address
     );
     Ok(())
+}
+
+/// The path of the entry document's first `/assets/` script.
+fn entry_script(index: &str) -> Option<&str> {
+    let start = index.find("src=\"/assets/")? + "src=\"".len();
+    let length = index[start..].find('"')?;
+    Some(&index[start..start + length])
 }
 
 struct TempDir(PathBuf);

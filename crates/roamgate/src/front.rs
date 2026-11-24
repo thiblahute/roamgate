@@ -1,16 +1,17 @@
-//! `roamgate front [server flags]` (hidden): the Rust front of stage 2
-//! (contract/wire/core-channel.md), with the Bun server
-//! `ROAMGATE_SIDECAR_BIN` names as its portless core, or without it its own
-//! executable as the standalone `roamgate core` (no Bun). Reads the
-//! server's configuration as the Bun server does, holds the port and
-//! serves until SIGTERM or Ctrl-C.
+//! The server: `roamgate [server flags]` (and the hidden alias `roamgate
+//! front [server flags]`), the Rust front of contract/wire/core-channel.md
+//! with its own executable as the standalone `roamgate core` (no Bun), or
+//! the Bun server `ROAMGATE_SIDECAR_BIN` names as its portless core (stage
+//! 2). Reads the server's configuration as the Bun server does, holds the
+//! port and serves until SIGTERM or Ctrl-C.
 
+use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use roamgate_base::clock::SystemClock;
-use roamgate_base::env::{Env, ProcessEnv, roamgate_env};
+use roamgate_base::env::{Env, roamgate_env};
 use roamgate_base::paths::DataFile;
 use roamgate_base::revoked_sessions::RevokedSessions;
 use roamgate_base::session_secret::{
@@ -19,7 +20,7 @@ use roamgate_base::session_secret::{
 use roamgate_base::settings::Settings;
 use roamgate_cli::auth_token::auth_token_print_command;
 use roamgate_cli::herdr::HerdrCli;
-use roamgate_cli::server_config::load_server_config;
+use roamgate_cli::server_config::load_server_config_with_help;
 use roamgate_http::auth::{Auth, AuthConfig};
 use roamgate_http::front::{
     Front, RustCoreLinkConfig, SidecarCommand, SidecarConfig, Sockets, StandaloneCore, app,
@@ -142,18 +143,13 @@ async fn relay_to_core(core: &std::path::Path, request: &str) {
     let _ = BufReader::new(stream).read_line(&mut reply).await;
 }
 
-/// The web build served after the public directory: the Bun server's run
-/// from source (`server/src/index.ts`), its `server/public`; with no Bun,
-/// the one this binary was built with, when it is on this machine (the
-/// embedded copy is not served from memory yet).
+/// The web build served after the public directory behind a Bun core: its
+/// run from source (`server/src/index.ts`) serves `server/public`. With no
+/// Bun the front serves the build this binary carries instead
+/// ([`crate::embedded_web`]).
 fn built_public_dir(sidecar_bin: Option<&str>) -> Option<PathBuf> {
-    match sidecar_bin.filter(|bin| !bin.is_empty()) {
-        Some(bin) => {
-            let entry = PathBuf::from(Some(bin).filter(|bin| bin.ends_with(".ts"))?);
-            Some(entry.parent()?.parent()?.join("public"))
-        }
-        None => Some(PathBuf::from(env!("ROAMGATE_WEB_DIST"))).filter(|dir| dir.is_dir()),
-    }
+    let entry = PathBuf::from(sidecar_bin.filter(|bin| bin.ends_with(".ts"))?);
+    Some(entry.parent()?.parent()?.join("public"))
 }
 
 /// A signal, or the core's `server.scheduleExit` (`exit`).
@@ -175,18 +171,38 @@ async fn shutdown(exit: Arc<tokio::sync::Notify>) {
     }
 }
 
-pub async fn run(args: &[String]) -> u8 {
-    let env: Arc<dyn Env> = Arc::new(ProcessEnv);
+/// Serves with `args`, the server flags, and the process environment with
+/// `overrides` over it (`service run`'s environment file); the core gets
+/// them too. Returns the exit code.
+pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
+    let mut own_env: HashMap<String, String> = std::env::vars_os()
+        .map(|(name, value)| {
+            (
+                name.to_string_lossy().into_owned(),
+                value.to_string_lossy().into_owned(),
+            )
+        })
+        .collect();
+    own_env.extend(overrides.clone());
+    let env: Arc<dyn Env> = Arc::new(own_env.clone());
     let cli = HerdrCli::system(env.clone(), crate::VERSION.into());
     let runtime = cli.config_runtime();
-    let config = match load_server_config(args, env.as_ref(), &runtime, crate::VERSION) {
-        Ok(config) => config,
-        Err(printed) => {
-            print!("{}", printed.stdout);
-            eprint!("{}", printed.stderr);
-            return printed.code.clamp(0, 255) as u8;
-        }
+    // `--help` is the top-level help, the management commands' with the
+    // server's options (index.ts's `helpText: topLevelHelp`).
+    let help = || {
+        roamgate_cli::index::top_level_help(&roamgate_cli::index::cli_commands(
+            roamgate_cli::index::rust_runner,
+        ))
     };
+    let config =
+        match load_server_config_with_help(args, env.as_ref(), &runtime, crate::VERSION, &help) {
+            Ok(config) => config,
+            Err(printed) => {
+                print!("{}", printed.stdout);
+                eprint!("{}", printed.stderr);
+                return printed.code.clamp(0, 255) as u8;
+            }
+        };
     let tls = match &config.tls {
         Some(tls) => match crate::front_tls::server_config(&tls.cert, &tls.key) {
             Ok(tls) => Some(tls),
@@ -199,7 +215,6 @@ pub async fn run(args: &[String]) -> u8 {
     };
     let data = runtime.data();
     let root = data.data_root();
-    let mut own_env: std::collections::HashMap<String, String> = std::env::vars().collect();
     let test_clock = match roamgate_base::clock::test_clock_from_env(
         &mut own_env,
         roamgate_base::clock::TEST_CLOCK_HONOURED,
@@ -306,7 +321,8 @@ pub async fn run(args: &[String]) -> u8 {
     let standalone = command.standalone;
     let (link, core) = watch::channel(None);
     let mut clock_server = None;
-    let mut core_env: Vec<(String, String)> = Vec::new();
+    // The environment file's entries reach the core as the front's own.
+    let mut core_env: Vec<(String, String)> = overrides.into_iter().collect();
     // The Bun core runs the Rust core ROAMGATE_CORE_BIN names, as it does
     // behind the Bun front (stage 1): its owners table and handovers are
     // unchanged. The update family replaces this front's executable, in
@@ -502,10 +518,16 @@ pub async fn run(args: &[String]) -> u8 {
     let front = Arc::new(
         Front::new(
             auth,
-            static_dirs(
-                public_dir(args, env.as_ref()),
-                built_public_dir(env.var("ROAMGATE_SIDECAR_BIN").as_deref()),
-            ),
+            {
+                let mut files = static_dirs(
+                    public_dir(args, env.as_ref()),
+                    built_public_dir(env.var("ROAMGATE_SIDECAR_BIN").as_deref()),
+                );
+                if standalone {
+                    files.embedded = Some(crate::embedded_web());
+                }
+                files
+            },
             title_suffix,
             core,
             sockets,

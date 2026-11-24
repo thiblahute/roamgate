@@ -638,6 +638,7 @@ pub fn static_dirs(public_dir: PathBuf, built: Option<PathBuf>) -> StaticFiles {
     StaticFiles {
         public_dir,
         built_public_dir: built,
+        embedded: None,
     }
 }
 

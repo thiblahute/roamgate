@@ -451,11 +451,29 @@ fn bridge_exit(message: &str, code: i32) -> ConfigExit {
 /// Reads the server's flags (`args`, the words after the command) and
 /// environment as `loadServerConfig` does, creating the generated login
 /// token when it needs one; or what it prints and the code it exits with.
+/// `--help` prints the server's own help (serverHelp).
 pub fn load_server_config(
     args: &[String],
     env: &dyn Env,
     runtime: &ConfigRuntime,
     version: &str,
+) -> Result<ServerConfig, ConfigExit> {
+    load_server_config_with_help(args, env, runtime, version, &|| {
+        server_help_printed()
+            .strip_suffix('\n')
+            .unwrap_or_default()
+            .to_owned()
+    })
+}
+
+/// [`load_server_config`] whose `--help` prints `help_text()` (its
+/// `helpText` option: the server's run prints the top-level help).
+pub fn load_server_config_with_help(
+    args: &[String],
+    env: &dyn Env,
+    runtime: &ConfigRuntime,
+    version: &str,
+    help_text: &dyn Fn() -> String,
 ) -> Result<ServerConfig, ConfigExit> {
     let flags = parse_server_flags(args).map_err(|message| {
         let mut printed = Printed::default();
@@ -465,7 +483,7 @@ pub fn load_server_config(
     })?;
     if has_flag(&flags, "help") {
         let mut printed = Printed::default();
-        printed.stdout.push_str(&server_help_printed());
+        printed.log(&help_text());
         return Err(printed.exit(0));
     }
     if has_flag(&flags, "version") {

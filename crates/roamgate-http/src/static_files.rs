@@ -29,11 +29,28 @@ pub struct StaticRequest<'a> {
     pub accept: Option<&'a str>,
 }
 
-/// Where the files are: the configured directory, then the build's own.
+/// The web build a binary carries in memory: a file's bytes by its path
+/// in the build (`assets/index.js`, no leading slash).
+#[derive(Clone)]
+pub struct EmbeddedFiles(pub EmbeddedLookup);
+
+/// A file of the build in memory by its path, None when it has none.
+pub type EmbeddedLookup = std::sync::Arc<dyn Fn(&str) -> Option<Bytes> + Send + Sync>;
+
+impl std::fmt::Debug for EmbeddedFiles {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("EmbeddedFiles")
+    }
+}
+
+/// Where the files are: the configured directory, then the build's own
+/// (a directory, then the copy in memory, as a compiled Bun server's
+/// `public` was its executable's).
 #[derive(Debug, Clone)]
 pub struct StaticFiles {
     pub public_dir: PathBuf,
     pub built_public_dir: Option<PathBuf>,
+    pub embedded: Option<EmbeddedFiles>,
 }
 
 pub fn content_type(pathname: &str) -> &'static str {
@@ -128,16 +145,20 @@ pub fn name_entry_document(html: &[u8], name: &str) -> Result<Vec<u8>, String> {
 }
 
 async fn serve_file(head: bool, file: &Path, pathname: &str, title_suffix: &str) -> Response {
-    let headers = headers_for(pathname);
     if head {
-        return response::with(200, &headers, Bytes::new());
+        return response::with(200, &headers_for(pathname), Bytes::new());
     }
     let Ok(bytes) = tokio::fs::read(file).await else {
         return response::text(404, &[], "not found");
     };
+    serve_bytes(Bytes::from(bytes), pathname, title_suffix)
+}
+
+fn serve_bytes(bytes: Bytes, pathname: &str, title_suffix: &str) -> Response {
+    let headers = headers_for(pathname);
     if pathname == "/manifest.json" {
         let manifest = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        return serve_manifest(head, manifest, title_suffix);
+        return serve_manifest(false, manifest, title_suffix);
     }
     if pathname != "/index.html" {
         return response::with(200, &headers, bytes);
@@ -179,6 +200,23 @@ impl StaticFiles {
                 if is_file(&index).await {
                     return serve_file(head, &index, "/index.html", title_suffix).await;
                 }
+            }
+        }
+        if let Some(embedded) = &self.embedded {
+            let file = |name: &str| (embedded.0)(name);
+            let found = file(pathname.trim_start_matches('/'))
+                .map(|bytes| (bytes, pathname.as_str()))
+                .or_else(|| {
+                    serve_entry
+                        .then(|| file("index.html"))
+                        .flatten()
+                        .map(|bytes| (bytes, "/index.html"))
+                });
+            if let Some((bytes, served)) = found {
+                if head {
+                    return response::with(200, &headers_for(served), Bytes::new());
+                }
+                return serve_bytes(bytes, served, title_suffix);
             }
         }
         // Vite serves source assets before the first build, but proxies

@@ -12,6 +12,7 @@ fn files(public_dir: PathBuf) -> StaticFiles {
     StaticFiles {
         public_dir,
         built_public_dir: None,
+        embedded: None,
     }
 }
 
@@ -98,6 +99,7 @@ async fn source_runs_fall_back_to_the_built_public_directory() {
     let static_files = StaticFiles {
         public_dir: PathBuf::from("/nonexistent-roamgate-static-test"),
         built_public_dir: Some(web().join("public")),
+        embedded: None,
     };
     let response = static_files.serve(get("/manifest.json"), "").await;
     assert_eq!(response.status(), 200);
@@ -261,6 +263,61 @@ async fn refuses_writes_malformed_paths_and_escapes() {
             .status(),
         404
     );
+    assert_eq!(
+        static_files.serve(get("/missing.js"), "").await.status(),
+        404
+    );
+}
+
+/// A release binary's build, in memory: after the public directory, with
+/// the entry document for page navigations, named after the instance.
+#[tokio::test]
+async fn a_binary_serves_the_build_it_carries_after_the_public_directory() {
+    let public = tempfile::tempdir().unwrap();
+    std::fs::write(public.path().join("own.txt"), "public").unwrap();
+    std::fs::write(public.path().join("both.txt"), "public").unwrap();
+    let embedded = EmbeddedFiles(std::sync::Arc::new(|name: &str| match name {
+        "index.html" => Some(Bytes::from_static(
+            b"<html><head><title>x</title></head><body>app</body></html>",
+        )),
+        "both.txt" | "assets/app.js" => Some(Bytes::from_static(b"embedded")),
+        _ => None,
+    }));
+    let static_files = StaticFiles {
+        public_dir: public.path().to_owned(),
+        built_public_dir: None,
+        embedded: Some(embedded),
+    };
+    let body = |response: &Response| String::from_utf8(response.body().to_vec()).unwrap();
+    let response = static_files.serve(get("/both.txt"), "").await;
+    assert_eq!(body(&response), "public");
+    let response = static_files.serve(get("/assets/app.js"), "").await;
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        header(&response, "content-type").unwrap(),
+        "text/javascript; charset=utf-8"
+    );
+    assert_eq!(body(&response), "embedded");
+    let page = StaticRequest {
+        method: "GET",
+        raw_path: "/settings",
+        accept: Some("text/html"),
+    };
+    let response = static_files.serve(page, "Desk").await;
+    assert_eq!(response.status(), 200);
+    assert!(body(&response).contains("<title>Roamgate · Desk</title>"));
+    assert_eq!(
+        header(&response, "cache-control").unwrap(),
+        "private, no-cache, must-revalidate"
+    );
+    let head = StaticRequest {
+        method: "HEAD",
+        raw_path: "/assets/app.js",
+        accept: None,
+    };
+    let response = static_files.serve(head, "").await;
+    assert_eq!(response.status(), 200);
+    assert!(response.body().is_empty());
     assert_eq!(
         static_files.serve(get("/missing.js"), "").await.status(),
         404
