@@ -11,9 +11,9 @@
 //!   first).
 //! - Reverse calls: `assistant.release` (Bun disposes its own service
 //!   before the core starts its), `assistant.connections`, `assistant.host`
-//!   (what the context reads of the runtimes Bun owns, by `op`),
-//!   `assistant.workspace_tree`,
-//!   `assistant.chat_thread_reply`.
+//!   (what the context reads of the runtimes Bun owns, by `op`) and
+//!   `assistant.chat_thread_reply`. The archive and Workspaces tools run
+//!   here, on the archive and workspace families' code.
 //! - Pushes: `{assistant: snapshot}` (key `assistant`) and
 //!   `{assistant_notification}`.
 //!
@@ -35,7 +35,12 @@ use roamgate_assistant::context::live::{BeforeSend, ContextHost, IsCurrent, Leas
 use roamgate_assistant::errors::{AssistantError, AssistantResult};
 use roamgate_assistant::ranger_driver::RangerDriver;
 use roamgate_assistant::service::{AssistantService, ServiceOptions};
-use roamgate_assistant::tools::{BoxFuture, Handler, ToolResult};
+use roamgate_assistant::tools::{BoxFuture, ToolResult};
+use roamgate_assistant::tree_tools::{
+    TreeBackendError, TreeBackendResult, TreeConnectionManager, TreeConnectionRuntime,
+    TreeToolConnection, WorkspaceTreeToolBackend, create_workspace_tree_tool_handler,
+    read_workspace_tree_connections,
+};
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
 use roamgate_connections::usage_limit::LimitPause;
@@ -82,7 +87,8 @@ type Listener = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Default)]
 struct Table {
-    connections: Mutex<HashMap<String, Connection>>,
+    /// In the order Bun's manager lists them.
+    connections: Mutex<Vec<(String, Connection)>>,
     listeners: Mutex<Vec<(u64, Listener)>>,
     next: AtomicU64,
 }
@@ -91,12 +97,12 @@ impl Table {
     /// Replaces the table with `[{id, generation, status}]`; tells the
     /// listeners when anything changed.
     fn set(&self, list: &Value) {
-        let mut next = HashMap::new();
+        let mut next: Vec<(String, Connection)> = Vec::new();
         for each in list.as_array().into_iter().flatten() {
             let Some(id) = each.get("id").and_then(Value::as_str) else {
                 continue;
             };
-            next.insert(
+            next.push((
                 id.to_owned(),
                 Connection {
                     generation: each.get("generation").and_then(Value::as_u64),
@@ -105,7 +111,7 @@ impl Table {
                         .filter(|value| value.is_object())
                         .cloned(),
                 },
-            );
+            ));
         }
         let changed = {
             let mut connections = self.connections.lock().unwrap();
@@ -131,7 +137,9 @@ impl Table {
         self.connections
             .lock()
             .unwrap()
-            .get(&lease.connection_id)
+            .iter()
+            .find(|(id, _)| *id == lease.connection_id)
+            .map(|(_, connection)| connection)
             .is_some_and(|connection| connection.generation == Some(lease.generation))
     }
 
@@ -139,8 +147,29 @@ impl Table {
         self.connections
             .lock()
             .unwrap()
-            .get(id)
+            .iter()
+            .find(|(each, _)| each == id)
+            .map(|(_, connection)| connection)
             .and_then(|connection| connection.status.clone())
+    }
+
+    /// `[(id, label, ready)]`, in the manager's order.
+    fn list(&self) -> Vec<(String, String, bool)> {
+        self.connections
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, connection)| {
+                let label = connection
+                    .status
+                    .as_ref()
+                    .and_then(|status| status.get("label"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(id)
+                    .to_owned();
+                (id.clone(), label, connection.generation.is_some())
+            })
+            .collect()
     }
 
     fn watch(self: &Arc<Self>, listener: Listener) -> Box<dyn FnOnce() + Send> {
@@ -470,19 +499,111 @@ impl ContextHost for ReverseHost {
     }
 }
 
-// --------------------------------------------------------------- the family
+// ---------------------------------------------------- Workspaces tools
 
-/// A tool family Bun still answers: `target {kind, params}`.
-fn reverse_tool(cx: &FamilyContext, target: &'static str) -> Handler {
-    let cx = cx.clone();
-    Arc::new(move |kind, params, _cancel| {
-        let cx = cx.clone();
-        Box::pin(async move {
-            let value = reverse(&cx, target, json!({"kind": kind, "params": params})).await?;
-            Ok(tool_result(value))
-        })
-    })
+/// Ranger's Workspaces arrangement tools on the workspace family's store
+/// and runtimes (same process): the connections in the order and with the
+/// labels Bun's manager gives, as the connection table holds them.
+struct CoreTree {
+    table: Arc<Table>,
 }
+
+struct CoreTreeRuntime(Arc<super::workspace::TreeRuntime>);
+
+impl TreeConnectionRuntime for CoreTreeRuntime {
+    fn herdr_call(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: std::time::Duration,
+    ) -> BoxFuture<AssistantResult<Value>> {
+        let (runtime, method) = (self.0.clone(), method.to_owned());
+        Box::pin(async move {
+            runtime
+                .herdr_call(&method, params, timeout)
+                .await
+                .map_err(AssistantError::Internal)
+        })
+    }
+
+    fn enrich_worktree_parents(&self, listed: &Value) -> Option<BoxFuture<AssistantResult<Value>>> {
+        let (runtime, listed) = (self.0.clone(), listed.clone());
+        Some(Box::pin(async move {
+            Ok(runtime.enrich_worktree_parents(listed).await)
+        }))
+    }
+
+    fn enrich_git_status(&self, listed: &Value) -> Option<BoxFuture<AssistantResult<Value>>> {
+        let (runtime, listed) = (self.0.clone(), listed.clone());
+        Some(Box::pin(async move {
+            Ok(runtime.enrich_git_status(listed).await)
+        }))
+    }
+
+    fn remote_platform(&self) -> Option<String> {
+        self.0.remote_platform()
+    }
+}
+
+impl TreeConnectionManager for CoreTree {
+    fn list(&self) -> Vec<(String, String)> {
+        self.table
+            .list()
+            .into_iter()
+            .map(|(id, label, _)| (id, label))
+            .collect()
+    }
+
+    fn ready_runtime(&self, id: &str) -> Option<Arc<dyn TreeConnectionRuntime>> {
+        let ready = self
+            .table
+            .list()
+            .into_iter()
+            .any(|(each, _, ready)| each == id && ready);
+        if !ready {
+            return None;
+        }
+        super::workspace::tree_runtime(id).map(|runtime| {
+            Arc::new(CoreTreeRuntime(Arc::new(runtime))) as Arc<dyn TreeConnectionRuntime>
+        })
+    }
+}
+
+impl WorkspaceTreeToolBackend for CoreTree {
+    fn connections(
+        &self,
+        _signal: Option<tokio_util::sync::CancellationToken>,
+    ) -> BoxFuture<TreeBackendResult<Vec<TreeToolConnection>>> {
+        let manager = CoreTree {
+            table: self.table.clone(),
+        };
+        Box::pin(async move { Ok(read_workspace_tree_connections(&manager).await) })
+    }
+
+    fn read(&self) -> BoxFuture<TreeBackendResult<Value>> {
+        Box::pin(async {
+            super::workspace::tree_read()
+                .await
+                .map_err(TreeBackendError::Failed)
+        })
+    }
+
+    fn apply(&self, ops: Vec<Value>) -> BoxFuture<TreeBackendResult<Value>> {
+        Box::pin(async move {
+            super::workspace::tree_apply(ops)
+                .await
+                .map_err(|(message, refused)| {
+                    if refused {
+                        TreeBackendError::Refused(message)
+                    } else {
+                        TreeBackendError::Failed(message)
+                    }
+                })
+        })
+    }
+}
+
+// --------------------------------------------------------------- the family
 
 fn tool_result(value: Value) -> ToolResult {
     ToolResult {
@@ -568,7 +689,10 @@ impl AssistantFamily {
                     Ok(())
                 })
             });
-            options.workspace_tree = Some(reverse_tool(&cx, "assistant.workspace_tree"));
+            // The Workspaces arrangement, the workspace family's here.
+            options.workspace_tree = Some(create_workspace_tree_tool_handler(Arc::new(CoreTree {
+                table: table.clone(),
+            })));
             // The session archive, read here: the core owns it.
             options.archive = Some(archive_tool_handler(ArchiveToolDeps {
                 settings: Arc::new(|| super::archive::settings(&ProcessEnv)),

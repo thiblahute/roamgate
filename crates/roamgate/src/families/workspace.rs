@@ -71,7 +71,84 @@ pub const FAMILY: &str = "workspace";
 
 /// The family, once this build implements it.
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
-    Some(Arc::new(WorkspaceFamily(Arc::new(Inner::default()))))
+    let inner = Arc::new(Inner::default());
+    *SHARED.lock().unwrap() = Arc::downgrade(&inner);
+    Some(Arc::new(WorkspaceFamily(inner)))
+}
+
+/// The family's state, for Ranger's Workspaces tools in the assistant
+/// family (same process): the arrangement and the connections' lists.
+static SHARED: Mutex<std::sync::Weak<Inner>> = Mutex::new(std::sync::Weak::new());
+
+fn shared() -> Result<Arc<Inner>, String> {
+    SHARED
+        .lock()
+        .unwrap()
+        .upgrade()
+        .ok_or_else(|| "the workspace family is not running".to_owned())
+}
+
+/// The arrangement as the store holds it (`readWorkspaceTree`), while the
+/// core owns the family.
+pub(crate) async fn tree_read() -> Result<Value, String> {
+    let tree = shared()?.tree().map_err(|error| error.message)?;
+    Ok(tree.store.read().await)
+}
+
+/// Every operation in one write, pushed to the browsers as the sidebar's
+/// (`applyWorkspaceTreeOps`); a refusal of the arrangement's own is
+/// `Err((message, true))`, anything else `Err((message, false))`.
+pub(crate) async fn tree_apply(ops: Vec<Value>) -> Result<Value, (String, bool)> {
+    let tree = shared()
+        .map_err(|error| (error, false))?
+        .tree()
+        .map_err(|error| (error.message, false))?;
+    tree.store
+        .apply_ops(&ops)
+        .await
+        .map_err(|error| match error {
+            tree_store::StoreError::Tree(error) => (error.to_string(), true),
+            other => (other.to_string(), false),
+        })
+}
+
+/// A connection's runtime for Ranger's Workspaces tools: its Herdr, its
+/// worktree parents, its git status and its platform. None when the core
+/// runs no runtime of it.
+pub(crate) struct TreeRuntime(Arc<Runtime>);
+
+pub(crate) fn tree_runtime(connection_id: &str) -> Option<TreeRuntime> {
+    shared().ok()?.runtime(connection_id).map(TreeRuntime)
+}
+
+impl TreeRuntime {
+    pub(crate) async fn herdr_call(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, String> {
+        self.0
+            .conn
+            .herdr
+            .call(method, params, HerdrCallOptions::timeout(timeout))
+            .await
+    }
+
+    pub(crate) async fn enrich_worktree_parents(&self, listed: Value) -> Value {
+        self.0
+            .worktrees
+            .enrich_workspace_list(&self.0.conn, listed)
+            .await
+    }
+
+    pub(crate) async fn enrich_git_status(&self, listed: Value) -> Value {
+        self.0.status.enrich_workspaces(listed).await
+    }
+
+    pub(crate) fn remote_platform(&self) -> Option<String> {
+        self.0.conn.remote_platform.clone()
+    }
 }
 
 /// What a browser hears when git.pull_request fails (index.ts: a root's

@@ -45,6 +45,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path", "mime-guess"] }
 tokio = { version = "1", features = ["fs", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
 url = "2"
