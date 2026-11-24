@@ -19,9 +19,9 @@ use roamgate_archive::search::{SearchOptions, SearchQuery, search_archive};
 use roamgate_archive::settings::{ArchiveSettings, normalize_archive_settings};
 use roamgate_base::env::{Env, ProcessEnv, roamgate_env};
 use roamgate_base::paths::DataContext;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BoxFuture, IncomingCall};
-use roamgate_sidecar::protocol::RpcError;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BoxFuture, IncomingCall};
+use roamgate_channel::protocol::RpcError;
 use serde_json::Value;
 
 pub const FAMILY: &str = "archive";
@@ -129,7 +129,7 @@ fn open(params: &Value) -> Result<Value, RpcError> {
 /// `roamgate archive ...` (the Bun CLI passes it through while Rust owns
 /// the family); returns the exit code.
 pub async fn cli(args: &[String]) -> u8 {
-    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, "cli archive");
+    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, "cli archive");
     let cli = roamgate_cli::archive::ArchiveCli::system(Arc::new(ProcessEnv));
     let mut out = roamgate_cli::archive::ProcessOutput;
     let code = cli.run(args, &mut out).await;
@@ -143,7 +143,7 @@ impl CoreFamily for ArchiveFamily {
 
     fn call(&self, _cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
         Box::pin(async move {
-            roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &call.method);
+            roamgate_channel::core::note_served(&ProcessEnv, FAMILY, &call.method);
             let params = call.params;
             let method = call.method;
             let work = move || -> Result<Value, RpcError> {

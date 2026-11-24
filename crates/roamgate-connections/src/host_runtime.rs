@@ -37,7 +37,7 @@ use crate::manager::{
 };
 use crate::node_host::{NodeLink, NodeOptions, NodeSlot, NodeStart};
 use crate::subscription_loop::{EventSubscriptionLoop, LoopSubscription, SubscriptionLoopArgs};
-use roamgate_sidecar::node::{CLIENT_SOCKET, CONTROL_SOCKET};
+use roamgate_channel::node::{CLIENT_SOCKET, CONTROL_SOCKET};
 
 /// The Herdr events a runtime subscribes to (runtime.ts `DEFAULT_EVENTS`).
 pub const DEFAULT_EVENTS: &[&str] = &[

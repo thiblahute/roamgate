@@ -27,6 +27,9 @@ use futures_util::future::BoxFuture as FutureBox;
 use roamgate_base::clock::SharedClock;
 use roamgate_base::env::{Env, ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogLevel, Logger, LoggerOptions, parse_log_level};
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BoxFuture, IncomingCall};
+use roamgate_channel::protocol::RpcError;
 use roamgate_connections::host_ops::{HoldRegistry, HostCommand, HostOps, HostWait};
 use roamgate_connections::host_runtime::{
     HostEvent, HostHooks, HostRuntime, HostRuntimeArgs, Probe, RuntimeStart, TransportExit,
@@ -52,20 +55,12 @@ use roamgate_exec::process::ProcessRunner;
 use roamgate_exec::ssh::master::{SweepOptions, ssh_runtime_directory_root};
 use roamgate_exec::ssh::sessions::SshSessions;
 use roamgate_exec::ssh::tunnel::{SshTunnelConfig, TunnelDeps};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BoxFuture, IncomingCall};
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
 pub const FAMILY: &str = "host";
 
-/// The family, once this build implements it.
-pub fn family() -> Option<Arc<dyn CoreFamily>> {
-    Some(family_with_handle().0)
-}
-
-/// The family, and what the standalone core's front family reads of it.
+/// The family, and what the core's front family reads of it.
 pub fn family_with_handle() -> (Arc<dyn CoreFamily>, HostHandle) {
     let inner = Arc::new(Inner {
         state: Mutex::default(),
@@ -746,7 +741,7 @@ impl CoreFamily for HostFamily {
             match call.method.as_str() {
                 "internal.host.start" => {
                     // The parity suite's proof that the core took the connections.
-                    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, "internal.host.start");
+                    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, "internal.host.start");
                     inner.start(&cx, &params).await
                 }
                 "internal.host.stop" => Ok(inner.stop().await),

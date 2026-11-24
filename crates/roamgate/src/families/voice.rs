@@ -3,24 +3,18 @@
 //! routes (status, settings, speech, voices, setup, low-GPU, the call
 //! handoff's redeem and the companion's routes), with the helper, the
 //! voice socket the routes read the running call from, the companion
-//! layer, and `roamgate voice` and `roamgate setup voice` passed through by
-//! the Bun CLI.
+//! layer, and `roamgate voice` and `roamgate setup voice`.
 //!
-//! Behind the Rust front the core serves the voice socket and a call's
-//! signalling while it owns the family ([`super::voice_socket`], on the
-//! Rust core's link to the front); behind the Bun front every browser
-//! WebSocket is Bun's (contract/wire/core-channel.md), so the family flips
-//! only behind the Rust front. What the companion needs of what Bun owns comes by reverse
-//! call: the sessions its errands go to (`voice.errand_read`,
-//! `voice.errand_prompt`, `voice.errand_status`), the Work board's user
-//! tools and states (`voice.work_tool`, `voice.work_states`, Bun's board or
-//! the core's, as Bun's own companion has them) and a new login for a
-//! handed-off call (`voice.session_cookie`).
+//! The core serves the voice socket and a call's signalling
+//! ([`super::voice_socket`], sent by the front on the channel). What the
+//! companion needs of the other families comes by reverse call: the
+//! sessions its errands go to (`voice.errand_read`, `voice.errand_prompt`,
+//! `voice.errand_status`), the Work board's user tools and states
+//! (`voice.work_tool`, `voice.work_states`) and a new login for a
+//! handed-off call (`voice.session_cookie`, the front's).
 //!
-//! One helper at a time: taking the family, the core asks Bun to stop its
-//! own voice first (`voice.release`) and serves nothing that may start its
-//! helper before Bun did; giving it back, it stops its helper, watches and
-//! companion when the front asks (`internal.voice.release`).
+//! One helper at a time: the family starts its helper, watches and
+//! companion when it starts serving, and stops them when it stops.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -29,9 +23,9 @@ use futures_util::FutureExt;
 use futures_util::future::{BoxFuture as FutureBox, Shared};
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
-use roamgate_sidecar::protocol::RpcError;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
+use roamgate_channel::protocol::RpcError;
 use roamgate_voice_server::companion::answers::answers_dir;
 use roamgate_voice_server::companion::claude::{ClaudeCommand, ResolveCommand};
 use roamgate_voice_server::companion::errands::{
@@ -703,11 +697,11 @@ impl ErrandDeps for KeepingErrands {
 
 struct VoiceFamily {
     server: OnceLock<Arc<VoiceServer>>,
-    /// Bun's voice released (`voice.release`) since the core took the
-    /// family: everything that may start the helper waits for it.
+    /// The family's start: everything that may start the helper waits for
+    /// it.
     ready: Mutex<Option<Shared<BoxFuture<()>>>>,
-    /// Counts the takes and releases: a late release's end starts nothing
-    /// once the family moved again.
+    /// Counts the starts and stops: a late start does nothing once the
+    /// family stopped.
     turn: Arc<AtomicU64>,
 }
 
@@ -718,9 +712,8 @@ impl VoiceFamily {
             .clone()
     }
 
-    /// Settles once Bun's helper, watches and companion stopped for the
-    /// core's (at once while the core never took the family): one helper,
-    /// never two.
+    /// Settles once the family started (at once before it was ever
+    /// started): one helper, never two.
     pub fn ready(&self) -> Shared<BoxFuture<()>> {
         let ready = self.ready.lock().unwrap().clone();
         ready.unwrap_or_else(|| {
@@ -829,7 +822,7 @@ impl CoreFamily for VoiceFamily {
         let cx = cx.clone();
         Box::pin(async move {
             ready.await;
-            roamgate_sidecar::core::note_served(
+            roamgate_channel::core::note_served(
                 &ProcessEnv,
                 "voice",
                 &format!("http {}", path_of(&request.url)),
@@ -841,16 +834,6 @@ impl CoreFamily for VoiceFamily {
     }
 
     fn call(&self, cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
-        if call.method == "internal.voice.release" {
-            // Bun takes voice back: the core's helper and watches stop
-            // before Bun may start its own.
-            self.ready.lock().unwrap().take();
-            self.turn.fetch_add(1, Ordering::SeqCst);
-            if let Some(server) = self.server.get() {
-                server.stop();
-            }
-            return Box::pin(async { Ok(json!({})) });
-        }
         let _ = cx;
         Box::pin(async move {
             Err(RpcError::with_code(
@@ -863,12 +846,12 @@ impl CoreFamily for VoiceFamily {
     fn ws_open(
         &self,
         cx: &FamilyContext,
-        link: &roamgate_sidecar::peer::Peer,
-        open: roamgate_sidecar::peer::WsOpen,
+        link: &roamgate_channel::peer::Peer,
+        open: roamgate_channel::peer::WsOpen,
     ) -> BoxFuture<Result<Value, RpcError>> {
         let server = self.server(cx);
         let link = link.clone();
-        // Bun's helper released first, as for the routes.
+        // Once started, as for the routes.
         let ready = self.ready();
         Box::pin(async move {
             ready.await;
@@ -879,8 +862,8 @@ impl CoreFamily for VoiceFamily {
     fn ws_socket(
         &self,
         cx: &FamilyContext,
-        _link: &roamgate_sidecar::peer::Peer,
-        message: roamgate_sidecar::protocol::Message,
+        _link: &roamgate_channel::peer::Peer,
+        message: roamgate_channel::protocol::Message,
     ) {
         self.server(cx).sockets.message(message);
     }
@@ -888,15 +871,10 @@ impl CoreFamily for VoiceFamily {
     fn owned(&self, cx: &FamilyContext, owned: bool) {
         let server = self.server(cx);
         if owned {
-            // Bun's helper, watches and companion stop first, as the
-            // assistant family's service does.
-            let (cx, started) = (cx.clone(), server.clone());
+            let started = server.clone();
             let turn = self.turn.clone();
             let this_turn = turn.fetch_add(1, Ordering::SeqCst) + 1;
             let release: BoxFuture<()> = Box::pin(async move {
-                if let Err(error) = cx.reverse("voice.release", json!({})).await {
-                    tracing::warn!("Bun did not release voice: {}", error.message);
-                }
                 if turn.load(Ordering::SeqCst) == this_turn {
                     started.start();
                 }
@@ -962,7 +940,7 @@ pub fn family() -> Option<Arc<dyn CoreFamily>> {
 
 /// `roamgate voice ...`; returns the exit code.
 pub fn cli(args: &[String]) -> u8 {
-    roamgate_sidecar::core::note_served(&ProcessEnv, "voice", "cli voice");
+    roamgate_channel::core::note_served(&ProcessEnv, "voice", "cli voice");
     let runtime = cli_runtime(Arc::new(ProcessEnv));
     emit(roamgate_cli::voice::voice(&runtime, args))
 }
@@ -973,7 +951,7 @@ pub fn cli(args: &[String]) -> u8 {
 /// words, or none, are refused as the Bun CLI did.
 pub async fn setup_cli(args: &[String]) -> u8 {
     if args.first().map(String::as_str) == Some("voice") {
-        roamgate_sidecar::core::note_served(&ProcessEnv, "voice", "cli setup voice");
+        roamgate_channel::core::note_served(&ProcessEnv, "voice", "cli setup voice");
     }
     let runtime = cli_runtime(Arc::new(ProcessEnv));
     let deps = roamgate_cli::setup_voice::SetupCommandDeps::system();

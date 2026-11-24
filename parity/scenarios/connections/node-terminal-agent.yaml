@@ -7,7 +7,6 @@ description: >
   on the path the review client setup prints and streams each connection
   back to the connection's agent socket here, with no `ssh -O forward -R`
   (contract/wire/node-link.md, Socket streams and node.listen).
-fronts: [rust-only]
 server:
   start: false
   herdr: false

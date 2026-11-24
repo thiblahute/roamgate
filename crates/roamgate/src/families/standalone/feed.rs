@@ -14,9 +14,9 @@ use std::time::Duration;
 
 use roamgate_base::clock::SharedClock;
 use roamgate_base::log::Logger;
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::peer::Peer;
-use roamgate_sidecar::protocol::{Ctx, Message};
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::peer::Peer;
+use roamgate_channel::protocol::{Ctx, Message};
 use serde_json::{Map, Value, json};
 
 use super::{fields, logger};
@@ -592,10 +592,8 @@ impl Feed {
             }),
         );
         reply(json!({"ok": true}));
-        if let Some(tag) = event.get("tag").and_then(Value::as_str)
-            && let Some(standalone) = &self.cx.standalone
-        {
-            let call = standalone.call(
+        if let Some(tag) = event.get("tag").and_then(Value::as_str) {
+            let call = self.cx.standalone.call(
                 "internal.notifications.clear_tag",
                 json!({"tag": tag}),
                 Ctx::default(),

@@ -29,6 +29,9 @@ use std::time::Duration;
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
 use roamgate_base::settings::Settings;
+use roamgate_channel::family::{CoreFamily, FamilyContext, Reply};
+use roamgate_channel::peer::{BoxFuture, IncomingCall};
+use roamgate_channel::protocol::{Push, RpcError};
 use roamgate_forge::complexity::Provider;
 use roamgate_forge::hosts::{discover_forge_hosts, gh_hosts_path, glab_config_path};
 use roamgate_mr_reviews::agent_remote::RemoteDriver;
@@ -44,9 +47,6 @@ use roamgate_mr_reviews::module::{
 use roamgate_mr_reviews::open::DefaultConnection;
 use roamgate_mr_reviews::rpc::RpcError as ReviewsError;
 use roamgate_mr_reviews::store::{MrStore, state_path};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext, Reply};
-use roamgate_sidecar::peer::{BoxFuture, IncomingCall};
-use roamgate_sidecar::protocol::{Push, RpcError};
 use serde_json::{Map, Value, json};
 
 use super::activity::settings_file;
@@ -674,12 +674,8 @@ impl CoreFamily for MrReviewsFamily {
         cx: &FamilyContext,
         call: IncomingCall,
     ) -> BoxFuture<Result<Reply, RpcError>> {
-        let reviews = self
-            .reviews()
-            .filter(|_| cx.owners.check_write(FAMILY).is_ok());
-        let (Some(reviews), "bridge.mr_reviews.inbox", false) =
-            (reviews, call.method.as_str(), call.shadow)
-        else {
+        let reviews = self.reviews();
+        let (Some(reviews), "bridge.mr_reviews.inbox") = (reviews, call.method.as_str()) else {
             let answer = self.call(cx, call);
             return Box::pin(async move { answer.await.map(Reply::Value) });
         };
@@ -703,24 +699,15 @@ impl CoreFamily for MrReviewsFamily {
         let agent = lock(&self.agent).clone();
         let cx = cx.clone();
         Box::pin(async move {
-            // Served by Rust only while it owns the family (a shadow read
-            // while Bun does is refused: an inbox read may ask the forges).
-            let Some(reviews) = reviews.filter(|_| cx.owners.check_write(FAMILY).is_ok()) else {
-                // A shadow read is declined, not answered with a refusal the
-                // front would log as a difference.
-                if call.shadow {
-                    return Err(RpcError::with_code(
-                        "the core does not own the reviews",
-                        "shadow_declined",
-                    ));
-                }
+            // Served once the family started.
+            let Some(reviews) = reviews else {
                 return Err(not_owner());
             };
             if call
                 .method
-                .starts_with(roamgate_sidecar::family::INTERNAL_PREFIX)
+                .starts_with(roamgate_channel::family::INTERNAL_PREFIX)
             {
-                roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &call.method);
+                roamgate_channel::core::note_served(&ProcessEnv, FAMILY, &call.method);
             }
             // What the reviews agent's turn reports, and its tools' calls.
             match (call.method.as_str(), agent) {

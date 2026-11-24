@@ -1,25 +1,24 @@
 //! The update family in the core (see [`super`]): `/api/update/check`,
-//! `/api/update/install`, and `roamgate update` / `roamgate rollback`
-//! passed through by the Bun CLI, all roamgate-cli's code.
+//! `/api/update/install`, and `roamgate update` / `roamgate rollback`, all
+//! roamgate-cli's code.
 //!
-//! The executable an update replaces is the front's (the Bun binary the
-//! service runs): the Bun server gives its core `ROAMGATE_CLI_EXEC`,
-//! `ROAMGATE_CLI_VERSION` and `ROAMGATE_CLI_STANDALONE`, as the Bun CLI does
-//! for a pass-through. After an install the front exits for its supervisor
-//! through the reverse target `server.scheduleExit`.
+//! The executable an update replaces is the front's (the binary the
+//! service runs): the front gives its core `ROAMGATE_CLI_EXEC` and
+//! `ROAMGATE_CLI_STANDALONE`. After an install the front exits for its
+//! supervisor through the reverse target `server.scheduleExit`.
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use roamgate_base::env::{Env, ProcessEnv};
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse};
+use roamgate_channel::protocol::RpcError;
 use roamgate_cli::commands::{CliRuntime, Effects};
 use roamgate_cli::update::system_run_process;
 use roamgate_cli::update_http::{UpdateHandlers, UpdateRuntime, has_update_confirmation};
 use roamgate_exec::process::ProcessRunner;
 use roamgate_exec::service::{SystemCommands, node_arch, node_platform};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse};
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 
 /// The front's executable: the variables its front set, else this one.
@@ -38,10 +37,7 @@ pub fn front_executable(env: &dyn Env) -> FrontExecutable {
         .unwrap_or_default();
     FrontExecutable {
         path,
-        version: env
-            .var("ROAMGATE_CLI_VERSION")
-            .filter(|version| !version.is_empty())
-            .unwrap_or_else(|| crate::VERSION.to_owned()),
+        version: crate::VERSION.to_owned(),
         standalone: env.var("ROAMGATE_CLI_STANDALONE").as_deref() != Some("0"),
     }
 }
@@ -183,7 +179,7 @@ pub fn emit(printed: roamgate_cli::output::Printed) -> u8 {
 /// `roamgate update ...` and `roamgate rollback ...` (`command` is which);
 /// returns the exit code.
 pub async fn cli(command: &str, args: &[String]) -> u8 {
-    roamgate_sidecar::core::note_served(&ProcessEnv, "update", &format!("cli {command}"));
+    roamgate_channel::core::note_served(&ProcessEnv, "update", &format!("cli {command}"));
     let runtime = cli_runtime(Arc::new(ProcessEnv));
     let effects = Effects {
         run_process: system_run_process(ProcessRunner::system()),

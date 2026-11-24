@@ -1,9 +1,9 @@
-//! The Rust front's router against a fake core on a real channel.
+//! The front's router against a fake core on a real channel.
 
 use std::sync::Mutex as StdMutex;
 
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpResponse, PeerOptions};
-use roamgate_sidecar::protocol::RpcError;
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpResponse, PeerOptions};
+use roamgate_channel::protocol::RpcError;
 use serde_json::json;
 
 use super::*;
@@ -40,7 +40,7 @@ impl Handler for FakeCore {
                 "body": body,
             });
             let mut response = HttpResponse::status(207);
-            response.headers = vec![("x-core".into(), "bun".into())];
+            response.headers = vec![("x-core".into(), "core".into())];
             let (tx, rx) = tokio::sync::mpsc::channel(1);
             tx.send(echo.to_string().into_bytes()).await.unwrap();
             response.body = Some(rx);
@@ -53,7 +53,7 @@ impl Handler for FakeCore {
         Box::pin(async move {
             if !open.url.starts_with("/ws") {
                 return Ok(
-                    json!({"accepted": false, "status": 403, "headers": [["x-core", "bun"]], "body": "forbidden"}),
+                    json!({"accepted": false, "status": 403, "headers": [["x-core", "core"]], "body": "forbidden"}),
                 );
             }
             // Sent before the handshake is done: held by the front.
@@ -111,8 +111,8 @@ async fn setup_with(with_core: bool, node_origins: NodeOrigins) -> Setup {
             Box::new(front_end),
             Arc::new(FrontHandler {
                 sockets: sockets.clone(),
-                schedule_exit: None,
-                session_cookie: None,
+                schedule_exit: Arc::new(|| {}),
+                session_cookie: Arc::new(|| None),
             }),
             PeerOptions::core(shared(&clock)),
         );
@@ -246,7 +246,7 @@ async fn serves_the_web_app_itself_and_forwards_the_rest_to_the_core() {
         )
         .await;
     assert_eq!(forwarded.status(), 207);
-    assert_eq!(forwarded.headers()["x-core"], "bun");
+    assert_eq!(forwarded.headers()["x-core"], "core");
     let echo: Value = serde_json::from_str(&text(forwarded).await).unwrap();
     assert_eq!(
         echo,
@@ -353,7 +353,7 @@ async fn browser_sockets_are_terminated_here_and_driven_by_the_core() {
 }
 
 #[tokio::test]
-async fn a_standalone_core_s_schedule_exit_is_the_front_s_and_nothing_else() {
+async fn the_core_s_schedule_exit_is_the_front_s_and_nothing_else() {
     let clock = ManualClock::at(NOW);
     let exits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let (front_end, core_end) = tokio::io::duplex(1 << 16);
@@ -362,10 +362,10 @@ async fn a_standalone_core_s_schedule_exit_is_the_front_s_and_nothing_else() {
         Box::new(front_end),
         Arc::new(FrontHandler {
             sockets: Sockets::default(),
-            schedule_exit: Some(Arc::new(move || {
+            schedule_exit: Arc::new(move || {
                 counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            })),
-            session_cookie: None,
+            }),
+            session_cookie: Arc::new(|| None),
         }),
         PeerOptions::front(shared(&clock)),
     );

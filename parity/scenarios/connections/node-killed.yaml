@@ -6,7 +6,6 @@ description: >
   agent socket is forwarded again with `ssh -O forward -R` on the master,
   and the link is started again a second later, which moves the agent
   socket back to the node (contract/wire/node-link.md, Fallback).
-fronts: [rust-only]
 server:
   start: false
   herdr: false

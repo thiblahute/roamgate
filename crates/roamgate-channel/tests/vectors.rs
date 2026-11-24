@@ -1,11 +1,9 @@
-//! contract/vectors/core-channel.json, replayed against this crate as
-//! `bun test` replays it against server/src/core-channel/protocol.ts.
+//! contract/vectors/core-channel.json, replayed against this crate.
 
-use roamgate_protocol::vectors::{self, Call};
-use roamgate_sidecar::protocol::{
-    CoreState, Families, OutboundQueue, OwnerMap, Side, decode_body, encode_body, encode_message,
-    family_of, http_family_of, route_http, route_rpc, shadow_diff, shadow_side,
+use roamgate_channel::protocol::{
+    Families, OutboundQueue, decode_body, encode_body, encode_message, family_of, http_family_of,
 };
+use roamgate_protocol::vectors::{self, Call};
 use serde_json::{Value, json};
 
 fn bytes(value: &Value) -> Vec<u8> {
@@ -22,28 +20,6 @@ fn bytes_value(data: &[u8]) -> Value {
 
 fn families(value: &Value) -> Families {
     serde_json::from_value(value.clone()).unwrap()
-}
-
-fn owners(value: &Value) -> OwnerMap {
-    value.as_object().cloned().unwrap()
-}
-
-fn core(value: &Value) -> CoreState {
-    serde_json::from_value(value.clone()).unwrap()
-}
-
-fn side(side: Side) -> Value {
-    json!(side.as_str())
-}
-
-fn routing_args(args: &[Value]) -> (String, Families, OwnerMap, CoreState, bool) {
-    (
-        args[0].as_str().unwrap().to_owned(),
-        families(&args[1]),
-        owners(&args[2]),
-        core(&args[3]),
-        args[4].as_bool().unwrap(),
-    )
 }
 
 fn call_fn(call: &Call) -> Value {
@@ -68,24 +44,6 @@ fn call_fn(call: &Call) -> Value {
                 &families(&args[1])
             ))
         }
-        "coreChannel.routeRpc" => {
-            let (method, families, owners, core, test) = routing_args(args);
-            side(route_rpc(&method, &families, &owners, &core, test))
-        }
-        "coreChannel.routeHttp" => {
-            let (path, families, owners, core, test) = routing_args(args);
-            side(route_http(&path, &families, &owners, &core, test))
-        }
-        "coreChannel.shadowSide" => {
-            let (method, families, owners, core, test) = routing_args(args);
-            shadow_side(&method, &families, &owners, &core, test).map_or(Value::Null, side)
-        }
-        "coreChannel.shadowDiff" => serde_json::to_value(shadow_diff(
-            &args[0],
-            &args[1],
-            args[2].as_u64().unwrap() as usize,
-        ))
-        .unwrap(),
         other => panic!("no Rust counterpart for {other}"),
     }
 }

@@ -1,18 +1,14 @@
-//! The `front` family of a standalone core (contract/wire/core-channel.md,
-//! The standalone core): what the Bun server answered itself, in the core
-//! of a Rust front that runs no Bun.
+//! The core's `front` family (contract/wire/core-channel.md, The front
+//! family): what no other family declares.
 //!
 //! - `/ws`: each socket's browser (hello, the forwards registry), its RPCs
 //!   checked and routed to their connection (roamgate-connections routing,
 //!   roamgate-http browser_rpc), then to the family that declares the
 //!   method; `bridge.ping`, `bridge.status` and `bridge.pause_others`; the
-//!   browser RPCs Bun answered with its own code
-//!   ([`super::standalone::browser`]: the other methods of a connection
-//!   pass through to its Herdr with Bun's overlays, topology lists as
-//!   deltas, roamgate-http list_delta). The methods Bun answered with its
-//!   own code that are not served yet would be refused as
-//!   `standalone_unported`, named in the served log; the terminal RPCs
-//!   are the generation's terminal bridge's.
+//!   browser RPCs of no family ([`super::standalone::browser`]: the other
+//!   methods of a connection pass through to its Herdr with the server's
+//!   overlays, topology lists as deltas, roamgate-http list_delta); the
+//!   terminal RPCs are the generation's terminal bridge's.
 //! - `/api/notifications/ws`: the notification feed's sockets
 //!   ([`super::standalone::feed`]).
 //! - HTTP: `/api/health`, and the connection-scoped routes
@@ -21,12 +17,11 @@
 //!   their families at their legacy paths, the uploads
 //!   ([`super::standalone::uploads`]).
 //! - The core's pushes, delivered to the `/ws` sockets.
-//! - Reverse targets in the process: the handovers' (a family taken from
-//!   Bun has it let go of its part first: nothing to let go of here), and
-//!   the rest of what the families asked Bun ([`super::standalone`]),
-//!   among them what the host family asks of the front for each
-//!   generation, its composition root included (terminal bridge, task
-//!   events, tab renamer, forwards, uploads, an SSH host's review agent).
+//! - Reverse targets in the process: what the families ask of the server
+//!   ([`super::standalone`]), among them what the host family asks for
+//!   each generation, its composition root included (terminal bridge,
+//!   task events, tab renamer, forwards, uploads, an SSH host's review
+//!   agent).
 //! - The front's calls: `internal.front.start` (the server's configuration;
 //!   the connections start) and `internal.front.stop` (they stop, at the
 //!   front's shutdown).
@@ -38,6 +33,14 @@ use std::time::{Duration, Instant};
 use roamgate_base::clock::SharedClock;
 use roamgate_base::env::{ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogFields, LogLevel, Logger, LoggerOptions, parse_log_level};
+use roamgate_channel::core::FRONT_FAMILY;
+use roamgate_channel::declared::families as declared_families;
+use roamgate_channel::family::{CoreFamily, FamilyContext, Reply};
+use roamgate_channel::peer::{
+    BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall, Peer, WsOpen,
+};
+use roamgate_channel::protocol::{Ctx, Message, RpcError, family_of};
+use roamgate_channel::standalone::Standalone;
 use roamgate_connections::host_runtime::HostRuntime;
 use roamgate_connections::manager::{ConnectionManager, LEGACY_DEFAULT_CONNECTION_ID};
 use roamgate_connections::routing::{
@@ -50,14 +53,6 @@ use roamgate_http::browser_rpc::{
     parse_request, route_request,
 };
 use roamgate_http::list_delta::{ListDeltas, shape_of};
-use roamgate_sidecar::core::FRONT_FAMILY;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext, Reply};
-use roamgate_sidecar::owners::families as declared_families;
-use roamgate_sidecar::peer::{
-    BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall, Peer, WsOpen,
-};
-use roamgate_sidecar::protocol::{Ctx, Message, RpcError, family_of};
-use roamgate_sidecar::standalone::Standalone;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 
@@ -168,10 +163,8 @@ impl ClientSink for PeerSink {
     }
 }
 
-fn standalone(cx: &FamilyContext) -> Result<&Arc<Standalone>, RpcError> {
-    cx.standalone
-        .as_ref()
-        .ok_or_else(|| RpcError::new("the front family runs in a standalone core only"))
+fn standalone(cx: &FamilyContext) -> &Arc<Standalone> {
+    &cx.standalone
 }
 
 fn json_response(status: u16, body: &Value, headers: Vec<(String, String)>) -> HttpResponse {
@@ -325,7 +318,7 @@ impl Inner {
             },
             "explicit_legacy_override": explicit_legacy_override,
         });
-        let standalone = standalone(cx)?.clone();
+        let standalone = standalone(cx).clone();
         // A node records no activity, has no settings of its own and no
         // review agents: the home's.
         let node = roamgate_base::node::active();
@@ -368,9 +361,7 @@ impl Inner {
     }
 
     fn register(self: &Arc<Self>, cx: &FamilyContext) {
-        let Some(standalone) = &cx.standalone else {
-            return;
-        };
+        let standalone = &cx.standalone;
         let clients = self
             .clients
             .get_or_init(|| Arc::new(BrowserClients::new(Arc::new(PeerSink(cx.peer.clone())))))
@@ -381,21 +372,6 @@ impl Inner {
         // A node's notifications are the home's feed.
         if !node {
             super::standalone::feed::register(cx);
-        }
-        // A family taken from Bun first has it let go of its part: with no
-        // Bun, there is nothing to let go of.
-        for target in [
-            "assistant.release",
-            "history.release",
-            "mr_cache.release",
-            "review.release",
-            "review.socketsTaken",
-            "voice.release",
-        ] {
-            standalone.register(
-                target,
-                Arc::new(|_, _, _| Box::pin(async { Ok(json!({"ok": true})) })),
-            );
         }
         let layer = self
             .layer
@@ -581,7 +557,8 @@ impl Inner {
         bridge_logger().debug("client disconnected", Some(&fields));
         self.client_count_changed(clients.len());
         // The families' state of the socket goes with it.
-        if let Some(standalone) = &cx.standalone {
+        {
+            let standalone = &cx.standalone;
             let closed = standalone.call(
                 "internal.activity.signals",
                 json!({"signals": [{"op": "socket_closed", "ts": cx.clock.now(), "socket_id": socket_id}]}),
@@ -717,9 +694,7 @@ impl Inner {
             let error = crate::node::served_by_home(method);
             return send(publisher.error(&error.message, error.code.as_deref(), "node-refused"));
         }
-        let Ok(standalone) = standalone(cx) else {
-            return send(publisher.error("no standalone core", None, "core-error"));
-        };
+        let standalone = standalone(cx);
         // A family's method: it answers.
         if family_of(method, declared_families()).is_some_and(|family| family != FRONT_FAMILY) {
             // The user's own turn, as Bun's chat handler noted it.
@@ -946,7 +921,7 @@ impl Inner {
                 forwarded.url = format!("{}{query}", route.endpoint.legacy_path());
                 forwarded.ctx.connection_id = Some(resolved.lease.connection_id.clone());
                 forwarded.ctx.connection_generation = Some(resolved.lease.generation);
-                match standalone(cx)?.http(forwarded, body).await {
+                match standalone(cx).http(forwarded, body).await {
                     Ok(response) => response,
                     Err(error) => json_response(500, &json!({"error": error.message}), Vec::new()),
                 }
@@ -985,7 +960,7 @@ impl Inner {
         cx: &FamilyContext,
         resolved: &Resolved,
     ) -> Result<HttpResponse, RpcError> {
-        let answer = standalone(cx)?
+        let answer = standalone(cx)
             .call(
                 "internal.host.herdr_call",
                 json!({
@@ -1057,7 +1032,7 @@ impl CoreFamily for FrontFamily {
             match call.method.as_str() {
                 "internal.front.start" => inner.start(&cx, &call.params),
                 "internal.front.stop" => {
-                    standalone(&cx)?
+                    standalone(&cx)
                         .call("internal.host.stop", json!({}), Ctx::default())
                         .await
                 }

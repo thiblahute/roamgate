@@ -6,21 +6,19 @@
 // Tests wait on real time; the server code reads it through its Clock.
 #![allow(clippy::disallowed_methods)]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use roamgate_base::clock::{SharedClock, SystemClock};
-use roamgate_sidecar::core::run_core;
-use roamgate_sidecar::peer::{
+use roamgate_channel::core::run_core;
+use roamgate_channel::peer::{
     BoxFuture, Handler, HandshakeError, HttpRequest, IncomingCall, Peer, PeerOptions, accept_hello,
     say_hello,
 };
-use roamgate_sidecar::protocol::{
-    BODY_WINDOW, Ctx, Message, PROTOCOL, Push, RpcError, ShadowSettings, Side,
-};
-use roamgate_sidecar::transport::{BoxStream, Listener};
+use roamgate_channel::protocol::{BODY_WINDOW, Ctx, Message, PROTOCOL, Push, RpcError};
+use roamgate_channel::transport::{BoxStream, Listener};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
@@ -33,9 +31,6 @@ fn clock() -> SharedClock {
 fn welcome(_: &Message) -> Message {
     Message::Welcome {
         protocol: PROTOCOL,
-        side: Side::Bun,
-        owners: BTreeMap::new(),
-        shadow: ShadowSettings::default(),
         clock: None,
         raw_data: false,
         node: None,
@@ -46,7 +41,6 @@ fn hello(token: &str, protocol: u32) -> Message {
     Message::Hello {
         protocol,
         token: token.into(),
-        side: Side::Rust,
         version: "test".into(),
         pid: 1,
         families: vec![],
@@ -59,7 +53,7 @@ fn pair() -> (BoxStream, BoxStream) {
     (Box::new(a), Box::new(b))
 }
 
-/// The front of these tests: records pushes, answers `test.echo`.
+/// The front of these tests: records pushes and socket messages.
 #[derive(Default)]
 struct Front {
     pushes: Mutex<Vec<Push>>,
@@ -68,22 +62,6 @@ struct Front {
 }
 
 impl Handler for Front {
-    fn reverse_call(
-        &self,
-        _peer: &Peer,
-        target: String,
-        args: Value,
-        ctx: Ctx,
-    ) -> BoxFuture<Result<Value, RpcError>> {
-        Box::pin(async move {
-            if target == "test.echo" {
-                Ok(json!({"args": args, "ctx": ctx}))
-            } else {
-                Err(RpcError::with_code("no", "unknown_target"))
-            }
-        })
-    }
-
     fn push(&self, push: Push) {
         self.pushes.lock().unwrap().push(push);
         self.pushed.notify_waiters();
@@ -135,7 +113,7 @@ async fn start_core(test: bool, token: &str) -> Result<Running, (HandshakeError,
 async fn start_core_with(
     test: bool,
     token: &str,
-    families: roamgate_sidecar::family::Families,
+    families: roamgate_channel::family::Families,
     welcome: fn(&Message) -> Message,
 ) -> Result<Running, (HandshakeError, u8)> {
     let dir = tempfile::tempdir().unwrap();
@@ -185,18 +163,17 @@ async fn without_the_test_family_the_core_has_no_family() {
     let Message::Hello {
         families,
         test,
-        side,
         version,
         ..
     } = &running.hello
     else {
         panic!()
     };
-    assert_eq!((families.len(), *test, *side), (0, false, Side::Rust));
+    assert_eq!((families.len(), *test), (0, false));
     assert_eq!(version, "9.9.9");
     let error = running
         .front
-        .call("test.echo.read", json!({}), Ctx::default(), false)
+        .call("test.echo.read", json!({}), Ctx::default())
         .await
         .unwrap_err();
     assert_eq!(error.code.as_deref(), Some("unknown_method"));
@@ -237,7 +214,7 @@ async fn the_test_family_over_the_channel() {
 
     // A call and its context.
     let read = front
-        .call("test.echo.read", json!({"x": 1}), ctx.clone(), false)
+        .call("test.echo.read", json!({"x": 1}), ctx.clone())
         .await
         .unwrap();
     assert_eq!(
@@ -245,9 +222,9 @@ async fn the_test_family_over_the_channel() {
         json!({"params": {"x": 1}, "ctx": {"connection_id": "c1", "connection_generation": 2, "socket_id": 7}})
     );
 
-    // A reverse call made while answering a call.
+    // A reverse call made while answering a call, answered in the core.
     let reverse = front
-        .call("test.echo.reverse", json!({"y": 2}), ctx.clone(), false)
+        .call("test.echo.reverse", json!({"y": 2}), ctx.clone())
         .await
         .unwrap();
     assert_eq!(reverse["args"], json!({"y": 2}));
@@ -259,7 +236,6 @@ async fn the_test_family_over_the_channel() {
             "test.echo.push",
             json!({"key": "k", "count": 200, "message": {"kind": "t"}, "socket_id": 3}),
             Ctx::default(),
-            false,
         )
         .await
         .unwrap();
@@ -388,7 +364,7 @@ async fn a_dropped_call_is_cancelled_on_the_other_side() {
     );
     let gave_up = tokio::time::timeout(
         Duration::from_millis(100),
-        caller.call("slow", Value::Null, Ctx::default(), false),
+        caller.call("slow", Value::Null, Ctx::default()),
     )
     .await;
     assert!(gave_up.is_err());
@@ -402,7 +378,7 @@ async fn a_dropped_call_is_cancelled_on_the_other_side() {
     // The channel still answers.
     assert_eq!(
         caller
-            .call("fast", Value::Null, Ctx::default(), true)
+            .call("fast", Value::Null, Ctx::default())
             .await
             .unwrap(),
         json!("fast")
@@ -411,7 +387,7 @@ async fn a_dropped_call_is_cancelled_on_the_other_side() {
     caller.bye();
     caller.closed().await;
     let error = caller
-        .call("fast", Value::Null, Ctx::default(), false)
+        .call("fast", Value::Null, Ctx::default())
         .await
         .unwrap_err();
     assert_eq!(error.code.as_deref(), Some("channel_closed"));
@@ -547,17 +523,17 @@ async fn unknown_messages_are_ignored() {
     use tokio::io::AsyncWriteExt;
     let (a, mut raw) = pair();
     let peer = Peer::start(a, Arc::new(Nothing), PeerOptions::core(clock()));
-    raw.write_all(&roamgate_sidecar::protocol::encode_message(
+    raw.write_all(&roamgate_channel::protocol::encode_message(
         &json!({"t": "from_the_future", "x": 1}),
     ))
     .await
     .unwrap();
-    raw.write_all(&roamgate_sidecar::protocol::encode_message(
+    raw.write_all(&roamgate_channel::protocol::encode_message(
         &json!({"t": "ping", "n": 5}),
     ))
     .await
     .unwrap();
-    let frame = roamgate_sidecar::frames::read_frame(&mut raw, 1 << 20)
+    let frame = roamgate_channel::frames::read_frame(&mut raw, 1 << 20)
         .await
         .unwrap()
         .unwrap();
@@ -571,27 +547,27 @@ async fn unknown_messages_are_ignored() {
 }
 
 /// A family that answers its calls, counts the internal ones, records its
-/// ownership changes and reads the families' clock.
+/// starts and stops and reads the families' clock.
 #[derive(Default)]
 struct LimitFamily {
     owned: Mutex<Vec<bool>>,
 }
 
-impl roamgate_sidecar::family::CoreFamily for LimitFamily {
+impl roamgate_channel::family::CoreFamily for LimitFamily {
     fn name(&self) -> &'static str {
         "limit_resume"
     }
 
     fn call(
         &self,
-        cx: &roamgate_sidecar::family::FamilyContext,
+        cx: &roamgate_channel::family::FamilyContext,
         call: IncomingCall,
     ) -> BoxFuture<Result<Value, RpcError>> {
         let now = cx.clock.now();
         Box::pin(async move { Ok(json!({"method": call.method, "now": now})) })
     }
 
-    fn owned(&self, _cx: &roamgate_sidecar::family::FamilyContext, owned: bool) {
+    fn owned(&self, _cx: &roamgate_channel::family::FamilyContext, owned: bool) {
         self.owned.lock().unwrap().push(owned);
     }
 }
@@ -599,9 +575,6 @@ impl roamgate_sidecar::family::CoreFamily for LimitFamily {
 fn welcome_on_a_test_clock(_: &Message) -> Message {
     Message::Welcome {
         protocol: PROTOCOL,
-        side: Side::Bun,
-        owners: BTreeMap::from([("limit_resume".into(), Side::Rust)]),
-        shadow: ShadowSettings::default(),
         clock: Some(1_000_000),
         raw_data: false,
         node: None,
@@ -609,12 +582,12 @@ fn welcome_on_a_test_clock(_: &Message) -> Message {
 }
 
 #[tokio::test]
-async fn families_get_their_calls_ownership_and_the_front_s_test_clock() {
+async fn families_start_get_their_calls_and_follow_the_front_s_test_clock() {
     let family = Arc::new(LimitFamily::default());
     let Ok(running) = start_core_with(
         false,
         TOKEN,
-        vec![family.clone() as Arc<dyn roamgate_sidecar::family::CoreFamily>],
+        vec![family.clone() as Arc<dyn roamgate_channel::family::CoreFamily>],
         welcome_on_a_test_clock,
     )
     .await
@@ -627,9 +600,9 @@ async fn families_get_their_calls_ownership_and_the_front_s_test_clock() {
     assert_eq!(families, &vec!["limit_resume".to_owned()]);
     let call = |method: &'static str, params: Value| {
         let front = running.front.clone();
-        async move { front.call(method, params, Ctx::default(), false).await }
+        async move { front.call(method, params, Ctx::default()).await }
     };
-    // Owned from the welcome on.
+    // Started at the welcome.
     let reply = call("limit_resume.list", json!({})).await.unwrap();
     assert_eq!(reply["method"], "limit_resume.list");
     // A debug core follows the front's test clock.
@@ -651,24 +624,10 @@ async fn families_get_their_calls_ownership_and_the_front_s_test_clock() {
         assert_eq!(error.code.as_deref(), Some("unknown_method"), "{method}");
     }
     assert_eq!(*family.owned.lock().unwrap(), vec![true]);
-    running
-        .front
-        .owner(BTreeMap::new(), ShadowSettings::default());
-    for _ in 0..100 {
-        if family.owned.lock().unwrap().len() == 2 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert_eq!(*family.owned.lock().unwrap(), vec![true, false]);
-    running.front.owner(
-        BTreeMap::from([("limit_resume".into(), Side::Rust)]),
-        ShadowSettings::default(),
-    );
     running.front.bye();
     assert_eq!(running.core.await.unwrap(), 0);
-    // Owned again, then the channel closed: told to stop.
-    assert_eq!(family.owned.lock().unwrap().last(), Some(&false));
+    // The channel closed: told to stop.
+    assert_eq!(*family.owned.lock().unwrap(), vec![true, false]);
 }
 
 /// A core whose calls never answer (a family waiting on something slow).
@@ -693,7 +652,7 @@ async fn a_core_waiting_on_a_slow_call_keeps_the_channel_while_the_front_keeps_s
             let caller = front.clone();
             tokio::spawn(async move {
                 let _ = caller
-                    .call("limit_resume.list", json!({}), Ctx::default(), true)
+                    .call("limit_resume.list", json!({}), Ctx::default())
                     .await;
             });
             tokio::time::sleep(Duration::from_secs(5)).await;

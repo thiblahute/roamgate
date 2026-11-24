@@ -2,9 +2,9 @@
 //! `profiles.host`, runtime.ts `profileRpcDeps` and `profilePanes`), and
 //! the session choices it told the front of.
 
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_connections::agent_profiles::store::profiles_of;
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 
 use super::conversation::{launch_command, mod_deliver};

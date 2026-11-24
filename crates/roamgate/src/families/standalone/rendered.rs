@@ -11,6 +11,9 @@ use std::sync::{Arc, OnceLock};
 use bytes::Bytes;
 use futures_util::StreamExt as _;
 use roamgate_base::clock::BoxFuture;
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::peer::{BodyReceiver, HttpRequest, HttpResponse};
+use roamgate_channel::protocol::RpcError;
 use roamgate_exec::quote::shell_quote;
 use roamgate_git::GitContext;
 use roamgate_http::rendered_pages::{
@@ -20,9 +23,6 @@ use roamgate_http::rendered_pages::{
     SiteFetch, SiteRequest, SiteResponse, SiteRootChoice, SiteStorage, StorageWrite,
     rendered_address, rendered_storage_path, rendered_svg_page,
 };
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::peer::{BodyReceiver, HttpRequest, HttpResponse};
-use roamgate_sidecar::protocol::RpcError;
 use roamgate_workspace::file_download::FileDownloadOptions;
 use roamgate_workspace::file_types::{FileBody, FileDownloadResult};
 use roamgate_workspace::local_files::{DownloadFailure, download_local_file};

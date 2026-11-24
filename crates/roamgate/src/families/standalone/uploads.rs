@@ -11,12 +11,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::peer::{BodyReceiver, HttpResponse};
 use roamgate_http::terminal_upload::{
     RemoteOutput, TerminalUploads, UploadConfig, UploadRemote, image_upload_config,
     terminal_upload_max_bytes, terminal_upload_retention_hours,
 };
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::peer::{BodyReceiver, HttpResponse};
 use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 

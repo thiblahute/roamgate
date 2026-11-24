@@ -1,7 +1,7 @@
-//! server/src/agent/claude-mod-plugin.test.ts.
+//! The Claude mod plugin's install (the TS suite was
+//! server/src/agent/claude-mod-plugin.test.ts).
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 use std::process::Command;
 
 use serde_json::{Value, json};
@@ -31,36 +31,6 @@ fn the_binary_carries_the_mod_its_tests_left_out() {
     let hooks: Value =
         serde_json::from_str(claude_mod_file("roamgate/hooks/hooks.json").unwrap()).unwrap();
     assert_eq!(hooks["modules"], json!(["./register.ts"]));
-}
-
-/// The checksum is Bun's own: a host the Bun build set up is not written
-/// again by the Rust one, nor the other way round.
-#[test]
-fn the_checksum_is_the_bun_builds() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let Ok(output) = Command::new("bun")
-        .args([
-            "-e",
-            "const m = await import('./server/src/agent/claude-mod-plugin.ts'); process.stdout.write(m.CLAUDE_MOD_CHECKSUM + '\\n' + m.CLAUDE_MOD_FILES['.claude-plugin/marketplace.json'])",
-        ])
-        .current_dir(&root)
-        .output()
-    else {
-        eprintln!("bun not found: skipped");
-        return;
-    };
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let text = String::from_utf8(output.stdout).unwrap();
-    let (checksum, marketplace) = text.split_once('\n').unwrap();
-    assert_eq!(
-        marketplace,
-        claude_mod_file(".claude-plugin/marketplace.json").unwrap()
-    );
-    assert_eq!(checksum, CLAUDE_MOD_CHECKSUM.as_str());
 }
 
 #[test]

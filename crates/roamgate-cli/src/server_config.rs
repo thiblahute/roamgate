@@ -437,6 +437,9 @@ pub struct ServerConfig {
     pub profile: Option<ProfileConfig>,
     pub has_explicit_socket_path: bool,
     pub has_explicit_client_socket_path: bool,
+    /// `--open` or `OPEN_BROWSER=1`: the browser opens on the server's URL
+    /// once it listens.
+    pub open_browser_requested: bool,
 }
 
 /// `loadServerConfig` ended the process: what it printed and its code.
@@ -634,6 +637,8 @@ pub fn load_server_config_with_help(
         profile,
         has_explicit_socket_path,
         has_explicit_client_socket_path,
+        open_browser_requested: has_flag(&flags, "open")
+            || env.var("OPEN_BROWSER").as_deref() == Some("1"),
     })
 }
 

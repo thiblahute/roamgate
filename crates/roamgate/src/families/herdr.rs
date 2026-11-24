@@ -11,12 +11,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use roamgate_base::env::{Env, ProcessEnv};
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse};
+use roamgate_channel::protocol::RpcError;
 use roamgate_cli::herdr::HerdrCli;
 use roamgate_herdr::bootstrap::{Locations, Ping, SetupGuard};
 use roamgate_herdr::http::{HERDR_SETUP_CONFIRMATION_HEADER, SetupHandlers};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse};
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::json;
 
 use super::update::{front_executable, header, json_response, path_of};
@@ -111,7 +111,7 @@ pub fn family() -> Option<Arc<dyn CoreFamily>> {
 
 /// `roamgate herdr ...`; returns the exit code.
 pub async fn cli(args: &[String]) -> u8 {
-    roamgate_sidecar::core::note_served(&ProcessEnv, "herdr_setup", "cli herdr");
+    roamgate_channel::core::note_served(&ProcessEnv, "herdr_setup", "cli herdr");
     let env: Arc<dyn Env> = Arc::new(ProcessEnv);
     let cli = herdr_cli(env, Arc::new(roamgate_base::clock::SystemClock));
     super::update::emit(cli.run(args).await)

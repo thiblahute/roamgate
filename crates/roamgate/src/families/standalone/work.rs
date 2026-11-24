@@ -12,12 +12,12 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_exec::quote::shell_quote;
 use roamgate_git::GitContext;
 use roamgate_git::exec::LocalRunner;
 use roamgate_git::shell::shell_command;
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 
 use super::{Layer, Target, call, text};
@@ -148,7 +148,7 @@ pub(super) const TARGETS: &[(&str, Target)] = &[
                 .reverse_call(
                     "voice.session_cookie",
                     json!({}),
-                    roamgate_sidecar::protocol::Ctx::default(),
+                    roamgate_channel::protocol::Ctx::default(),
                 )
                 .await?;
             Ok(cookie)

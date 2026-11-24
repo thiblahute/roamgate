@@ -6,7 +6,6 @@ description: >
   node is unavailable, and the profile works as one without `node`: Herdr
   through the tunnel, host commands as ssh commands over the master
   (contract/wire/node-link.md, Fallback).
-fronts: [rust-only]
 server:
   herdr: false
   herdrs:

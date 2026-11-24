@@ -6,12 +6,12 @@
 use std::sync::Arc;
 
 use roamgate_base::node::{SERVED_BY_HOME, served_by_home_message};
-use roamgate_sidecar::family::{CoreFamily, Families, FamilyContext};
-use roamgate_sidecar::owners::families as declared_families;
-use roamgate_sidecar::peer::{
+use roamgate_channel::declared::families as declared_families;
+use roamgate_channel::family::{CoreFamily, Families, FamilyContext};
+use roamgate_channel::peer::{
     BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall, Peer, WsOpen,
 };
-use roamgate_sidecar::protocol::{RpcError, family_of};
+use roamgate_channel::protocol::{RpcError, family_of};
 use serde_json::{Value, json};
 
 use crate::families::{agent_sessions, front, host, workspace};
@@ -153,7 +153,7 @@ pub fn node_families() -> Families {
 mod tests {
     use super::*;
 
-    /// Every family the owners table declares is the node's or the
+    /// Every declared family is the node's or the
     /// home's: a new family must choose.
     #[test]
     fn every_declared_family_is_the_node_s_or_the_home_s() {

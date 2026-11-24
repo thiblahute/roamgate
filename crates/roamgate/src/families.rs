@@ -1,11 +1,9 @@
-//! The families the core serves (Rust migration plan, section 8.2; S12 on):
-//! each module wraps a family crate's code in a
-//! [`roamgate_sidecar::family::CoreFamily`], mapping its effects onto the
-//! channel (reverse calls into what Bun still owns, pushes to browsers).
-//! Temporary like the channel: at the cut-over the families are served
-//! directly and these adapters go.
+//! The families the core serves: each module wraps a family crate's code
+//! in a [`roamgate_channel::family::CoreFamily`], mapping its effects onto
+//! the core (reverse targets answered in the process by
+//! [`standalone`], pushes to browsers).
 
-use roamgate_sidecar::family::Families;
+use roamgate_channel::family::Families;
 
 pub mod activity;
 pub mod agent_profiles;
@@ -33,22 +31,16 @@ pub mod voice_socket;
 pub mod work;
 pub mod workspace;
 
-/// Every family this build implements.
+/// The core's families: every family, and first the `front` family, which
+/// terminates `/ws` and registers the reverse targets the others call.
 pub fn core_families() -> Families {
-    families(host::family())
-}
-
-/// The families of a standalone core (a Rust front's own, no Bun): every
-/// family, and first the `front` family, which terminates `/ws` and
-/// answers in the process what the families asked the Bun side for.
-pub fn standalone_families() -> Families {
     let (host, handle) = host::family_with_handle();
     let mut all = vec![front::family(handle)];
     all.extend(families(Some(host)));
     all
 }
 
-fn families(host: Option<std::sync::Arc<dyn roamgate_sidecar::family::CoreFamily>>) -> Families {
+fn families(host: Option<std::sync::Arc<dyn roamgate_channel::family::CoreFamily>>) -> Families {
     [
         limit_resume::family(),
         time_report::family(),

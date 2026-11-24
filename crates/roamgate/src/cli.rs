@@ -1,8 +1,6 @@
 //! The management commands roamgate-cli answers itself (`roamgate auth`,
 //! `config`, `connections`, `doctor`, `service`, `url`, `plugin`,
-//! `completion`): run when the Bun CLI passes one through (the owners table
-//! gives its family to Rust; contract/wire/core-channel.md, CLI
-//! pass-through), with the CLI's executable and lines written as they come.
+//! `completion`), with the CLI's executable and lines written as they come.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -12,7 +10,7 @@ use roamgate_cli::context::{CliContext, Console};
 use roamgate_cli::index::{Outcome, cli_commands, run_cli, rust_runner};
 use roamgate_exec::service::SystemCommands;
 
-/// The family whose `cli` names `command` (contract/owners/families.json).
+/// The family a command is noted under in the served log.
 fn family_of(command: &str) -> &'static str {
     if command == "connections" {
         "host"
@@ -32,7 +30,7 @@ pub enum Done {
 /// `roamgate <command> <args>` for a command of
 /// [`roamgate_cli::index::RUST_COMMANDS`].
 pub async fn run(command: &str, args: &[String]) -> Done {
-    roamgate_sidecar::core::note_served(&ProcessEnv, family_of(command), &format!("cli {command}"));
+    roamgate_channel::core::note_served(&ProcessEnv, family_of(command), &format!("cli {command}"));
     let context = CliContext {
         runtime: crate::families::update::cli_runtime(Arc::new(ProcessEnv)),
         run: Arc::new(SystemCommands),
@@ -68,9 +66,8 @@ pub async fn run(command: &str, args: &[String]) -> Done {
     }
 }
 
-/// Record mode (contract-record): a run the Bun CLI passed through is its
-/// to record (`ROAMGATE_CLI_EXEC` set), so only a run of this binary alone
-/// is recorded here.
+/// Record mode: a run with `ROAMGATE_CLI_EXEC` set (started by the
+/// server's core) is not recorded as a CLI run.
 fn record(context: &CliContext, argv: &[String], code: i32, begun: std::time::Instant) {
     if ProcessEnv.var("ROAMGATE_CLI_EXEC").is_some() {
         return;

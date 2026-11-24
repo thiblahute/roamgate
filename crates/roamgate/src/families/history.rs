@@ -1,18 +1,12 @@
 //! The history family in the core: roamgate-history's runtime, the local
-//! history repo's one writer while the core owns the family
-//! (contract/wire/core-channel.md, The history family).
+//! history repo's one writer (contract/wire/core-channel.md, The history
+//! family).
 //!
 //! - HTTP: `/api/history` (status, `PUT` the place and the switch) and
 //!   `/api/history/commit` (a pass now), with roamgate-http's route.
-//! - The front's own calls: `internal.history.changed {area, id?}` and
+//! - The other families' calls: `internal.history.changed {area, id?}` and
 //!   `internal.history.work_changed {item, id, change, actor, at}` for the
-//!   writes of the stores Bun still owns, sent one at a time, in order;
-//!   `internal.history.release` before Bun runs its history again: the
-//!   core's last pass is done (or 5 s passed) when it answers.
-//! - Reverse calls: `history.release` when the core takes the family:
-//!   Bun's runtime stops (its last pass written) before the core's starts;
-//!   `history.configure` for the route's settings change while Bun owns
-//!   settings.json.
+//!   writes of their stores, applied one at a time, in order.
 //! - The core's Work board tells it directly ([`tell`]).
 //!
 //! Git and the files run on blocking threads, never on the event loop.
@@ -24,6 +18,9 @@ use bytes::Bytes;
 use roamgate_base::env::{Env, ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogFields, LogLevel, Logger, LoggerOptions, parse_log_level};
 use roamgate_base::paths::DataContext;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
+use roamgate_channel::protocol::RpcError;
 use roamgate_exec::gamemode::{GAME_MODE_TIMEOUT, default_game_mode_command, game_mode_active};
 use roamgate_exec::process::ProcessRunner;
 use roamgate_history::area::{ReviewSource, history_paths};
@@ -32,9 +29,6 @@ use roamgate_history::reviews::SqliteReviews;
 use roamgate_history::runtime::{HistoryRuntime, RuntimeOptions, server_place};
 use roamgate_history::work::WorkChange;
 use roamgate_http::history::{HistoryBackend, HistoryChange, HistoryRoute};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
-use roamgate_sidecar::protocol::{RpcError, Side};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
@@ -47,9 +41,9 @@ enum Change {
 }
 
 struct HistoryFamily {
-    /// The runtime while the core owns the family.
+    /// The runtime while the core serves the family.
     runtime: Mutex<Option<HistoryRuntime>>,
-    /// Bumped at each change of hands: a late start does not run.
+    /// Bumped at each start and stop: a late start does not run.
     turn: Arc<AtomicU64>,
     /// The writes, applied one at a time (a Work change reads its item's
     /// description first).
@@ -70,13 +64,8 @@ pub fn family() -> Option<Arc<dyn CoreFamily>> {
     Some(family)
 }
 
-/// Whether the core's history takes the stores' writes now.
-pub fn owned(cx: &FamilyContext) -> bool {
-    cx.owners.owner(FAMILY) == Side::Rust
-}
-
-/// A write of the core's own stores (the Work board), while the core owns
-/// the history; false when it does not (the caller tells Bun's).
+/// A write of the core's own stores (the Work board); false when the
+/// history family is gone.
 pub fn tell_area(cx: &FamilyContext, area: &str, id: Option<&str>) -> bool {
     tell(
         cx,
@@ -87,15 +76,12 @@ pub fn tell_area(cx: &FamilyContext, area: &str, id: Option<&str>) -> bool {
     )
 }
 
-/// A Work change of the core's board, while the core owns the history.
+/// A Work change of the core's board.
 pub fn tell_work(cx: &FamilyContext, change: WorkChange) -> bool {
     tell(cx, Change::Work(Box::new(change)))
 }
 
-fn tell(cx: &FamilyContext, change: Change) -> bool {
-    if !owned(cx) {
-        return false;
-    }
+fn tell(_cx: &FamilyContext, change: Change) -> bool {
     let Some(family) = LATEST.lock().unwrap().upgrade() else {
         return false;
     };
@@ -184,15 +170,6 @@ impl HistoryFamily {
         let _ = sender.send(change);
     }
 
-    /// Stops the core's runtime, its last pass done (5 s at most).
-    async fn stop(&self) {
-        self.turn.fetch_add(1, Ordering::SeqCst);
-        let runtime = self.runtime.lock().unwrap().take();
-        if let Some(runtime) = runtime {
-            runtime.stop().await;
-        }
-    }
-
     /// A status while the core does not run the history (a read of the
     /// repo as it is).
     async fn idle_status() -> Result<Value, String> {
@@ -247,7 +224,7 @@ impl HistoryBackend for Backend {
         let family = self.family.clone();
         Box::pin(async move {
             let written = write_settings(&cx, change).await;
-            // settings.json changed, as Bun's writer tells its history (the
+            // settings.json changed, as its writer tells the history (the
             // status answered next shows it waiting).
             if written.is_ok()
                 && let Some(runtime) = family.current()
@@ -280,27 +257,6 @@ pub(crate) async fn write_settings(
         Some(None) => Some(None),
         None => None,
     };
-    if cx.owners.owner("settings") != Side::Rust {
-        // settings.json is Bun's to write: its route's own code.
-        let mut args = serde_json::Map::new();
-        match &expanded {
-            Some(Some(location)) => {
-                args.insert("location".into(), json!(location.display().to_string()));
-            }
-            Some(None) => {
-                args.insert("location".into(), Value::Null);
-            }
-            None => {}
-        }
-        if let Some(enabled) = change.enabled {
-            args.insert("enabled".into(), json!(enabled));
-        }
-        return cx
-            .reverse("history.configure", Value::Object(args))
-            .await
-            .map(|_| ())
-            .map_err(|error| error.message);
-    }
     super::settings::update_shared(cx, json!({"method": "PUT /api/history"}), move |current| {
         let mut next = current.as_map().clone();
         let mut history = next
@@ -368,7 +324,7 @@ impl CoreFamily for HistoryFamily {
     fn call(&self, _cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
         let this = LATEST.lock().unwrap().upgrade();
         Box::pin(async move {
-            roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &call.method);
+            roamgate_channel::core::note_served(&ProcessEnv, FAMILY, &call.method);
             let Some(this) = this else {
                 return Err(RpcError::new("no history family"));
             };
@@ -391,11 +347,6 @@ impl CoreFamily for HistoryFamily {
                     this.send(Change::Work(Box::new(change)));
                     Ok(json!({"ok": true}))
                 }
-                // Bun takes the history back: the core's last pass first.
-                "internal.history.release" => {
-                    this.stop().await;
-                    Ok(json!({}))
-                }
                 other => Err(RpcError::with_code(
                     format!("unknown method {other}"),
                     "unknown_method",
@@ -417,7 +368,7 @@ impl CoreFamily for HistoryFamily {
                 return Ok(HttpResponse::status(404));
             };
             let path = super::update::path_of(&request.url).to_owned();
-            roamgate_sidecar::core::note_served(
+            roamgate_channel::core::note_served(
                 &ProcessEnv,
                 FAMILY,
                 &format!("{} {path}", request.method),
@@ -449,21 +400,14 @@ impl CoreFamily for HistoryFamily {
         };
         let cx = cx.clone();
         if owned {
-            // Bun's runtime stops first (its last pass written): one writer.
             tokio::spawn(async move {
-                if let Err(error) = cx.reverse("history.release", json!({})).await {
-                    logger(&cx).warn(
-                        "Bun did not release the history",
-                        Some(&fields(json!({"error": error.message}))),
-                    );
-                }
                 if this.turn.load(Ordering::SeqCst) != turn {
                     return;
                 }
                 let runtime = new_runtime(&cx);
                 runtime.start();
                 *this.runtime.lock().unwrap() = Some(runtime);
-                logger(&cx).info("the local history runs in the Rust core", None);
+                logger(&cx).info("the local history runs", None);
             });
         } else {
             tokio::spawn(async move {
@@ -476,10 +420,9 @@ impl CoreFamily for HistoryFamily {
     }
 }
 
-/// `roamgate history ...` (the Bun CLI passes it through while Rust owns
-/// the family); returns the exit code.
+/// `roamgate history ...`; returns the exit code.
 pub fn cli(args: &[String]) -> u8 {
-    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, "cli history");
+    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, "cli history");
     let runtime = super::update::cli_runtime(Arc::new(ProcessEnv));
     super::update::emit(
         roamgate_cli::history::HistoryCli {

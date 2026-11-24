@@ -2,10 +2,10 @@
 //! handshake, then a reader task dispatching what comes, a writer task
 //! draining the outbound queue, and, on the front, liveness pings.
 //!
-//! The same code serves both roles: the Rust core in stage 1, the Rust
-//! front in stage 2 (and both ends of this crate's tests).
+//! The same code serves both roles: the front and the core (and both ends
+//! of this crate's tests).
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -23,8 +23,7 @@ use crate::frames::read_frame;
 use crate::protocol::{
     BODY_WINDOW, Ctx, FLAG_END, FLAG_RESPONSE, Headers, KIND_BODY, KIND_MESSAGE, KIND_RAW_DATA,
     MAX_CHANNEL_FRAME, MAX_CHUNK, Message, OutboundQueue, PROTOCOL, Push, RAW_DATA_MIN, RpcError,
-    ShadowSettings, Side, decode_body, decode_raw_data, encode_body, encode_message,
-    encode_raw_data,
+    decode_body, decode_raw_data, encode_body, encode_message, encode_raw_data,
 };
 use crate::transport::BoxStream;
 
@@ -37,7 +36,6 @@ pub struct IncomingCall {
     pub method: String,
     pub params: Value,
     pub ctx: Ctx,
-    pub shadow: bool,
 }
 
 /// An HTTP request's head.
@@ -111,9 +109,7 @@ pub trait Handler: Send + Sync + 'static {
 
     fn push(&self, _push: Push) {}
 
-    fn owner(&self, _owners: BTreeMap<String, Side>, _shadow: ShadowSettings) {}
-
-    /// Stage 2, the core's side: a browser asks to upgrade a socket
+    /// The core's side: a browser asks to upgrade a socket
     /// (`ws_open`); the answer is the `reply`'s result.
     fn ws_open(&self, _peer: &Peer, _open: WsOpen) -> BoxFuture<Result<Value, RpcError>> {
         Box::pin(async {
@@ -124,12 +120,12 @@ pub trait Handler: Send + Sync + 'static {
         })
     }
 
-    /// Stage 2: `ws_message` and `ws_close` (the core's side), `ws_send`,
+    /// `ws_message` and `ws_close` (the core's side), `ws_send`,
     /// `ws_drop` and `ws_end` (the front's side).
     fn socket(&self, _peer: &Peer, _message: Message) {}
 }
 
-/// A `ws_open` (contract/wire/core-channel.md, Stage 2).
+/// A `ws_open` (contract/wire/core-channel.md, Browser sockets).
 #[derive(Debug, Clone, PartialEq)]
 pub struct WsOpen {
     pub socket_id: u64,
@@ -542,11 +538,6 @@ impl Peer {
         self.enqueue(encode_message(&Message::Push(push)), key);
     }
 
-    /// Tells the other side the owners table.
-    pub fn owner(&self, owners: BTreeMap<String, Side>, shadow: ShadowSettings) {
-        self.send(&Message::Owner { owners, shadow });
-    }
-
     fn next_id(&self) -> u64 {
         self.inner.next_id.fetch_add(1, Ordering::Relaxed)
     }
@@ -570,20 +561,13 @@ impl Peer {
     }
 
     /// A browser RPC to the other side.
-    pub async fn call(
-        &self,
-        method: &str,
-        params: Value,
-        ctx: Ctx,
-        shadow: bool,
-    ) -> Result<Value, RpcError> {
+    pub async fn call(&self, method: &str, params: Value, ctx: Ctx) -> Result<Value, RpcError> {
         let id = self.next_id();
         let message = Message::Call {
             id,
             method: method.into(),
             params,
             ctx,
-            shadow,
         };
         self.request(id, message).await
     }
@@ -605,7 +589,7 @@ impl Peer {
         self.request(id, message).await
     }
 
-    /// Stage 2, the front's side: asks the core to take a browser socket.
+    /// The front's side: asks the core to take a browser socket.
     pub async fn ws_open(&self, open: WsOpen) -> Result<Value, RpcError> {
         let id = self.next_id();
         let message = Message::WsOpen {
@@ -917,7 +901,6 @@ impl Peer {
                 method,
                 params,
                 ctx,
-                shadow,
             } => {
                 let peer = self.clone();
                 self.spawn_answer(id, async move {
@@ -926,7 +909,6 @@ impl Peer {
                         method,
                         params,
                         ctx,
-                        shadow,
                     };
                     let answer = handler.call(&peer, call).await;
                     peer.reply(id, answer);
@@ -968,7 +950,6 @@ impl Peer {
                 }
             }
             Message::Push(push) => handler.push(push),
-            Message::Owner { owners, shadow } => handler.owner(owners, shadow),
             Message::Http {
                 id,
                 method,

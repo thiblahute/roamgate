@@ -1,10 +1,8 @@
-//! The Rust front (contract/wire/core-channel.md, Stage 2): Rust holds the
-//! port, the auth gate and its logins, the web app's files and the `/ws`
-//! transport; every other route, and every browser socket, is the core's
-//! (the Bun server, or the standalone `roamgate core`), reached over the
-//! core channel. The core runs its own routing on
-//! what it gets, gate included, so a route keeps its checks whichever side
-//! answers it.
+//! The front (contract/wire/core-channel.md, The front): it holds the
+//! port, the auth gate and its logins, the web app's files and the
+//! browser sockets' framing; every other route, and what every browser
+//! socket says, is the core's (`roamgate core`), reached over the core
+//! channel. The core runs its own routing on what it gets.
 //!
 //! The listener is axum over hyper; [`Front::handle`] is the whole router,
 //! so the tests drive it without a socket.
@@ -21,8 +19,8 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use http::request::Parts;
 use roamgate_base::record::ContractRecorder;
-use roamgate_sidecar::peer::{Handler, HttpReply, HttpRequest, Peer, WsOpen};
-use roamgate_sidecar::protocol::{Ctx, Message};
+use roamgate_channel::peer::{Handler, HttpReply, HttpRequest, Peer, WsOpen};
+use roamgate_channel::protocol::{Ctx, Message};
 use roamgate_ws::socket::{Config as SocketConfig, Event, SocketHandle};
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
@@ -32,28 +30,17 @@ use crate::node_origins::NodeOrigins;
 use crate::response::{self, header};
 use crate::static_files::{StaticFiles, StaticRequest};
 
+mod core_process;
 mod record;
-mod rust_core;
-mod sidecar;
 
+pub use core_process::{CoreConfig, CoreSetup, run_core};
 pub use record::{RECORD_BODY_LIMIT, RecordedSocket};
-pub use rust_core::{RustCoreLinkConfig, link_token, run_rust_core_link};
-pub use sidecar::{SidecarCommand, SidecarConfig, StandaloneCore, run_sidecar};
 
 /// The prefix of a rendered page's frame (shared/renderedPage.ts).
 const RENDERED_PREFIX: &str = "/rendered/";
 
 /// Where the core is: the peer while one is connected.
 pub type CoreLink = watch::Receiver<Option<Peer>>;
-
-/// The Rust core's link (contract/wire/core-channel.md, The Rust core's
-/// link to the Rust front): its peer and the number of its connection.
-pub type RustCoreLink = watch::Receiver<Option<(u64, Peer)>>;
-
-/// The browser sockets the Rust core is asked for first: the voice
-/// family's. It serves them while it owns the family, else they are the
-/// Bun core's.
-const RUST_CORE_SOCKETS: [&str; 2] = ["/api/voice/ws", "/api/voice/call/signalling"];
 
 /// A browser socket the core serves, by the front's number.
 enum Socket {
@@ -68,8 +55,6 @@ struct SocketEntry {
     session: Option<String>,
     /// `ws`: through the flow; `raw`: as it is.
     flow: bool,
-    /// Served by the Rust core's link of this number; None: the Bun core.
-    rust: Option<u64>,
     /// Its lines in record mode.
     recorded: Option<RecordedSocket>,
 }
@@ -172,17 +157,6 @@ impl Sockets {
         }
     }
 
-    /// Closes the sockets the Rust core's link `link` served: it went.
-    fn drop_rust(&self, link: u64) {
-        for entry in self.0.lock().unwrap().values() {
-            if entry.rust == Some(link)
-                && let Socket::Open(handle) = &entry.socket
-            {
-                handle.close(Some((1012, "Service Restart")));
-            }
-        }
-    }
-
     /// Closes the sockets of a login that logged out.
     fn close_session(&self, token: &str) {
         for entry in self.0.lock().unwrap().values() {
@@ -195,22 +169,22 @@ impl Sockets {
     }
 }
 
-/// What the front does when its standalone core asks it to exit.
+/// What the front does when its core asks it to exit.
 pub type ScheduleExit = Arc<dyn Fn() + Send + Sync>;
 
-/// A new login's cookie (`Auth::new_session_cookie`), for a standalone
-/// core's `voice.session_cookie`.
+/// A new login's cookie (`Auth::new_session_cookie`), for the core's
+/// `voice.session_cookie`.
 pub type SessionCookie = Arc<dyn Fn() -> Option<String> + Send + Sync>;
 
 /// The front's handler of the core's messages.
 pub struct FrontHandler {
     pub sockets: Sockets,
-    /// Set for a standalone core: `server.scheduleExit` (after an install
-    /// the supervisor starts the new one) is the front's to do.
-    pub schedule_exit: Option<ScheduleExit>,
-    /// Set for a standalone core: a call handed to another device gets a
-    /// login of the front's auth (`voice.session_cookie`).
-    pub session_cookie: Option<SessionCookie>,
+    /// `server.scheduleExit` (after an install the supervisor starts the
+    /// new one) is the front's to do.
+    pub schedule_exit: ScheduleExit,
+    /// A call handed to another device gets a login of the front's auth
+    /// (`voice.session_cookie`).
+    pub session_cookie: SessionCookie,
 }
 
 impl Handler for FrontHandler {
@@ -224,16 +198,10 @@ impl Handler for FrontHandler {
         target: String,
         _args: Value,
         _ctx: Ctx,
-    ) -> roamgate_sidecar::peer::BoxFuture<Result<Value, roamgate_sidecar::protocol::RpcError>>
+    ) -> roamgate_channel::peer::BoxFuture<Result<Value, roamgate_channel::protocol::RpcError>>
     {
-        let exit = self
-            .schedule_exit
-            .clone()
-            .filter(|_| target == "server.scheduleExit");
-        let cookie = self
-            .session_cookie
-            .clone()
-            .filter(|_| target == "voice.session_cookie");
+        let exit = (target == "server.scheduleExit").then(|| self.schedule_exit.clone());
+        let cookie = (target == "voice.session_cookie").then(|| self.session_cookie.clone());
         Box::pin(async move {
             if let Some(exit) = exit {
                 exit();
@@ -242,7 +210,7 @@ impl Handler for FrontHandler {
             if let Some(cookie) = cookie {
                 return Ok(serde_json::json!({"cookie": cookie()}));
             }
-            Err(roamgate_sidecar::protocol::RpcError::with_code(
+            Err(roamgate_channel::protocol::RpcError::with_code(
                 format!("unknown target {target}"),
                 "unknown_target",
             ))
@@ -254,11 +222,9 @@ impl Handler for FrontHandler {
 pub struct Front {
     pub auth: Auth,
     pub static_files: StaticFiles,
-    /// The instance's title suffix, read on each request as Bun does.
+    /// The instance's title suffix, read on each request.
     pub title_suffix: Box<dyn Fn() -> String + Send + Sync>,
     pub core: CoreLink,
-    /// The Rust core's link, while one is connected.
-    pub rust_core: RustCoreLink,
     pub sockets: Sockets,
     /// How long a request waits for the core to connect (its start, a
     /// restart) before a 503.
@@ -338,19 +304,11 @@ impl Front {
             static_files,
             title_suffix,
             core,
-            rust_core: watch::channel(None).1,
             sockets,
             core_wait: std::time::Duration::from_secs(30),
             node_origins: NodeOrigins::default(),
             next_socket: AtomicU64::new(1),
         }
-    }
-
-    /// Serves the voice family's sockets from the Rust core's link while
-    /// it owns the family.
-    pub fn with_rust_core(mut self, link: RustCoreLink) -> Self {
-        self.rust_core = link;
-        self
     }
 
     async fn peer(&self) -> Option<Peer> {
@@ -547,7 +505,7 @@ impl Front {
         body: Body,
         client_ip: String,
     ) -> http::Response<Body> {
-        let Some(bun) = self.peer().await else {
+        let Some(peer) = self.peer().await else {
             return plain(503, "the server is starting");
         };
         let mut request = http::Request::from_parts(parts, body);
@@ -569,7 +527,6 @@ impl Front {
                 socket: Socket::Pending(Vec::new()),
                 session,
                 flow: parts.uri.path() == "/ws",
-                rust: None,
                 recorded: recorded.clone(),
             },
         );
@@ -580,7 +537,7 @@ impl Front {
             headers: channel_headers(&parts),
             ctx: self.ctx(&parts, client_ip, Some(socket_id)),
         };
-        let (peer, answer) = self.open_socket(bun, parts.uri.path(), open).await;
+        let answer = peer.ws_open(open).await;
         let accepted_by_core = match &answer {
             Ok(result) => result["accepted"] == Value::Bool(true),
             Err(_) => false,
@@ -658,43 +615,6 @@ impl Front {
             front.socket_closed(&peer, socket_id, Some(1006), String::new());
         });
         accepted.response
-    }
-
-    /// Asks the Rust core first for a socket it may serve, then the Bun
-    /// core: the peer that answered, and its answer.
-    async fn open_socket(
-        &self,
-        bun: Peer,
-        path: &str,
-        open: WsOpen,
-    ) -> (Peer, Result<Value, roamgate_sidecar::protocol::RpcError>) {
-        let rust = RUST_CORE_SOCKETS
-            .contains(&path)
-            .then(|| self.rust_core.borrow().clone())
-            .flatten()
-            .filter(|(_, peer)| !peer.is_closed());
-        if let Some((link, peer)) = rust {
-            let socket_id = open.socket_id;
-            if let Some(entry) = self.sockets.0.lock().unwrap().get_mut(&socket_id) {
-                entry.rust = Some(link);
-            }
-            let answer = peer.ws_open(open.clone()).await;
-            let passed = match &answer {
-                Ok(result) => result["pass"] == Value::Bool(true),
-                Err(error) => {
-                    tracing::warn!(target: "bridge.front", "the Rust core did not answer a socket: {}", error.message);
-                    true
-                }
-            };
-            if !passed {
-                return (peer, answer);
-            }
-            if let Some(entry) = self.sockets.0.lock().unwrap().get_mut(&socket_id) {
-                entry.rust = None;
-            }
-        }
-        let answer = bun.ws_open(open).await;
-        (bun, answer)
     }
 
     fn socket_closed(&self, peer: &Peer, socket_id: u64, code: Option<u16>, reason: String) {

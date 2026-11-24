@@ -33,9 +33,9 @@ use roamgate_base::clock::{Clock, SystemClock};
 use roamgate_base::env::{Env, ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogLevel, Logger, LoggerOptions, parse_log_level};
 use roamgate_base::paths::DataContext;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BoxFuture, IncomingCall};
-use roamgate_sidecar::protocol::RpcError;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BoxFuture, IncomingCall};
+use roamgate_channel::protocol::RpcError;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
@@ -254,11 +254,7 @@ impl Inner {
     async fn start_if_due(&self, cx: &FamilyContext) {
         {
             let mut state = self.state.lock().unwrap();
-            if !state.owned
-                || !state.start_requested
-                || state.starting
-                || self.current().is_some()
-                || cx.owners.check_write(FAMILY).is_err()
+            if !state.owned || !state.start_requested || state.starting || self.current().is_some()
             {
                 return;
             }
@@ -482,7 +478,7 @@ impl CoreFamily for ActivityFamily {
 
 /// `roamgate activity ...`; returns the exit code.
 pub fn cli(args: &[String]) -> u8 {
-    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, "cli activity");
+    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, "cli activity");
     let runtime = super::update::cli_runtime(Arc::new(ProcessEnv));
     let now = || SystemClock.now();
     super::update::emit(

@@ -7004,6 +7004,7 @@ dependencies = [
  "roamgate-archive",
  "roamgate-assistant",
  "roamgate-base",
+ "roamgate-channel",
  "roamgate-claude",
  "roamgate-cli",
  "roamgate-connections",
@@ -7018,7 +7019,6 @@ dependencies = [
  "roamgate-notify",
  "roamgate-protocol",
  "roamgate-review",
- "roamgate-sidecar",
  "roamgate-voice-server",
  "roamgate-work",
  "roamgate-workspace",
@@ -7157,6 +7157,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "roamgate-channel"
+version = "0.0.0"
+dependencies = [
+ "indexmap",
+ "roamgate-base",
+ "roamgate-exec",
+ "roamgate-protocol",
+ "serde",
+ "serde_json",
+ "socket2 0.6.5",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "roamgate-claude"
 version = "0.0.0"
 dependencies = [
@@ -7235,10 +7253,10 @@ dependencies = [
  "reqwest 0.12.28",
  "roamgate-agents",
  "roamgate-base",
+ "roamgate-channel",
  "roamgate-exec",
  "roamgate-herdr",
  "roamgate-protocol",
- "roamgate-sidecar",
  "rusqlite",
  "rustix",
  "serde",
@@ -7390,11 +7408,11 @@ dependencies = [
  "rand 0.9.5",
  "regex",
  "roamgate-base",
+ "roamgate-channel",
  "roamgate-connections",
  "roamgate-exec",
  "roamgate-herdr",
  "roamgate-protocol",
- "roamgate-sidecar",
  "roamgate-ws",
  "rustix",
  "serde",
@@ -7531,6 +7549,7 @@ dependencies = [
  "roamgate-base",
  "roamgate-claude",
  "roamgate-exec",
+ "roamgate-git",
  "roamgate-protocol",
  "rusqlite",
  "serde",
@@ -7541,26 +7560,6 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "roamgate-sidecar"
-version = "0.0.0"
-dependencies = [
- "indexmap",
- "rand 0.9.5",
- "regex",
- "roamgate-base",
- "roamgate-exec",
- "roamgate-protocol",
- "serde",
- "serde_json",
- "socket2 0.6.5",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

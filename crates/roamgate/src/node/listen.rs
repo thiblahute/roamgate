@@ -227,7 +227,6 @@ pub fn environment(options: &ListenOptions) -> Vec<(String, String)> {
         "ROAMGATE_NOTIFICATIONS_PATH",
         "ROAMGATE_WEB_PUSH_PATH",
         "ROAMGATE_AGENT_SEEN_PATH",
-        "ROAMGATE_SIDECAR_BIN",
         "HERDR_SOCKET_PATH",
         "HERDR_CLIENT_SOCKET_PATH",
         "HERDR_SSH_HOST",

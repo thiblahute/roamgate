@@ -1,31 +1,26 @@
-//! The Claude mod hub in the core (roamgate-claude's `mod_hub`): it runs here
-//! while the core owns both the review family (its agent socket takes the
+//! The Claude mod hub in the core (roamgate-claude's `mod_hub`): it runs
+//! while the core serves both the review family (its agent socket takes the
 //! mods' requests, `claude_mod.*` and claude-mod-inbox.json are review's)
-//! and the conversation family (whose sessions the mods' panes are);
-//! otherwise Bun runs it (contract/wire/core-channel.md, The Claude mod
-//! hub).
+//! and the conversation family (whose sessions the mods' panes are)
+//! (contract/wire/core-channel.md, The Claude mod hub).
 //!
-//! Bun drives the change of hands through the file: it writes its inbox,
-//! then calls `internal.review.mod_take`; it asks `internal.review.mod_release`
-//! (the core writes the inbox and stops the hub) before reading the file
-//! again. The core also stops the hub, and tells `claude_mod.released`, when
-//! it gives up either family. While the hub runs here the front's
-//! synchronous readers read the mirror the core sends after each change
-//! (`claude_mod.mirror`); a pane's change goes to the browsers through the
-//! front (`claude_mod.changed`), and the front's deliveries come here
-//! (`internal.review.mod_deliver`).
+//! The front family starts it with `internal.review.mod_take` once both
+//! families serve; it stops, its inbox written, when either stops. After
+//! each change the hub's mirror goes to `claude_mod.mirror`; a pane's
+//! change goes to the browsers (`claude_mod.changed`), and deliveries come
+//! here (`internal.review.mod_deliver`).
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_claude::mod_hub::{ClaudeModHub, ClaudeModOptions, ClaudeModTypeResult};
 use roamgate_review::agent_socket::{ClaudeMods, Form};
 use roamgate_review::error::ReviewResult;
 use roamgate_review::service::BoxFut;
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 
 use super::review_socket::ReverseMods;
@@ -70,7 +65,7 @@ pub fn changed() {
 
 /// The review or conversation family was given to the core or taken back:
 /// the hub stops when the core no longer owns both.
-pub fn family_owned(cx: &FamilyContext, family: &str, owned: bool) {
+pub fn family_owned(_cx: &FamilyContext, family: &str, owned: bool) {
     let stopped = with_slot(|slot| {
         match family {
             "review" => slot.review = owned,
@@ -84,10 +79,6 @@ pub fn family_owned(cx: &FamilyContext, family: &str, owned: bool) {
     });
     if let Some(running) = stopped {
         stop(running);
-        let cx = cx.clone();
-        tokio::spawn(async move {
-            let _ = cx.reverse("claude_mod.released", json!({})).await;
-        });
     }
 }
 
@@ -98,8 +89,8 @@ fn stop(running: Running) {
     running.hub.flush();
 }
 
-/// `internal.review.mod_take`: Bun wrote its inbox; the hub starts here,
-/// reading it. Refused unless the core owns review and conversation.
+/// `internal.review.mod_take`: the hub starts, reading its inbox. Refused
+/// unless review and conversation both serve.
 pub fn take(cx: &FamilyContext) -> Result<Value, RpcError> {
     let owns = with_slot(|slot| (slot.review && slot.conversation, slot.hub.is_some()));
     match owns {
@@ -126,15 +117,6 @@ pub fn take(cx: &FamilyContext) -> Result<Value, RpcError> {
     }
     changed();
     Ok(json!({"ok": true}))
-}
-
-/// `internal.review.mod_release`: the hub's inbox is written and it stops
-/// here; Bun reads the file next.
-pub fn release() -> Value {
-    if let Some(running) = with_slot(|slot| slot.hub.take()) {
-        stop(running);
-    }
-    json!({"ok": true})
 }
 
 /// `internal.review.mod_flush`: the front stops; the inbox is written now.

@@ -46,4 +46,12 @@ mod tests {
             .unwrap();
         assert_eq!(decoded, CLAUDE_START_HOOK_INSTALL_SCRIPT.as_bytes());
     }
+
+    #[test]
+    fn the_installer_names_the_hook_command() {
+        assert!(CLAUDE_START_HOOK_INSTALL_PY.contains(&format!(
+            "\nCOMMAND = {}\n",
+            serde_json::to_string(CLAUDE_START_HOOK_COMMAND).unwrap()
+        )));
+    }
 }

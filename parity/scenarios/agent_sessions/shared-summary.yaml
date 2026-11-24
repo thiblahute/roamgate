@@ -1,6 +1,5 @@
 name: every browser reads the same agent summary of a connection, read again once Herdr says something changed
 family: connections
-fronts: [rust-only]
 description: >
   Two browsers ask for every connection's agent sessions and the agent
   list: the connection's lists are read from Herdr once for both. A Herdr

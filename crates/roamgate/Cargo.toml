@@ -40,7 +40,7 @@ roamgate-protocol = { path = "../roamgate-protocol" }
 roamgate-http = { path = "../roamgate-http" }
 roamgate-notify = { path = "../roamgate-notify" }
 roamgate-review = { path = "../roamgate-review" }
-roamgate-sidecar = { path = "../roamgate-sidecar" }
+roamgate-channel = { path = "../roamgate-channel" }
 roamgate-voice-server = { path = "../roamgate-voice-server" }
 roamgate-work = { path = "../roamgate-work" }
 roamgate-workspace = { path = "../roamgate-workspace" }

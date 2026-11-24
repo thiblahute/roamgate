@@ -5,24 +5,21 @@
 //! - Browser calls: `bridge.assistant.*`. The front keeps what is its
 //!   transport: `bridge.assistant.get`'s `since` stamp and each socket's
 //!   state deltas, made from the core's `{assistant}` pushes.
-//! - The front's own calls: `internal.assistant.connections` (the
-//!   connection table, after each change), `.resume`, `.deliver_chat_comments`,
-//!   `.release` (Bun takes Ranger back: the core's service is disposed
-//!   first).
-//! - Reverse calls: `assistant.release` (Bun disposes its own service
-//!   before the core starts its), `assistant.connections`, `assistant.host`
-//!   (what the context reads of the runtimes Bun owns, by `op`) and
-//!   `assistant.chat_thread_reply`. The archive and Workspaces tools run
-//!   here, on the archive and workspace families' code.
+//! - The other families' calls: `internal.assistant.connections` (the
+//!   connection table, after each change), `.resume`,
+//!   `.deliver_chat_comments`.
+//! - Reverse targets ([`super::standalone`]): `assistant.connections`,
+//!   `assistant.host` (what the context reads of the connections' runtimes,
+//!   by `op`) and `assistant.chat_thread_reply`. The archive and Workspaces
+//!   tools run here, on the archive and workspace families' code.
 //! - Pushes: `{assistant: snapshot}` (key `assistant`) and
 //!   `{assistant_notification}`.
 //!
 //! A dispatch gate (`beforeSend`, `beforeDispatch`) is a closure of the
-//! core's; Bun calls its own copy synchronously right before it sends. The
-//! core evaluates each gate before the reverse call that carries it and
+//! family's; the target that dispatches calls it right before it sends. The
+//! family evaluates each gate before the reverse call that carries it and
 //! again after every change of Ranger's state or of the connections, and
-//! tells Bun of one that no longer holds (`gate_revoke`), so Bun's copy
-//! refuses from then on.
+//! revokes one that no longer holds (`gate_revoke`).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -43,10 +40,10 @@ use roamgate_assistant::tree_tools::{
 };
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::IncomingCall;
+use roamgate_channel::protocol::{Push, RpcError};
 use roamgate_connections::usage_limit::LimitPause;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::IncomingCall;
-use roamgate_sidecar::protocol::{Push, RpcError};
 use serde_json::{Value, json};
 
 pub const FAMILY: &str = "assistant";
@@ -654,8 +651,7 @@ struct AssistantFamily {
     gates: Arc<Gates>,
     /// The service while the core owns the family (once started).
     running: Mutex<Option<Starting>>,
-    /// The last service's disposal, which `internal.assistant.release`
-    /// waits for.
+    /// The last service's disposal, which the next start waits for.
     stopping: Mutex<Option<Shared<BoxFuture<()>>>>,
 }
 
@@ -666,11 +662,6 @@ impl AssistantFamily {
         let started: BoxFuture<Option<AssistantService>> = Box::pin(async move {
             if let Some(stopping) = stopping {
                 stopping.await;
-            }
-            // Bun's own service stops first: one writer of state.json and
-            // tasks.sqlite.
-            if let Err(error) = cx.reverse("assistant.release", json!({})).await {
-                tracing::warn!("Bun did not release Ranger: {}", error.message);
             }
             match cx.reverse("assistant.connections", json!({})).await {
                 Ok(list) => table.set(&list),
@@ -759,7 +750,8 @@ impl AssistantFamily {
         self.running.lock().unwrap().clone()
     }
 
-    /// Stops the service, if one runs; its disposal is kept for `release`.
+    /// Stops the service, if one runs; its disposal is kept for the next
+    /// start.
     fn stop(&self) {
         let Some(running) = self.running.lock().unwrap().take() else {
             return;
@@ -789,16 +781,6 @@ impl CoreFamily for AssistantFamily {
             self.gates.check(cx);
             return Box::pin(async { Ok(json!({"ok": true})) });
         }
-        if method == "internal.assistant.release" {
-            self.stop();
-            let stopping = self.stopping.lock().unwrap().clone();
-            return Box::pin(async move {
-                if let Some(stopping) = stopping {
-                    stopping.await;
-                }
-                Ok(json!({}))
-            });
-        }
         let running = self.running();
         Box::pin(async move {
             let Some(service) = (match running {
@@ -806,7 +788,7 @@ impl CoreFamily for AssistantFamily {
                 None => None,
             }) else {
                 return Err(RpcError::with_code(
-                    "Ranger runs in Bun".to_owned(),
+                    "Ranger is not running".to_owned(),
                     "not_owner",
                 ));
             };

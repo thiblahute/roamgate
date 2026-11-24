@@ -16,10 +16,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use roamgate_base::log::RecoveryReporter;
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_connections::routing::serialize_herdr_event_envelope;
 use roamgate_conversation::herdr::{CloseEvent, conversation_close_event};
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 

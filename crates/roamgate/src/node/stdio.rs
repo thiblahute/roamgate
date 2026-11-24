@@ -14,20 +14,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
-use roamgate_exec::host::{Host, Local};
-use roamgate_exec::process::{Command, ProcessRunner};
-use roamgate_sidecar::node::{
+use roamgate_channel::node::{
     AGENT_PREFIX, CLIENT_SOCKET, CONNECT, CONTROL_SOCKET, LISTEN, ListenParams, PREAMBLE, RUN,
     RunParams, RunReply, bridge, serve_stream,
 };
-use roamgate_sidecar::peer::{
+use roamgate_channel::peer::{
     BodyReceiver, BoxFuture, Handler, HttpRequest, HttpResponse, IncomingCall, Peer, PeerOptions,
     accept_hello,
 };
-use roamgate_sidecar::protocol::{
-    Message, NODE_CONTRACT, NodeIdentity, PROTOCOL, RpcError, ShadowSettings, Side,
-};
-use roamgate_sidecar::transport::BoxStream;
+use roamgate_channel::protocol::{Message, NODE_CONTRACT, NodeIdentity, PROTOCOL, RpcError};
+use roamgate_channel::transport::BoxStream;
+use roamgate_exec::host::{Host, Local};
+use roamgate_exec::process::{Command, ProcessRunner};
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
@@ -47,9 +45,6 @@ pub async fn run_stdio(_args: &[String]) -> u8 {
     };
     let welcome = |_: &Message| Message::Welcome {
         protocol: PROTOCOL,
-        side: Side::Rust,
-        owners: Default::default(),
-        shadow: ShadowSettings::default(),
         clock: None,
         raw_data: false,
         node: Some(identity),

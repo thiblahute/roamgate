@@ -24,9 +24,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use roamgate_base::env::{ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogFields, LogLevel, Logger, LoggerOptions, parse_log_level};
 use roamgate_base::paths::DataContext;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext, Reply};
-use roamgate_sidecar::peer::{BoxFuture as PeerFuture, IncomingCall};
-use roamgate_sidecar::protocol::{Push, RpcError};
+use roamgate_channel::family::{CoreFamily, FamilyContext, Reply};
+use roamgate_channel::peer::{BoxFuture as PeerFuture, IncomingCall};
+use roamgate_channel::protocol::{Push, RpcError};
 use roamgate_work::service::{
     BoxFuture, GitRead, Pane, WorkDeps, WorkReviews, WorkService, Workspace,
 };
@@ -446,14 +446,9 @@ fn board(cx: &FamilyContext, owned: bool) -> Board {
     let context = DataContext::from_env(&ProcessEnv);
     let directory = work_directory(&ProcessEnv, &context.data_root());
     let writes = if owned {
-        let owners = cx.owners.clone();
         StoreWrites::Disk {
             context,
-            can_write: Some(Arc::new(move || {
-                owners
-                    .check_write(FAMILY)
-                    .map_err(|error| error.to_string())
-            })),
+            can_write: None,
         }
     } else {
         StoreWrites::Memory
@@ -578,7 +573,7 @@ async fn browser_board(cx: &FamilyContext, running: Option<Board>) -> Board {
 async fn internal(board: &Board, op: &str, params: &Value) -> Result<Value, RpcError> {
     let service = &board.service;
     if op == "tool" || op == "user_tool" {
-        roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &format!("internal.work.{op}"));
+        roamgate_channel::core::note_served(&ProcessEnv, FAMILY, &format!("internal.work.{op}"));
     }
     match op {
         "tool" => {

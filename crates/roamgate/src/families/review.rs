@@ -24,12 +24,15 @@
 //! before it opens the file again.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
+use roamgate_channel::family::{CoreFamily, FamilyContext, Reply};
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
+use roamgate_channel::protocol::{Push, RpcError};
 use roamgate_review::error::{ReviewError, ReviewResult};
 use roamgate_review::images::image_of_query;
 use roamgate_review::model::{
@@ -44,9 +47,6 @@ use roamgate_review::service::{
     LoadError, ReviewForge, ReviewHost, ReviewService, ReviewServiceOptions,
 };
 use roamgate_review::storage::{ReviewStorage, review_directory};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext, Reply};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
-use roamgate_sidecar::protocol::{Push, RpcError};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::sync::watch;
@@ -570,20 +570,6 @@ impl ReviewRpcConnection for ReverseConnection {
     }
 }
 
-/// A host for a shadow read: it reads nothing and sends nothing.
-struct Nothing;
-
-impl ReviewHost for Nothing {
-    fn load_diff(
-        &self,
-        _: &ReviewSession,
-        _: Option<String>,
-        _: Option<Vec<String>>,
-    ) -> Load<Value> {
-        Box::pin(async { Err(LoadError::Failed("a shadow read reads no checkout".into())) })
-    }
-}
-
 /// What the publisher hands Bun of a push.
 fn for_bun(push: &Value) -> Option<Value> {
     match push.get("type").and_then(Value::as_str)? {
@@ -688,54 +674,6 @@ impl ReviewFamily {
             .collect();
         roamgate_review::images::prune_review_images(&directory, &live);
         Ok(service)
-    }
-
-    /// A shadow read while Bun owns the reviews: answered from a copy of
-    /// reviews.sqlite, so nothing of Bun's file is written.
-    async fn shadow(&self, call: &IncomingCall, cx: &FamilyContext) -> Result<Value, RpcError> {
-        let directory = review_directory(&ProcessEnv);
-        let copy = shadow_dir();
-        std::fs::create_dir_all(&copy).map_err(|e| RpcError::new(e.to_string()))?;
-        let into = copy.join("reviews.sqlite");
-        let copied = {
-            let directory = directory.clone();
-            let into = into.clone();
-            tokio::task::spawn_blocking(move || ReviewStorage::copy(&directory, &into))
-                .await
-                .map_err(|error| RpcError::new(error.to_string()))?
-                .map_err(|error| RpcError::new(error.to_string()))?
-        };
-        let answer = async {
-            let _ = copied;
-            let context = DataContext::from_env(&ProcessEnv);
-            let storage =
-                ReviewStorage::open(&context, &copy).map_err(|e| RpcError::new(e.to_string()))?;
-            let service = ReviewService::new(ReviewServiceOptions {
-                storage,
-                publish: Arc::new(|_| {}),
-                host: Arc::new(Nothing),
-                clock: cx.clock.clone(),
-                session_limit: None,
-                retry_delay_ms: None,
-                delivery_delay_ms: None,
-                agent_search_ms: None,
-            });
-            let connection = self.connection(cx, call).await?;
-            let answer = handle_review_rpc(
-                &service,
-                &connection,
-                &directory,
-                &call.method,
-                &call.params,
-            )
-            .await
-            .map_err(rpc_error);
-            service.close();
-            answer
-        }
-        .await;
-        let _ = std::fs::remove_dir_all(&copy);
-        answer
     }
 
     async fn connection(
@@ -859,14 +797,6 @@ impl ReviewFamily {
     }
 }
 
-/// A new directory for a shadow read's copy.
-fn shadow_dir() -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "roamgate-review-shadow-{}",
-        roamgate_base::paths::random_uuid()
-    ))
-}
-
 /// An image as Bun's `serveReviewImage` sends it.
 async fn image_response(directory: &Path, query: &str) -> HttpResponse {
     let not_found = || {
@@ -922,7 +852,6 @@ impl CoreFamily for ReviewFamily {
             match method.as_str() {
                 // The Claude mod hub (families/claude_mod.rs).
                 "internal.review.mod_take" => super::claude_mod::take(&cx),
-                "internal.review.mod_release" => Ok(super::claude_mod::release()),
                 "internal.review.mod_flush" => Ok(super::claude_mod::flush()),
                 "internal.review.mod_deliver" => super::claude_mod::deliver(&call.params),
                 "internal.review.agents" => {
@@ -944,7 +873,7 @@ impl CoreFamily for ReviewFamily {
                 }
                 "internal.review.call" => {
                     let service = this.service(&cx).await?;
-                    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &method);
+                    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, &method);
                     this.internal(&service, &call.params)
                         .await
                         .map_err(rpc_error)
@@ -952,15 +881,12 @@ impl CoreFamily for ReviewFamily {
                 // Configuration > Integrations: the mod on the host.
                 "claude_mod.status" | "claude_mod.install" | "claude_mod.uninstall" => {
                     let connection = this.connection(&cx, &call).await?;
-                    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &method);
+                    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, &method);
                     claude_mod_call(&cx, &connection.id, &method["claude_mod.".len()..]).await
                 }
                 method if is_review_method(method) => {
-                    if call.shadow && this.service_now().is_none() {
-                        return this.shadow(&call, &cx).await;
-                    }
                     let service = this.service(&cx).await?;
-                    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, method);
+                    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, method);
                     let connection = this.connection(&cx, &call).await?;
                     let answer = handle_review_rpc(
                         &service,
@@ -984,7 +910,7 @@ impl CoreFamily for ReviewFamily {
         cx: &FamilyContext,
         call: IncomingCall,
     ) -> BoxFuture<Result<Reply, RpcError>> {
-        if call.method != "review.get" || call.shadow {
+        if call.method != "review.get" {
             let answer = self.call(cx, call);
             return Box::pin(async move { answer.await.map(Reply::Value) });
         }
@@ -992,7 +918,7 @@ impl CoreFamily for ReviewFamily {
         let cx = cx.clone();
         Box::pin(async move {
             let service = this.service(&cx).await?;
-            roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &call.method);
+            roamgate_channel::core::note_served(&ProcessEnv, FAMILY, &call.method);
             let connection = this.connection(&cx, &call).await?;
             answered(
                 &call.method,
@@ -1013,7 +939,7 @@ impl CoreFamily for ReviewFamily {
             if path != "/api/review/image" || !request.method.eq_ignore_ascii_case("GET") {
                 return Ok(HttpResponse::status(404));
             }
-            roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, "GET /api/review/image");
+            roamgate_channel::core::note_served(&ProcessEnv, FAMILY, "GET /api/review/image");
             let query = request
                 .url
                 .split_once('?')
@@ -1045,11 +971,6 @@ impl CoreFamily for ReviewFamily {
         let cx = cx.clone();
         let this = self.clone();
         tokio::spawn(async move {
-            // Bun closes its own service before this one reads the file:
-            // one writer, nothing lost across the flip.
-            if let Err(error) = cx.reverse("review.release", json!({})).await {
-                tracing::warn!(scope = "review", error = %error.message, "release not answered");
-            }
             if this.slot.lock().unwrap().epoch != epoch {
                 return;
             }
@@ -1059,14 +980,9 @@ impl CoreFamily for ReviewFamily {
                         service.close();
                         return;
                     }
-                    // The agents' requests come here now, on the sockets
-                    // Bun let go of.
+                    // The agents' requests come here.
                     this.sockets.lock().unwrap().start(&cx, service.clone());
                     let _ = ready.send(Some(service));
-                    // What reached Bun's listeners meanwhile comes here.
-                    if let Err(error) = cx.reverse("review.socketsTaken", json!({})).await {
-                        tracing::warn!(scope = "review", error = %error.message, "sockets not handed over");
-                    }
                 }
                 Err(error) => {
                     tracing::warn!(scope = "review", error = %error, "reviews.sqlite not opened");

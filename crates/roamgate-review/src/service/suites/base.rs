@@ -88,19 +88,17 @@ fn entire_repository() -> Repository {
 
 struct Ways {
     kit: Kit,
-    bun: PathBuf,
     root: String,
 }
 
 impl Ways {
-    fn new(bun: PathBuf, root: &Path) -> Self {
+    fn new(root: &Path) -> Self {
         let host = Host {
-            heads: git_host(&bun).heads,
+            heads: git_host().heads,
             ..Host::default()
         };
         Self {
             kit: kit(host, Options::default()),
-            bun,
             root: root.to_string_lossy().into_owned(),
         }
     }
@@ -110,7 +108,7 @@ impl Ways {
     }
 
     async fn default_base(&self) -> Option<String> {
-        load_with(&self.bun, "defaultBase", json!({"root": self.root}))
+        load_with("defaultBase", json!({"root": self.root}))
             .await
             .ok()
             .and_then(|base| base.as_str().map(str::to_owned))
@@ -118,7 +116,7 @@ impl Ways {
 
     /// Changes' Branch scope base under Automatic.
     async fn branch_scope_base(&self) -> Value {
-        load_with(&self.bun, "branchBase", json!({"root": self.root}))
+        load_with("branchBase", json!({"root": self.root}))
             .await
             .unwrap()
     }
@@ -229,9 +227,8 @@ fn range(base: &str) -> Value {
 
 #[tokio::test]
 async fn review_open_with_no_target_option_r_and_a_branch_scope_comment_land_on_the_same_review() {
-    let Some(bun) = bun() else { return };
     let repository = repository();
-    let ways = Ways::new(bun, &repository.root);
+    let ways = Ways::new(&repository.root);
     let by_agent = ways.agent_open(None).await;
     let by_key = ways.option_r().await;
     let by_comment = ways.branch_comment("Why?", None).await;
@@ -251,9 +248,8 @@ async fn review_open_with_no_target_option_r_and_a_branch_scope_comment_land_on_
 
 #[tokio::test]
 async fn a_comment_under_a_picked_compare_against_base_lands_in_that_bases_review() {
-    let Some(bun) = bun() else { return };
     let repository = repository();
-    let ways = Ways::new(bun, &repository.root);
+    let ways = Ways::new(&repository.root);
     let picked = ways.agent_open(Some(("other", "HEAD"))).await;
     assert_eq!(
         crate::parse::describe_target(&picked.session.target),
@@ -272,7 +268,6 @@ async fn a_comment_under_a_picked_compare_against_base_lands_in_that_bases_revie
 
 #[tokio::test]
 async fn a_stale_local_main_changes_and_the_review_both_compare_with_origin_main() {
-    let Some(bun) = bun() else { return };
     let repository = repository();
     let root = &repository.root;
     git(
@@ -285,7 +280,7 @@ async fn a_stale_local_main_changes_and_the_review_both_compare_with_origin_main
         git(root, &["rev-list", "--count", "main..origin/main"]),
         "1"
     );
-    let ways = Ways::new(bun, root);
+    let ways = Ways::new(root);
     assert_eq!(
         ways.branch_scope_base().await,
         json!("refs/remotes/origin/main")
@@ -298,7 +293,6 @@ async fn a_stale_local_main_changes_and_the_review_both_compare_with_origin_main
 
 #[tokio::test]
 async fn a_local_main_ahead_of_origin_main_changes_and_the_review_both_compare_with_main() {
-    let Some(bun) = bun() else { return };
     let repository = repository();
     let root = &repository.root;
     git(root, &["checkout", "-q", "main"]);
@@ -308,7 +302,7 @@ async fn a_local_main_ahead_of_origin_main_changes_and_the_review_both_compare_w
     );
     git(root, &["checkout", "-q", "topic"]);
     git(root, &["rebase", "-q", "main"]);
-    let ways = Ways::new(bun, root);
+    let ways = Ways::new(root);
     assert_eq!(ways.branch_scope_base().await, json!("refs/heads/main"));
     assert_eq!(
         ways.option_r().await.session.target.to_value(),
@@ -323,7 +317,6 @@ async fn a_local_main_ahead_of_origin_main_changes_and_the_review_both_compare_w
 
 #[tokio::test]
 async fn local_main_and_origin_main_diverged_the_one_whose_merge_base_with_head_is_newest() {
-    let Some(bun) = bun() else { return };
     let repository = repository();
     let root = &repository.root;
     git(
@@ -338,7 +331,7 @@ async fn local_main_and_origin_main_diverged_the_one_whose_merge_base_with_head_
         &["checkout", "-q", "-b", "from-remote", "origin/main"],
     );
     git(root, &["commit", "-q", "--allow-empty", "-m", "work"]);
-    let ways = Ways::new(bun, root);
+    let ways = Ways::new(root);
     assert_eq!(
         ways.branch_scope_base().await,
         json!("refs/remotes/origin/main")
@@ -350,10 +343,9 @@ async fn local_main_and_origin_main_diverged_the_one_whose_merge_base_with_head_
 
 #[tokio::test]
 async fn when_automatics_base_moves_the_branchs_review_follows_it_with_its_comments() {
-    let Some(bun) = bun() else { return };
     let repository = repository();
     let root = &repository.root;
-    let ways = Ways::new(bun, root);
+    let ways = Ways::new(root);
     let before = ways.branch_comment("Kept?", None).await;
     assert_eq!(before.session.target.to_value(), range("origin/main"));
     git(root, &["checkout", "-q", "main"]);
@@ -377,14 +369,13 @@ async fn when_automatics_base_moves_the_branchs_review_follows_it_with_its_comme
 
 #[tokio::test]
 async fn a_remote_head_naming_entires_checkpoints_is_no_base_the_default_branch_is() {
-    let Some(bun) = bun() else { return };
     let repository = entire_repository();
     let root = &repository.root;
     assert_eq!(
         git(root, &["symbolic-ref", "refs/remotes/origin/HEAD"]),
         "refs/remotes/origin/entire/checkpoints/v1"
     );
-    let ways = Ways::new(bun, root);
+    let ways = Ways::new(root);
     assert_eq!(
         ways.branch_scope_base().await,
         json!("refs/remotes/origin/main")
@@ -401,9 +392,8 @@ async fn a_remote_head_naming_entires_checkpoints_is_no_base_the_default_branch_
 
 #[tokio::test]
 async fn a_branchs_review_once_based_on_a_metadata_ref_follows_automatic_to_the_default_branch() {
-    let Some(bun) = bun() else { return };
     let repository = entire_repository();
-    let ways = Ways::new(bun, &repository.root);
+    let ways = Ways::new(&repository.root);
     let before = ways
         .service()
         .open(
@@ -428,9 +418,8 @@ async fn a_branchs_review_once_based_on_a_metadata_ref_follows_automatic_to_the_
 
 #[tokio::test]
 async fn an_agents_range_of_the_checked_out_branch_joins_the_branch_scopes_review() {
-    let Some(bun) = bun() else { return };
     let repository = repository();
-    let ways = Ways::new(bun, &repository.root);
+    let ways = Ways::new(&repository.root);
     let branch = ways.branch_comment("On the branch", None).await;
     let by_agent = ways.agent_open(Some(("main", "topic"))).await;
     assert_eq!(by_agent.session.id, branch.session.id);

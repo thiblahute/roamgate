@@ -302,8 +302,8 @@ fn changes_checkout() -> tempfile::TempDir {
 }
 
 /// The worktree review with the paths of each read of its diff.
-fn changes_kit(bun: &Path, loads: Arc<Mutex<Vec<Option<Vec<String>>>>>) -> Kit {
-    let mut host = git_host(bun);
+fn changes_kit(loads: Arc<Mutex<Vec<Option<Vec<String>>>>>) -> Kit {
+    let mut host = git_host();
     let read = host.diff.take().unwrap();
     host.diff = Some(Box::new(move |session, commit, paths| {
         loads.lock().unwrap().push(paths.clone());
@@ -385,11 +385,10 @@ fn root_of(dir: &tempfile::TempDir) -> String {
 
 #[tokio::test]
 async fn changes_entry_anchors_move_onto_the_combined_diff_by_their_lines_text() {
-    let Some(bun) = bun() else { return };
     let dir = changes_checkout();
     let root = root_of(&dir);
     let loads: Arc<Mutex<Vec<Option<Vec<String>>>>> = Arc::default();
-    let Kit { service, .. } = changes_kit(&bun, loads.clone());
+    let Kit { service, .. } = changes_kit(loads.clone());
     let notes = [
         ("staged-new", "staged", "new", 1, "S", "a.txt"),
         ("staged-ctx", "staged", "new", 4, "c", "a.txt"),
@@ -474,10 +473,9 @@ async fn changes_entry_anchors_move_onto_the_combined_diff_by_their_lines_text()
 #[tokio::test]
 async fn the_migration_runs_once_a_second_read_writes_nothing_a_migrated_thread_is_not_read_again()
 {
-    let Some(bun) = bun() else { return };
     let dir = changes_checkout();
     let loads: Arc<Mutex<Vec<Option<Vec<String>>>>> = Arc::default();
-    let Kit { service, .. } = changes_kit(&bun, loads.clone());
+    let Kit { service, .. } = changes_kit(loads.clone());
     let (session, thread) = write_note(
         &service,
         &root_of(&dir),
@@ -516,9 +514,8 @@ async fn the_migration_runs_once_a_second_read_writes_nothing_a_migrated_thread_
 
 #[tokio::test]
 async fn the_migrated_anchors_are_kept_across_a_restart_of_the_server() {
-    let Some(bun) = bun() else { return };
     let dir = changes_checkout();
-    let kit = changes_kit(&bun, Arc::default());
+    let kit = changes_kit(Arc::default());
     let (session, thread) = write_note(
         &kit.service,
         &root_of(&dir),
@@ -550,10 +547,9 @@ async fn the_migrated_anchors_are_kept_across_a_restart_of_the_server() {
 
 #[tokio::test]
 async fn a_branch_reviews_threads_and_a_range_review_are_left_alone() {
-    let Some(bun) = bun() else { return };
     let dir = changes_checkout();
     let loads: Arc<Mutex<Vec<Option<Vec<String>>>>> = Arc::default();
-    let Kit { service, .. } = changes_kit(&bun, loads.clone());
+    let Kit { service, .. } = changes_kit(loads.clone());
     let (session, thread) = write_note(
         &service,
         &root_of(&dir),
@@ -595,11 +591,10 @@ async fn unstaged_f(service: &ReviewService, session: &str) -> ReviewThread {
 
 #[tokio::test]
 async fn a_review_read_publishes_it_again_once_its_threads_moved() {
-    let Some(bun) = bun() else { return };
     let dir = changes_checkout();
     let Kit {
         service, pushes, ..
-    } = kit(git_host(&bun), Options::default());
+    } = kit(git_host(), Options::default());
     let opened = service
         .open(&json!({"connectionId": "local", "root": root_of(&dir), "target": {"kind": "worktree"}}))
         .unwrap();
@@ -632,10 +627,9 @@ async fn a_review_read_publishes_it_again_once_its_threads_moved() {
 
 #[tokio::test]
 async fn a_checkout_not_readable_yet_is_asked_again_later() {
-    let Some(bun) = bun() else { return };
     let dir = changes_checkout();
     let ready = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let mut host = git_host(&bun);
+    let mut host = git_host();
     let read = host.diff.take().unwrap();
     let up = ready.clone();
     host.diff = Some(Box::new(move |session, commit, paths| {
@@ -787,11 +781,10 @@ fn thread_of(service: &ReviewService, session: &str, id: &str) -> ReviewAnchor {
 
 #[tokio::test]
 async fn threads_on_an_amended_commit_follow_it_onto_the_new_commit_and_their_line_there() {
-    let Some(bun) = bun() else { return };
     let (_dir, root) = rewritten_repository();
     let Kit {
         service, pushes, ..
-    } = kit(git_host(&bun), Options::default());
+    } = kit(git_host(), Options::default());
     let branch = open_on(
         &service,
         &root,
@@ -888,9 +881,8 @@ async fn threads_on_an_amended_commit_follow_it_onto_the_new_commit_and_their_li
 
 #[tokio::test]
 async fn a_commit_squashed_away_its_thread_goes_to_its_line_in_the_whole_change() {
-    let Some(bun) = bun() else { return };
     let (_dir, root) = rewritten_repository();
-    let Kit { service, .. } = kit(git_host(&bun), Options::default());
+    let Kit { service, .. } = kit(git_host(), Options::default());
     let branch = open_on(
         &service,
         &root,
@@ -921,9 +913,8 @@ async fn a_commit_squashed_away_its_thread_goes_to_its_line_in_the_whole_change(
 
 #[tokio::test]
 async fn another_branchs_thread_is_not_moved_onto_this_one_by_its_subject() {
-    let Some(bun) = bun() else { return };
     let (_dir, root) = rewritten_repository();
-    let Kit { service, .. } = kit(git_host(&bun), Options::default());
+    let Kit { service, .. } = kit(git_host(), Options::default());
     git(&root, &["branch", "other", "topic"]);
     let other = open_on(
         &service,

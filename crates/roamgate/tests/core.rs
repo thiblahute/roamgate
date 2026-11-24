@@ -1,24 +1,28 @@
-//! `roamgate core`, the process the Bun server spawns: it connects to the
+//! `roamgate core`, the process the front spawns: it connects to the
 //! channel it is given, says hello, and exits when the channel closes.
 #![cfg(unix)]
 // Waits on real time for a child process.
 #![allow(clippy::disallowed_methods)]
 
-use std::collections::BTreeMap;
 use std::process::Stdio;
 use std::time::Duration;
 
-use roamgate_sidecar::peer::{HandshakeError, accept_hello};
-use roamgate_sidecar::protocol::{Message, PROTOCOL, ShadowSettings, Side};
-use roamgate_sidecar::transport::Listener;
+use roamgate_channel::peer::{HandshakeError, accept_hello};
+use roamgate_channel::protocol::{Message, PROTOCOL};
+use roamgate_channel::transport::Listener;
 
 const TOKEN: &str = "abababababababababababababababababababababababababababababababab";
 
-fn core(path: Option<&std::path::Path>, token: &str) -> tokio::process::Child {
+fn core(
+    home: &std::path::Path,
+    path: Option<&std::path::Path>,
+    token: &str,
+) -> tokio::process::Child {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_roamgate"));
     command
         .arg("core")
         .env_clear()
+        .env("HOME", home)
         .env("ROAMGATE_LOG_LEVEL", "error")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -45,13 +49,10 @@ async fn says_hello_and_exits_when_the_channel_closes() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("core.sock");
     let mut listener = Listener::bind(path.to_str().unwrap()).unwrap();
-    let child = core(Some(&path), TOKEN);
+    let child = core(dir.path(), Some(&path), TOKEN);
     let mut stream = listener.accept().await.unwrap();
     let hello = accept_hello(&mut stream, TOKEN, |_| Message::Welcome {
         protocol: PROTOCOL,
-        side: Side::Bun,
-        owners: BTreeMap::new(),
-        shadow: ShadowSettings::default(),
         clock: None,
         raw_data: false,
         node: None,
@@ -60,7 +61,6 @@ async fn says_hello_and_exits_when_the_channel_closes() {
     .unwrap();
     let Message::Hello {
         protocol,
-        side,
         version,
         pid,
         families,
@@ -70,7 +70,7 @@ async fn says_hello_and_exits_when_the_channel_closes() {
     else {
         panic!("{hello:?}");
     };
-    assert_eq!((protocol, side), (PROTOCOL, Side::Rust));
+    assert_eq!(protocol, PROTOCOL);
     assert_eq!(version, roamgate::VERSION);
     assert_eq!(Some(pid), child.id());
     // The families this build implements, never the test family without
@@ -80,6 +80,7 @@ async fn says_hello_and_exits_when_the_channel_closes() {
         .map(|family| family.name().to_owned())
         .collect();
     assert_eq!(families, implemented);
+    assert_eq!(families.first().map(String::as_str), Some("front"));
     assert!(families.iter().any(|family| family == "limit_resume"));
     assert!(families.iter().any(|family| family == "time_report"));
     for family in ["update", "herdr_setup"] {
@@ -96,13 +97,13 @@ async fn a_refused_core_exits_3_and_one_without_a_channel_2() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("core.sock");
     let mut listener = Listener::bind(path.to_str().unwrap()).unwrap();
-    let child = core(Some(&path), "wrong");
+    let child = core(dir.path(), Some(&path), "wrong");
     let mut stream = listener.accept().await.unwrap();
     let refused = accept_hello(&mut stream, TOKEN, |_| unreachable!()).await;
     assert!(matches!(refused, Err(HandshakeError::Refused(_))));
     assert_eq!(exit_code(child).await, 3);
 
-    assert_eq!(exit_code(core(None, "")).await, 2);
+    assert_eq!(exit_code(core(dir.path(), None, "")).await, 2);
     let gone = dir.path().join("nobody.sock");
-    assert_eq!(exit_code(core(Some(&gone), TOKEN)).await, 1);
+    assert_eq!(exit_code(core(dir.path(), Some(&gone), TOKEN)).await, 1);
 }

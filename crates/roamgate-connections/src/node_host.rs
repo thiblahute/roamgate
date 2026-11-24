@@ -22,20 +22,20 @@ use std::time::Duration;
 use base64::Engine as _;
 use futures_util::FutureExt;
 use roamgate_base::clock::SharedClock;
+use roamgate_channel::node::{
+    AGENT_PREFIX, CONNECT, FAMILY, LISTEN, ListenParams, RUN, RunParams, RunReply, open_stream,
+    serve_stream, skip_preamble,
+};
+use roamgate_channel::peer::{
+    BodyReceiver, Handler, HttpRequest, HttpResponse, Peer, PeerOptions, say_hello,
+};
+use roamgate_channel::protocol::{Message, NODE_CONTRACT, NodeIdentity, PROTOCOL, RpcError};
+use roamgate_channel::transport::BoxStream;
 use roamgate_exec::process::ProcessRunner;
 use roamgate_exec::ssh::command::SshCommand;
 use roamgate_exec::ssh::sessions::{SshSessionHold, SshSessionWait, SshSessions};
 use roamgate_exec::ssh::supervised::{SupervisedSsh, stop_child};
 use roamgate_herdr::control::{Connector, HerdrStream};
-use roamgate_sidecar::node::{
-    AGENT_PREFIX, CONNECT, FAMILY, LISTEN, ListenParams, RUN, RunParams, RunReply, open_stream,
-    serve_stream, skip_preamble,
-};
-use roamgate_sidecar::peer::{
-    BodyReceiver, Handler, HttpRequest, HttpResponse, Peer, PeerOptions, say_hello,
-};
-use roamgate_sidecar::protocol::{Message, NODE_CONTRACT, NodeIdentity, PROTOCOL, RpcError, Side};
-use roamgate_sidecar::transport::BoxStream;
 use tokio::io::AsyncReadExt;
 
 use crate::host_ops::{HostOpError, HostRunOutput};
@@ -106,7 +106,7 @@ impl Handler for Home {
         _peer: &Peer,
         request: HttpRequest,
         body: Option<BodyReceiver>,
-    ) -> roamgate_sidecar::peer::BoxFuture<Result<HttpResponse, RpcError>> {
+    ) -> roamgate_channel::peer::BoxFuture<Result<HttpResponse, RpcError>> {
         let path = (request.method == CONNECT)
             .then(|| request.url.strip_prefix(AGENT_PREFIX))
             .flatten()
@@ -125,7 +125,6 @@ fn hello(version: &str) -> Message {
     Message::Hello {
         protocol: PROTOCOL,
         token: String::new(),
-        side: Side::Rust,
         version: version.to_owned(),
         pid: std::process::id(),
         families: vec![FAMILY.to_owned()],
@@ -268,7 +267,6 @@ impl NodeLink {
                 LISTEN,
                 serde_json::to_value(params).unwrap_or_default(),
                 Default::default(),
-                false,
             )
             .await
             .map(|_| ())
@@ -297,7 +295,7 @@ impl NodeLink {
     }
 
     /// A byte stream to `socket` on the host
-    /// ([`roamgate_sidecar::node::open_stream`]).
+    /// ([`roamgate_channel::node::open_stream`]).
     pub fn open(&self, socket: &str) -> Box<dyn HerdrStream> {
         Box::new(open_stream(&self.inner.peer, socket))
     }
@@ -318,13 +316,12 @@ impl NodeLink {
             RUN,
             serde_json::to_value(params).unwrap_or_default(),
             Default::default(),
-            false,
         );
         let answer = match timeout_ms {
             Some(ms) => tokio::time::timeout(Duration::from_millis(ms) + RUN_GRACE, call)
                 .await
                 .unwrap_or_else(|_| {
-                    Err(roamgate_sidecar::protocol::RpcError::new(format!(
+                    Err(roamgate_channel::protocol::RpcError::new(format!(
                         "timed out after {ms} ms"
                     )))
                 }),

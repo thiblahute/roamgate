@@ -7,9 +7,9 @@
 
 use std::sync::{Arc, Mutex};
 
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::{Ctx, RpcError};
 use roamgate_connections::profiles::connection_recovery_fingerprint;
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::{Ctx, RpcError};
 use serde_json::{Value, json};
 
 use super::{Layer, Lease, Target, call, text};
@@ -188,9 +188,7 @@ async fn host(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result<Va
         }
         "limit_pauses" => {
             let id = text(args, "connection_id").unwrap_or("");
-            let Some(standalone) = &cx.standalone else {
-                return Ok(json!([]));
-            };
+            let standalone = &cx.standalone;
             let ctx = Ctx {
                 connection_id: Some(id.to_owned()),
                 ..Ctx::default()

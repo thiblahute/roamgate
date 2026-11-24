@@ -219,11 +219,6 @@ fn the_installed_clients_carry_the_servers_constants() {
     for client in [ROAMGATE_REVIEW_PY, ROAMGATE_HOLD_PY] {
         assert!(client.contains(&format!("\nSTART_ENV = \"{start_env}\"\n")));
     }
-    let command = ts_constant(
-        "server/src/conversation/claude-start-hook.ts",
-        "CLAUDE_START_HOOK_COMMAND",
-    );
-    assert!(CLAUDE_START_HOOK_INSTALL_PY.contains(&format!("\nCOMMAND = {}\n", json(&command))));
     assert!(CLAUDE_START_HOOK_INSTALL_PY.contains("\nMARK = \"roamgate-review claude-start\"\n"));
     for client in [
         ROAMGATE_REVIEW_PY,

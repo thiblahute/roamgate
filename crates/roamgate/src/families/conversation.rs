@@ -31,6 +31,9 @@ use roamgate_agents::files::SessionFiles;
 use roamgate_agents::handlers::AgentSessionHandlers;
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BoxFuture, IncomingCall};
+use roamgate_channel::protocol::{Push, RpcError};
 use roamgate_connections::agent_profiles::shared::latest_session_model;
 use roamgate_connections::agent_profiles::store::{SessionProfiles, command_for_session};
 use roamgate_conversation::driver::{BoxFuture as ConvFuture, Drivers, Transcript};
@@ -52,9 +55,6 @@ use roamgate_conversation::service::{
 use roamgate_conversation::session::ConversationPrompt;
 use roamgate_conversation::shared::{AgentCommand, Obj};
 use roamgate_conversation::shell::{ProcessShellRunner, remote_shell_command};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BoxFuture, IncomingCall};
-use roamgate_sidecar::protocol::{Push, RpcError};
 use serde_json::{Map, Value, json};
 use tokio::sync::{mpsc, oneshot};
 
@@ -984,7 +984,7 @@ async fn internal(
     // The service's own work counts as served for the parity suite's
     // proof (the holders' requests come through the front); notices do not.
     if !matches!(op, "attach" | "pane_closed" | "sweep") {
-        roamgate_sidecar::core::note_served(
+        roamgate_channel::core::note_served(
             &ProcessEnv,
             FAMILY,
             &format!("internal.conversation.{op}"),

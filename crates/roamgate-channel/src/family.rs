@@ -6,36 +6,33 @@
 use std::sync::Arc;
 
 use roamgate_base::clock::SharedClock;
+use serde_json::Value;
 use serde_json::value::RawValue;
-use serde_json::{Value, json};
 
-use crate::owners::Owners;
 use crate::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall, Peer, WsOpen};
 use crate::protocol::{Ctx, Message, Push, RpcError};
 use crate::standalone::Standalone;
 
 /// The prefix of the front's own calls to a family (`internal.<family>.<op>`):
-/// no family of contract/owners/families.json declares it, so a browser
+/// no family of contract/wire/families.json declares it, so a browser
 /// can never reach one.
 pub const INTERNAL_PREFIX: &str = "internal.";
 
 /// What a family gets from the core.
 #[derive(Clone)]
 pub struct FamilyContext {
+    /// The channel to the front.
     pub peer: Peer,
-    pub owners: Owners,
     /// The families' clock: the real one, or the front's test clock
     /// followed (`welcome.clock` and `internal.clock.advance`).
     pub clock: SharedClock,
-    /// Set in a standalone core (no Bun anywhere): reverse targets are
-    /// answered in this process, pushes go to the browser sockets it
-    /// holds, and a family may call another one.
-    pub standalone: Option<Arc<Standalone>>,
+    /// What the core answers in its own process: reverse targets, pushes
+    /// to the browser sockets it holds, a family's call to another one.
+    pub standalone: Arc<Standalone>,
 }
 
 impl FamilyContext {
-    /// A call into what the front owns: in a standalone core, the target
-    /// the binary registered in this process.
+    /// A reverse call: the target the binary registered in this process.
     pub async fn reverse(&self, target: &str, args: Value) -> Result<Value, RpcError> {
         self.reverse_with(target, args, Ctx::default()).await
     }
@@ -47,18 +44,12 @@ impl FamilyContext {
         args: Value,
         ctx: Ctx,
     ) -> Result<Value, RpcError> {
-        match &self.standalone {
-            Some(standalone) => standalone.reverse(self, target, args, ctx).await,
-            None => self.peer.reverse_call(target, args, ctx).await,
-        }
+        self.standalone.reverse(self, target, args, ctx).await
     }
 
-    /// A push to browsers: in a standalone core, to the sockets it holds.
+    /// A push to browsers: to the sockets the core holds.
     pub fn push(&self, push: Push) {
-        match &self.standalone {
-            Some(standalone) => standalone.push(push),
-            None => self.peer.push(push),
-        }
+        self.standalone.push(push);
     }
 }
 
@@ -97,11 +88,10 @@ impl From<Value> for Reply {
 
 /// A family the core implements.
 pub trait CoreFamily: Send + Sync + 'static {
-    /// Its name in contract/owners/families.json.
+    /// Its name in contract/wire/families.json.
     fn name(&self) -> &'static str;
 
-    /// A browser RPC of the family (routed by the front only while Rust
-    /// owns it, or a shadow read while Bun does), or the front's own
+    /// A browser RPC of the family, or the front's own
     /// `internal.<family>.<op>` call.
     fn call(&self, _cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
         Box::pin(async move {
@@ -112,8 +102,7 @@ pub trait CoreFamily: Send + Sync + 'static {
         })
     }
 
-    /// [`CoreFamily::call`] for a browser's call in a standalone core: a
-    /// family may answer the large reads with their text
+    /// [`CoreFamily::call`] for a browser's call: a family may answer the large reads with their text
     /// ([`Reply::Text`]). The answer is the one `call` gives.
     fn call_reply(
         &self,
@@ -134,11 +123,10 @@ pub trait CoreFamily: Send + Sync + 'static {
         Box::pin(async { Ok(HttpResponse::status(404)) })
     }
 
-    /// Stage 2, on the Rust front's link (contract/wire/core-channel.md,
-    /// The Rust core's link to the Rust front): a browser asks to upgrade
-    /// a socket on one of the family's paths while the core owns it. The
-    /// answer is `ws_open`'s: accepted (`{accepted: true, transport}`),
-    /// refused with the response the browser gets, or [`pass_to_bun`].
+    /// A browser asks to upgrade a socket on one of the family's paths
+    /// (contract/wire/core-channel.md, Browser sockets). The answer is
+    /// `ws_open`'s: accepted (`{accepted: true, transport}`), or refused
+    /// with the response the browser gets ([`not_served`] by default).
     /// What the family sends the socket goes on `link`.
     fn ws_open(
         &self,
@@ -146,21 +134,21 @@ pub trait CoreFamily: Send + Sync + 'static {
         _link: &Peer,
         _open: WsOpen,
     ) -> BoxFuture<Result<Value, RpcError>> {
-        Box::pin(async { Ok(pass_to_bun()) })
+        Box::pin(async { Ok(not_served()) })
     }
 
     /// A `ws_message` or `ws_close` of a socket the family accepted.
     fn ws_socket(&self, _cx: &FamilyContext, _link: &Peer, _message: Message) {}
 
-    /// The core started (`true`) or stopped (`false`) owning the family:
-    /// its background work and its writers run only while it is owned.
+    /// The core started (`true`) or stopped (`false`) serving the family:
+    /// its background work and its writers run only in between.
     fn owned(&self, _cx: &FamilyContext, _owned: bool) {}
 }
 
 pub type Families = Vec<Arc<dyn CoreFamily>>;
 
-/// `ws_open`'s answer on the Rust front's link for a socket the core does
-/// not serve: the front asks the Bun core instead.
-pub fn pass_to_bun() -> Value {
-    json!({"accepted": false, "pass": true})
+/// `ws_open`'s answer for a socket the family does not serve: refused, the
+/// front answers the upgrade with a 400.
+pub fn not_served() -> Value {
+    serde_json::json!({"accepted": false})
 }

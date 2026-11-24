@@ -3,8 +3,9 @@
 //! The server gets nothing of the caller's environment but PATH (with the
 //! run's fakes first): its own HOME, XDG directories, APPDATA, TMPDIR and
 //! data root under the run's root, its own fake Herdr, the test clock, and
-//! record mode. `ROAMGATE_SERVER_CMD` names the server (default: the Bun
-//! server from this checkout); `ROAMGATE_SERVER_CWD` its working directory.
+//! record mode. `ROAMGATE_SERVER_CMD` names the server (default: this
+//! checkout's debug `roamgate`, built once per test process);
+//! `ROAMGATE_SERVER_CWD` its working directory.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -61,7 +62,8 @@ pub const HARNESS_ENV: &[&str] = &[
     "ROAMGATE_SSH_RUNTIME_DIR",
 ];
 
-/// How long a server gets to listen (a niced Bun on a busy machine).
+/// How long a server gets to listen (a niced debug build on a busy
+/// machine).
 pub const START_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone)]
@@ -134,8 +136,7 @@ pub struct Run {
     /// The server's whole environment.
     pub env: BTreeMap<String, String>,
     pub command: Vec<String>,
-    /// What `cli` steps run: `ROAMGATE_CLI_CMD`, else the server command
-    /// (a Rust front's CLI is still the Bun one, contract/wire/core-channel.md).
+    /// What `cli` steps run: `ROAMGATE_CLI_CMD`, else the server command.
     pub cli_command: Vec<String>,
     pub cwd: PathBuf,
     pub herdr: Option<FakeHerdr>,
@@ -149,87 +150,11 @@ pub struct Run {
     pub password: Option<String>,
     /// The last exit code of a stopped server.
     pub last_exit: Option<i32>,
-    /// With a core, told when the last start's core connected.
-    core_connected: Option<oneshot::Receiver<()>>,
-    /// Each start waits for the core to connect (a scenario of a family
-    /// PARITY_RUST_OWNERS gives to Rust).
-    pub wait_for_core: bool,
-}
-
-/// The variable naming the Rust core a Bun server runs beside it.
-pub const CORE_BIN_ENV: &str = "ROAMGATE_CORE_BIN";
-
-/// The families every server of a hybrid run gives to Rust
-/// (`PARITY_RUST_OWNERS`, comma separated families of
-/// contract/owners/families.json): written as the run's
-/// `<data>/runtime/owners.json` unless a scenario seeds its own. Empty
-/// without a core.
-pub fn rust_owners() -> Vec<String> {
-    if hybrid_core().is_none() {
-        return Vec::new();
-    }
-    std::env::var("PARITY_RUST_OWNERS")
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|family| !family.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
-/// Families that flip only behind the Rust front (contract/wire/
-/// core-channel.md: the voice family, whose socket the Bun front keeps):
-/// a hybrid run on the Bun front that gives one to Rust skips its
-/// scenarios, as if they named `fronts: [rust]`.
-pub const RUST_FRONT_ONLY: &[&str] = &["voice"];
-
-/// Whether this run skips a scenario of `family` (its owners table's
-/// family): Rust's on the Bun front, and flipping only behind the Rust
-/// front.
-pub fn rust_owned_off_its_front(family: &str, front: &str) -> bool {
-    front == "bun"
-        && RUST_FRONT_ONLY.contains(&family)
-        && rust_owners().iter().any(|name| name == family)
 }
 
 /// The variable naming the file a debug core appends what it served to
 /// (`<family> <method or path or cli command>` per line).
 pub const CORE_SERVED_LOG_ENV: &str = "ROAMGATE_CORE_SERVED_LOG";
-
-/// How long a hybrid server's core gets to connect after the server
-/// listens (a niced first start of a debug build).
-pub const CORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
-
-/// The Rust core every server of the suite runs with: `ROAMGATE_CORE_BIN`
-/// of the suite's own environment, or None for the server alone. With
-/// one, each start also waits for the core to connect, so a whole suite
-/// run proves the hybrid build serves every case with the core up.
-pub fn hybrid_core() -> Option<String> {
-    std::env::var(CORE_BIN_ENV)
-        .ok()
-        .filter(|path| !path.trim().is_empty())
-}
-
-/// Whether the suite's server runs no Bun at all: `ROAMGATE_SERVER_CMD` is
-/// a Rust `roamgate front` and `ROAMGATE_SIDECAR_BIN` is unset, so the
-/// front runs its own executable as the standalone core
-/// (contract/wire/core-channel.md, The standalone core).
-pub fn rust_only() -> bool {
-    let sidecar = std::env::var("ROAMGATE_SIDECAR_BIN").unwrap_or_default();
-    if !sidecar.trim().is_empty() {
-        return false;
-    }
-    let (command, _) = server_command();
-    let mut words = command.iter();
-    let program = words.next().map(|program| {
-        Path::new(program)
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    });
-    program.is_some_and(|program| program.starts_with("roamgate"))
-        && words.next().is_some_and(|word| word == "front")
-}
 
 /// The variable naming the Pi sidecar a server runs Pi in.
 pub const PI_SIDECAR_ENV: &str = "ROAMGATE_PI_SIDECAR";
@@ -291,7 +216,8 @@ fn build_pi_sidecar() -> Result<PathBuf> {
     Ok(path)
 }
 
-/// The server command: `ROAMGATE_SERVER_CMD`, or the Bun server.
+/// The server command: `ROAMGATE_SERVER_CMD`, or this checkout's debug
+/// `roamgate` (built once per test process, see [`crate::build::server`]).
 pub fn server_command() -> (Vec<String>, PathBuf) {
     let repo = repo_root();
     match std::env::var("ROAMGATE_SERVER_CMD") {
@@ -302,12 +228,7 @@ pub fn server_command() -> (Vec<String>, PathBuf) {
                 .unwrap_or_else(|| repo.clone()),
         ),
         _ => (
-            vec![
-                "bun".into(),
-                repo.join("server/src/index.ts")
-                    .to_string_lossy()
-                    .into_owned(),
-            ],
+            vec![crate::build::server_path().to_string_lossy().into_owned()],
             repo,
         ),
     }
@@ -384,15 +305,8 @@ impl Run {
         // Up first: seeded files may name its address (`${FAKE_HTTP}`).
         let served = root.join("served");
         let http = FakeHttp::start(served.clone(), options.openai.clone()).await?;
-        // The Rust core, built only for a run that names it.
-        let core = if serde_json::to_string(&options.env)?.contains("${CORE}") {
-            crate::build::core()?.to_string_lossy().into_owned()
-        } else {
-            String::new()
-        };
         let expand = |text: &str| {
             let mut text = text
-                .replace("${CORE}", &core)
                 .replace("${ROOT}", &root.to_string_lossy())
                 .replace("${HOME}", &home.to_string_lossy())
                 .replace("${BIN}", &bin.to_string_lossy())
@@ -418,25 +332,6 @@ impl Run {
                 file.content = expand(text).into_bytes();
             }
             write_seed(&home, &file)?;
-        }
-        // The families a hybrid run gives to Rust, unless the scenario
-        // seeds its own table.
-        let owners_path = data_root(&home).join("runtime").join("owners.json");
-        let rust = rust_owners();
-        if !rust.is_empty() && !owners_path.exists() {
-            std::fs::create_dir_all(owners_path.parent().unwrap())?;
-            let owners: serde_json::Map<String, Value> = rust
-                .iter()
-                .map(|family| (family.clone(), Value::String("rust".into())))
-                .collect();
-            std::fs::write(
-                &owners_path,
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "version": 1,
-                    "owners": owners,
-                    "shadow": {"enabled": false, "rate": 0},
-                }))?,
-            )?;
         }
         // Seeds name the run's paths (${ROOT}, ${HOME}) too.
         let expand_seed = |seed: &HerdrSeed| -> Result<HerdrSeed> {
@@ -465,7 +360,14 @@ impl Run {
 
         let (command, cwd) = match &options.command {
             Some((command, cwd)) => (command.clone(), PathBuf::from(expand(cwd))),
-            None => server_command(),
+            None => {
+                if std::env::var("ROAMGATE_SERVER_CMD")
+                    .map_or(true, |command| command.trim().is_empty())
+                {
+                    crate::build::server()?;
+                }
+                server_command()
+            }
         };
         let cli_command = match (&options.command, std::env::var("ROAMGATE_CLI_CMD")) {
             (None, Ok(cli)) if !cli.trim().is_empty() => {
@@ -529,33 +431,19 @@ impl Run {
         if let Some(password) = &options.password {
             set("ROAMGATE_PASSWORD", password.clone());
         }
-        // The hybrid build (contract/wire/core-channel.md): the server with
-        // its Rust core, when the suite is told where the core is.
-        if let Some(core) = hybrid_core() {
-            set(CORE_BIN_ENV, core);
+        // What the core served and the reverse targets it lacked, for
+        // the report.
+        if options.command.is_none() {
             set(CORE_SERVED_LOG_ENV, text(&root.join("core-served.log")));
         }
-        // Rust only: what the standalone core served, did not serve
-        // (`unported`) and the reverse targets it lacked, for the report.
-        if options.command.is_none() && rust_only() {
-            set(CORE_SERVED_LOG_ENV, text(&root.join("core-served.log")));
-        }
-        // Rust only: Ranger's providers but Claude Code run Pi in the
-        // `roamgate-pi` sidecar (contract/wire/pi-sidecar.md), which a
-        // release ships beside `roamgate`; here the one this checkout
-        // builds, unless the scenario names its own.
+        // Ranger's providers but Claude Code run Pi in the `roamgate-pi`
+        // sidecar (contract/wire/pi-sidecar.md), which a release ships
+        // beside `roamgate`; here the one this checkout builds, unless the
+        // scenario names its own.
         if options.command.is_none()
-            && rust_only()
             && let Some(sidecar) = pi_sidecar()
         {
             set(PI_SIDECAR_ENV, text(&sidecar));
-        }
-        // Stage 2 (contract/wire/core-channel.md): the Rust front runs
-        // the Bun server the suite names as its core.
-        if let Ok(sidecar) = std::env::var("ROAMGATE_SIDECAR_BIN")
-            && !sidecar.trim().is_empty()
-        {
-            set("ROAMGATE_SIDECAR_BIN", sidecar);
         }
         for (key, value) in &options.env {
             // `{{unset}}`: a variable the run would set, left out (a
@@ -613,8 +501,6 @@ impl Run {
             cookies: BTreeMap::new(),
             password: options.password.clone(),
             last_exit: None,
-            core_connected: None,
-            wait_for_core: false,
         })
     }
 
@@ -654,24 +540,9 @@ impl Run {
             .with_context(|| format!("start {}", self.command.join(" ")))?;
         let (ready, listening) = oneshot::channel::<u16>();
         let pattern = Regex::new(r"bridge listening url=https?://[^\s:]+:(\d+)").expect("regex");
-        // The front's line once the core said hello (core-channel/supervisor.ts).
-        let (core_ready, core_connected) = oneshot::channel::<()>();
-        let core_ready = Arc::new(Mutex::new(Some(core_ready)));
-        let core_pattern = Regex::new(r"\bcore \S+ connected \(pid").expect("regex");
-        let core_seen = {
-            let core_ready = core_ready.clone();
-            move |line: &str| {
-                if core_pattern.is_match(line)
-                    && let Some(ready) = core_ready.lock().expect("core ready").take()
-                {
-                    let _ = ready.send(());
-                }
-            }
-        };
         let stdout = child.stdout.take().context("stdout")?;
         let stderr = child.stderr.take().context("stderr")?;
         let log = self.log.clone();
-        let seen = core_seen.clone();
         tokio::spawn(async move {
             let mut ready = Some(ready);
             let mut lines = BufReader::new(stdout).lines();
@@ -690,11 +561,9 @@ impl Run {
                 {
                     let _ = ready.send(port);
                 }
-                seen(&line);
             }
         });
         let log = self.log.clone();
-        let seen = core_seen;
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
@@ -704,7 +573,6 @@ impl Run {
                     log.push_str(&line);
                     log.push('\n');
                 }
-                seen(&line);
             }
         });
         let port = tokio::select! {
@@ -714,40 +582,9 @@ impl Run {
         };
         let port =
             port.map_err(|error| anyhow!("{error}\n--- server output ---\n{}", self.log_text()))?;
-        // Not waited for here: the server serves without its core, and a
-        // scenario connects as soon as the port opens (pushes sent at
-        // startup go to the browsers already there). `check_core` waits.
-        // Rust only: the front's own core, welcomed before it listens;
-        // a scenario's ROAMGATE_CORE_BIN is no Bun's to run.
-        self.core_connected =
-            (self.env.contains_key(CORE_BIN_ENV) && !rust_only()).then_some(core_connected);
+        // The front welcomes its core before it listens.
         self.server = Some(Server { child, port });
-        // A scenario of a family the run gives to Rust starts its steps once
-        // the core is connected: until then Bun serves them, and the
-        // family's background work would start at another time.
-        if self.wait_for_core {
-            self.check_core().await?;
-        }
         Ok(())
-    }
-
-    /// With a core (`ROAMGATE_CORE_BIN`), whether the last start's core
-    /// connected, waiting for it at most CORE_CONNECT_TIMEOUT: a scenario
-    /// of the hybrid build fails when its server ran without the core.
-    pub async fn check_core(&mut self) -> Result<()> {
-        let Some(connected) = self.core_connected.take() else {
-            return Ok(());
-        };
-        let connected = tokio::select! {
-            connected = connected => connected.map_err(|_| anyhow!("the server ended before its core connected")),
-            () = tokio::time::sleep(CORE_CONNECT_TIMEOUT) => Err(anyhow!("the core did not connect within {CORE_CONNECT_TIMEOUT:?}")),
-        };
-        connected.map_err(|error| {
-            anyhow!(
-                "hybrid: {error}\n--- server output ---\n{}",
-                self.log_text()
-            )
-        })
     }
 
     /// Stops the server (SIGTERM, then SIGKILL after 15 s); gives its exit
@@ -852,19 +689,10 @@ impl Run {
 }
 
 impl Run {
-    /// The processes under the server whose name says Bun (`bun`, or a
-    /// compiled Bun build `roamgate.bun`); Linux only, empty elsewhere.
-    pub fn bun_descendants(&self) -> Vec<String> {
-        let Some(root) = self.server.as_ref().and_then(|server| server.child.id()) else {
-            return Vec::new();
-        };
-        descendants_named_bun(root)
-    }
-
-    /// The served log's lines about what the standalone core lacked:
+    /// The served log's lines about what the core lacked:
     /// `reverse-missing <target>` and `unported <method or route>`, with
     /// their counts.
-    pub fn standalone_gaps(&self) -> BTreeMap<String, u64> {
+    pub fn core_gaps(&self) -> BTreeMap<String, u64> {
         let mut gaps = BTreeMap::new();
         for line in self.core_served().lines() {
             if line.starts_with("reverse-missing ") || line.starts_with("unported ") {
@@ -873,48 +701,6 @@ impl Run {
         }
         gaps
     }
-}
-
-#[cfg(target_os = "linux")]
-fn descendants_named_bun(root: u32) -> Vec<String> {
-    let mut parents: Vec<(u32, u32, String)> = Vec::new();
-    for entry in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
-        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
-            continue;
-        };
-        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
-            continue;
-        };
-        // `pid (comm) state ppid ...`: comm may hold spaces and parens.
-        let (Some(open), Some(close)) = (stat.find('('), stat.rfind(')')) else {
-            continue;
-        };
-        let comm = stat[open + 1..close].to_owned();
-        let ppid = stat[close + 1..]
-            .split_whitespace()
-            .nth(1)
-            .and_then(|field| field.parse().ok())
-            .unwrap_or(0);
-        parents.push((pid, ppid, comm));
-    }
-    let mut found = Vec::new();
-    let mut frontier = vec![root];
-    while let Some(parent) = frontier.pop() {
-        for (pid, ppid, comm) in &parents {
-            if *ppid == parent {
-                frontier.push(*pid);
-                if comm == "bun" || comm.starts_with("roamgate.bun") {
-                    found.push(format!("{pid} {comm}"));
-                }
-            }
-        }
-    }
-    found
-}
-
-#[cfg(not(target_os = "linux"))]
-fn descendants_named_bun(_root: u32) -> Vec<String> {
-    Vec::new()
 }
 
 impl Drop for Run {

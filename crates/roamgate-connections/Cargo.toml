@@ -23,9 +23,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 regex = "1"
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
+roamgate-channel = { path = "../roamgate-channel" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }
-roamgate-sidecar = { path = "../roamgate-sidecar" }
 sha2 = "0.10"
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }

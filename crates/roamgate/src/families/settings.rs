@@ -5,33 +5,26 @@
 //!
 //! - Browser calls: [`RPC_METHODS`] (`ctx.connection_id` is the connection
 //!   a connection-scoped one came on), and `/api/instance-settings`.
-//! - The front's own calls: `internal.settings.get` gives `{revision,
-//!   settings}`; `internal.settings.update {base_revision, settings}`
-//!   writes the front's change unless the file moved on since
-//!   `base_revision` (error code `stale`: the front reads again and redoes
-//!   its change).
 //! - Reverse call: `settings.changed {revision, settings, origin: "core",
-//!   cause}` after each write of the core's own handlers (the method and
-//!   connection as `cause`), awaited before their answer, so the front's
-//!   copy, history and change listeners follow; the front's own writes
-//!   are answered with what was written.
+//!   cause}` after each write (the method and connection as `cause`),
+//!   awaited before the answer, so the other families' copies, the history
+//!   and the change listeners follow.
 //!
-//! The store is made fresh each time the core starts owning the family
-//! (Bun may have written meanwhile) and dropped when it stops; while Bun
-//! owns it, a read (a shadow read) reads the file and writes nothing.
+//! The store is made when the family first serves and dropped when it
+//! stops.
 
 use std::sync::{Arc, Mutex};
 
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
 use roamgate_base::settings::{SettingsStore, settings_path};
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
+use roamgate_channel::protocol::RpcError;
 use roamgate_http::settings::{
     INSTANCE_SETTINGS_MAX_BYTES, INSTANCE_SETTINGS_PATH, InstanceBody, InstanceRequest,
-    RPC_METHODS, Revision, SettingsService, WriteError,
+    RPC_METHODS, Revision, SettingsService,
 };
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 
 use super::update::{header, json_response, path_of};
@@ -49,12 +42,12 @@ pub fn family() -> Option<Arc<dyn CoreFamily>> {
 /// settings.json through its writer.
 static LATEST: Mutex<std::sync::Weak<SettingsFamily>> = Mutex::new(std::sync::Weak::new());
 
-/// The settings as the core holds them while it owns the family, else as
-/// the file says now (written by the front).
+/// The settings as the core holds them, else (no family) as the file says
+/// now.
 pub async fn read_shared(cx: &FamilyContext) -> Arc<roamgate_base::settings::Settings> {
     let family = LATEST.lock().unwrap().upgrade();
     if let Some(family) = family
-        && let Ok(Some(service)) = family.writer(cx)
+        && let Ok(service) = family.writer(cx)
     {
         return service.store().read().await;
     }
@@ -67,8 +60,7 @@ pub async fn read_shared(cx: &FamilyContext) -> Arc<roamgate_base::settings::Set
 /// A write of another family of the core through the settings family's
 /// writer, told to the front (`settings.changed`, with `cause`) before it
 /// answers. `change` gives the next settings, or None to leave the file
-/// as it is (answered with the settings as they are). Refused with
-/// `not_owner` while the front owns settings.json.
+/// as it is (answered with the settings as they are).
 pub async fn update_shared(
     cx: &FamilyContext,
     cause: Value,
@@ -78,7 +70,7 @@ pub async fn update_shared(
     let Some(family) = family else {
         return Err(RpcError::with_code("no settings family", "not_owner"));
     };
-    let service = family.owned_writer(cx)?;
+    let service = family.writer(cx)?;
     let unchanged = std::sync::atomic::AtomicBool::new(false);
     let written = service
         .update_if(
@@ -127,30 +119,16 @@ fn new_service(cx: &FamilyContext) -> Result<Arc<SettingsService>, RpcError> {
     )))
 }
 
-fn is_read(method: &str) -> bool {
-    method == "settings.get" || method.ends_with(".get")
-}
-
 impl SettingsFamily {
-    /// The writer while the core owns the family; None otherwise.
-    fn writer(&self, cx: &FamilyContext) -> Result<Option<Arc<SettingsService>>, RpcError> {
-        if cx.owners.check_write(FAMILY).is_err() {
-            return Ok(None);
-        }
+    /// The writer, made on first use.
+    fn writer(&self, cx: &FamilyContext) -> Result<Arc<SettingsService>, RpcError> {
         let mut service = self.service.lock().unwrap();
         if let Some(service) = service.as_ref() {
-            return Ok(Some(service.clone()));
+            return Ok(service.clone());
         }
         let made = new_service(cx)?;
         *service = Some(made.clone());
-        Ok(Some(made))
-    }
-
-    /// The writer, or a refusal when the core does not own the family.
-    fn owned_writer(&self, cx: &FamilyContext) -> Result<Arc<SettingsService>, RpcError> {
-        self.writer(cx)?.ok_or_else(|| {
-            RpcError::with_code("settings.json is the front's to write now", "not_owner")
-        })
+        Ok(made)
     }
 }
 
@@ -191,37 +169,9 @@ impl CoreFamily for SettingsFamily {
     fn call(&self, cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
         let cx = cx.clone();
         let writer = self.writer(&cx);
-        let owned = self.owned_writer(&cx);
         Box::pin(async move {
             let method = call.method.as_str();
-            match method {
-                "internal.settings.get" => return Ok(owned?.get().await.to_json()),
-                "internal.settings.update" => {
-                    let service = owned?;
-                    let base = call
-                        .params
-                        .get("base_revision")
-                        .and_then(Value::as_u64)
-                        .ok_or_else(|| {
-                            RpcError::new("internal.settings.update needs base_revision")
-                        })?;
-                    let settings = call
-                        .params
-                        .get("settings")
-                        .filter(|settings| settings.is_object())
-                        .cloned()
-                        .ok_or_else(|| RpcError::new("internal.settings.update needs settings"))?;
-                    return match service.replace(base, settings).await {
-                        // The front keeps what it is answered.
-                        Ok(written) => Ok(written.to_json()),
-                        Err(error @ WriteError::Stale { .. }) => {
-                            Err(RpcError::with_code(error.to_string(), "stale"))
-                        }
-                        Err(error) => Err(RpcError::new(error.to_string())),
-                    };
-                }
-                _ => {}
-            }
+            let service = writer?;
             if !RPC_METHODS.contains(&method) {
                 return Err(RpcError::with_code(
                     format!("unknown method {method}"),
@@ -229,13 +179,6 @@ impl CoreFamily for SettingsFamily {
                 ));
             }
             let connection = call.ctx.connection_id.clone();
-            let service = match writer? {
-                Some(service) if !call.shadow => service,
-                // Not the core's to write (a shadow read): the file as it
-                // is, nothing written.
-                _ if is_read(method) => new_service(&cx)?,
-                _ => return Err(owned.err().unwrap_or_else(|| RpcError::new("not owned"))),
-            };
             let answer = service
                 .rpc(method, &call.params, connection.as_deref(), &path_text())
                 .await
@@ -265,16 +208,7 @@ impl CoreFamily for SettingsFamily {
                 return Ok(HttpResponse::status(404));
             }
             let method = request.method.to_ascii_uppercase();
-            let service = match writer? {
-                Some(service) => service,
-                None if method == "GET" => new_service(&cx)?,
-                None => {
-                    return Err(RpcError::with_code(
-                        "settings.json is the front's to write now",
-                        "not_owner",
-                    ));
-                }
-            };
+            let service = writer?;
             let body = match body {
                 None => InstanceBody::Missing,
                 Some(mut body) => {

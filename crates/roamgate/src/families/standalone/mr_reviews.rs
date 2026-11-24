@@ -11,6 +11,8 @@ use std::time::Duration;
 
 use roamgate_agents::extract::stable_stringify;
 use roamgate_agents::js::Obj;
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_connections::agent_profiles::store::{
     as_command, command_env, command_for_session, helper_command, profile_for_session,
 };
@@ -18,8 +20,6 @@ use roamgate_exec::process::Command;
 use roamgate_forge::review::cli::truthy;
 use roamgate_git::shell::shell_command;
 use roamgate_mr_reviews::fetchers::{FetchCall, FetchError, InboxFetchers};
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 
 use super::forge::LocalFetchers;

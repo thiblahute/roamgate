@@ -146,7 +146,7 @@ pub(crate) async fn call(
             context: method.to_owned(),
         },
         (error, _) => super::browser::Reply {
-            result: Err(roamgate_sidecar::protocol::RpcError::new(
+            result: Err(roamgate_channel::protocol::RpcError::new(
                 parsed["error"]["message"]
                     .as_str()
                     .map(str::to_owned)

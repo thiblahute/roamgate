@@ -2416,38 +2416,13 @@ fn the_host_setup_fits_in_one_command_argument_with_room_to_grow() {
 }
 
 #[test]
-fn the_installed_scripts_are_the_bun_builds() {
-    // The checksum each install line greps for is the one Bun writes, so a
-    // host either build set up is not written again by the other.
+fn the_installed_script_ends_with_its_checksum() {
+    // The checksum each install line greps for: a host already set up is
+    // not written again.
     assert!(texts::REVIEW_CLIENT_INSTALLED_SCRIPT.ends_with(&format!(
         "# roamgate-review {}\n",
         texts::REVIEW_CLIENT_CHECKSUM.as_str()
     )));
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let Ok(output) = std::process::Command::new("bun")
-        .args([
-            "-e",
-            "const a = await import('./server/src/review/agent-client.ts'); const h = await import('./server/src/conversation/holder-script.ts'); process.stdout.write(a.REVIEW_CLIENT_CHECKSUM + ' ' + h.HOLD_CLIENT_CHECKSUM)",
-        ])
-        .current_dir(root)
-        .output()
-    else {
-        eprintln!("bun not found: skipped");
-        return;
-    };
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        format!(
-            "{} {}",
-            texts::REVIEW_CLIENT_CHECKSUM.as_str(),
-            texts::HOLD_CLIENT_CHECKSUM.as_str()
-        )
-    );
 }
 
 #[tokio::test]

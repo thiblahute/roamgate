@@ -11,13 +11,13 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_claude::driver::CLAUDE_CODE_PROVIDER;
 use roamgate_claude::{
     ClaudeCodeDriver, ClaudeCodeOptions, ClaudeCommand, ClaudeError, ClaudeMcp, ClaudeTurn,
     CommandSource, McpTool, McpToolResult, TurnEvent,
 };
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 

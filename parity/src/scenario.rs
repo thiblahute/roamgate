@@ -91,35 +91,15 @@ pub struct Scenario {
     /// Platforms it runs on (linux, macos, windows); all when empty.
     #[serde(default)]
     pub platforms: Vec<String>,
-    /// Fronts it runs on (`bun`; `rust`: a run with `ROAMGATE_SIDECAR_BIN`
-    /// set is on the Rust front with its Bun core; `rust-only`: a Rust
-    /// front with no sidecar, no Bun at all); all when empty.
-    #[serde(default)]
-    pub fronts: Vec<String>,
     pub steps: Vec<Value>,
 }
 
-/// What a run is: its front and the commands its server and CLI steps run.
+/// What a run is: the commands its server and CLI steps run.
 pub fn run_description(run: &crate::run::Run) -> Value {
     serde_json::json!({
-        "front": current_front(),
         "server_command": run.command,
         "cli_command": run.cli_command,
-        "sidecar": std::env::var("ROAMGATE_SIDECAR_BIN").ok().filter(|bin| !bin.trim().is_empty()),
-        "standalone": crate::run::rust_only(),
-        "core": crate::run::hybrid_core(),
     })
-}
-
-/// The front this run's servers have: `rust` when `ROAMGATE_SIDECAR_BIN`
-/// names the Bun core of a Rust front, `rust-only` when the server is a
-/// Rust front with no sidecar (crate::run::rust_only), else `bun`.
-pub fn current_front() -> &'static str {
-    match std::env::var("ROAMGATE_SIDECAR_BIN") {
-        Ok(bin) if !bin.trim().is_empty() => "rust",
-        _ if crate::run::rust_only() => "rust-only",
-        _ => "bun",
-    }
 }
 
 fn default_tier() -> String {
@@ -316,7 +296,7 @@ pub fn options(scenario: &Scenario) -> Result<RunOptions> {
         // A machine's node (`roamgate node --listen`): this checkout's
         // debug `roamgate`.
         Some("node") => Some(vec![
-            crate::build::core()?.to_string_lossy().into_owned(),
+            crate::build::server()?.to_string_lossy().into_owned(),
             "node".into(),
         ]),
         Some(line) => Some(
@@ -385,9 +365,7 @@ fn duration(step: &Map<String, Value>) -> Duration {
 
 impl Runner {
     pub async fn new(fake_bin: &Path, scenario: &Scenario) -> Result<Runner> {
-        let mut run = Run::new(fake_bin, options(scenario)?).await?;
-        let family = owner_family(&scenario.family);
-        run.wait_for_core = crate::run::rust_owners().iter().any(|name| name == family);
+        let run = Run::new(fake_bin, options(scenario)?).await?;
         let mut runner = Runner {
             run,
             vars: BTreeMap::new(),
@@ -2392,17 +2370,6 @@ pub fn coverage(scenario: &Scenario) -> Vec<String> {
     out
 }
 
-/// The family of contract/owners/families.json a scenario's family is in.
-pub fn owner_family(scenario_family: &str) -> &str {
-    match scenario_family {
-        "herdr" => "herdr_setup",
-        "connections" => "host",
-        "agent_profile" => "agent_profiles",
-        "agent_chat" => "conversation",
-        other => other,
-    }
-}
-
 /// Runs a scenario against the server `ROAMGATE_SERVER_CMD` names, then
 /// checks the recorded traffic against the contract.
 pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
@@ -2463,44 +2430,15 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
         }
     }
     runner.close_sockets();
-    // The hybrid build: the core was up (run.rs check_core).
-    if outcome.is_ok() {
-        outcome = runner.run.check_core().await;
-    }
-    // Rust only: no Bun anywhere under the server.
-    if outcome.is_ok() && crate::run::rust_only() {
-        let bun = runner.run.bun_descendants();
-        if !bun.is_empty() {
-            outcome = Err(anyhow::anyhow!(
-                "rust-only: Bun processes run under the server: {}",
-                bun.join(", ")
-            ));
-        }
-    }
-    // A family a hybrid run gives to Rust: the core served the scenario.
-    if outcome.is_ok() {
-        let family = owner_family(&scenario.family);
-        if crate::run::rust_owners().iter().any(|name| name == family)
-            && !runner
-                .run
-                .core_served()
-                .lines()
-                .any(|line| line.split(' ').next() == Some(family))
-        {
-            outcome = Err(anyhow::anyhow!(
-                "hybrid: {family} is Rust's (PARITY_RUST_OWNERS) but the core served nothing of it"
-            ));
-        }
-    }
     let _ = runner.run.stop().await;
     if let Err(error) = outcome {
-        // Rust only: what the standalone core lacked, first.
-        let gaps = runner.run.standalone_gaps();
+        // What the core lacked, first.
+        let gaps = runner.run.core_gaps();
         let error = if gaps.is_empty() {
             error
         } else {
             error.context(format!(
-                "rust-only gaps: {}",
+                "core gaps: {}",
                 gaps.iter()
                     .map(|(gap, count)| format!("{gap} x{count}"))
                     .collect::<Vec<_>>()
@@ -2518,9 +2456,8 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
             .collect::<Vec<_>>()
             .join("\n");
         return Err(error.context(format!(
-            "{} [{} front]\n--- server output (last lines) ---\n{tail}",
-            scenario.name,
-            current_front()
+            "{}\n--- server output (last lines) ---\n{tail}",
+            scenario.name
         )));
     }
     // PARITY_RECORDINGS_DIR keeps every run's recording (to census shapes

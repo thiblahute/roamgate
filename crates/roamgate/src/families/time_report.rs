@@ -1,10 +1,7 @@
 //! The time_report family in the core (`bridge.time_report`, the Hours
 //! view): roamgate-activity's bridge, its provider run on the families'
 //! clock. The provider setting is read from settings.json at each call
-//! (never written). The day input is built here from activity.sqlite while
-//! the core owns the activity family, and comes from Bun through the
-//! `activity.dayInput` reverse call while Bun does (contract/wire/
-//! core-channel.md).
+//! (never written). The day input is built here from activity.sqlite.
 
 use std::sync::{Arc, OnceLock};
 
@@ -16,10 +13,10 @@ use roamgate_activity::time_report::{Failure, TimeReport, TimeReportError, TimeR
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
 use roamgate_base::settings::Settings;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::IncomingCall;
+use roamgate_channel::protocol::RpcError;
 use roamgate_exec::process::ProcessRunner;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::IncomingCall;
-use roamgate_sidecar::protocol::{RpcError, Side};
 use serde_json::{Value, json};
 
 use super::activity::settings_json;
@@ -92,19 +89,8 @@ impl TimeReportSource for Source {
     fn day_input(&self, date: String) -> BoxFuture<Result<Value, Failure>> {
         let cx = self.cx.clone();
         Box::pin(async move {
-            if cx.owners.owner("activity") == Side::Rust {
-                super::activity::settle().await;
-                return local_day_input(cx.clock.now(), date).await;
-            }
-            cx.reverse("activity.dayInput", json!({ "date": date }))
-                .await
-                .map_err(|error| match error.code.as_deref() {
-                    // Recording off or no log: an answer, as in Bun.
-                    Some("not_configured") => {
-                        TimeReportError::new(error.message, "not_configured").into()
-                    }
-                    _ => Failure::Other(error.message),
-                })
+            super::activity::settle().await;
+            local_day_input(cx.clock.now(), date).await
         })
     }
 }
@@ -132,7 +118,7 @@ impl CoreFamily for TimeReportFamily {
         &self,
         cx: &FamilyContext,
         call: IncomingCall,
-    ) -> roamgate_sidecar::peer::BoxFuture<Result<Value, RpcError>> {
+    ) -> roamgate_channel::peer::BoxFuture<Result<Value, RpcError>> {
         let bridge = self.bridge(cx);
         Box::pin(async move {
             if call.method != METHOD {

@@ -595,111 +595,86 @@ fn draft_thread(
     .unwrap()
 }
 
-/// The repository's root.
-pub(crate) fn repo() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .unwrap()
-}
-
-/// bun, when it is on PATH: the suites on a real checkout read it with
-/// the review loaders the TS suites use (workspace/review-patch.ts, Bun's
-/// until S17 ports them), so they skip, saying why, without it.
-pub(crate) fn bun() -> Option<std::path::PathBuf> {
-    let found = std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|dir| dir.join("bun"))
-            .find(|path| path.is_file())
-    });
-    if found.is_none() {
-        eprintln!("skipped: bun is not on PATH, the review loaders cannot read the checkout");
+fn git_answer<T: serde::Serialize>(
+    read: Result<T, roamgate_git::GitError>,
+) -> Result<Value, LoadError> {
+    match read {
+        Ok(value) => {
+            serde_json::to_value(value).map_err(|error| LoadError::Failed(error.to_string()))
+        }
+        Err(roamgate_git::GitError::Gone { code, message }) => Err(LoadError::Gone {
+            code: code.as_str().into(),
+            message,
+        }),
+        Err(roamgate_git::GitError::Message(message)) => Err(LoadError::Failed(message)),
     }
-    found
 }
 
-const LOADER: &str = r#"
-const repo = process.env.ROAMGATE_REPO;
-const patch = await import(`${repo}/server/src/workspace/review-patch.ts`);
-const { runProcessWithCodeTimeout, shQuote } = await import(`${repo}/server/src/utils/process-utils.ts`);
-const [op, raw] = process.argv.slice(-2);
-const args = { ...JSON.parse(raw), shQuote, runProcessWithCodeTimeout };
-const read = {
-  patch: () => patch.readReviewPatch(args),
-  commitPatch: () => patch.readReviewCommitPatch(args),
-  commits: () => patch.readReviewCommits(args),
-  heads: () => patch.readReviewHeads(args),
-  patchIds: () => patch.readReviewPatchIds(args),
-  defaultBase: () => patch.readDefaultBase(args),
-  branchBase: async () => {
-    const { resolveDefaultBase } = await import(`${repo}/server/src/workspace/diff-base.ts`);
-    return (await resolveDefaultBase(args)).base;
-  },
-}[op];
-try {
-  console.log(JSON.stringify({ ok: (await read()) ?? null }));
-} catch (error) {
-  console.log(JSON.stringify({ error: String(error?.message ?? error), code: error?.code }));
+fn arg(args: &Value, name: &str) -> String {
+    args[name].as_str().unwrap_or("").to_owned()
 }
-"#;
 
-/// One read of review-patch.ts, through bun.
-pub(crate) fn load_with(bun: &Path, op: &str, args: Value) -> BoxFuture<Result<Value, LoadError>> {
-    let mut command = tokio::process::Command::new(bun);
-    command
-        .current_dir(repo().join("server"))
-        .env("ROAMGATE_REPO", repo())
-        .arg("-e")
-        .arg(LOADER)
-        .arg(op)
-        .arg(args.to_string());
+/// One git read of a review, by the op names of the TS loader
+/// (review-patch.ts's reads and diff-base.ts's default base).
+pub(crate) fn load_with(op: &str, args: Value) -> BoxFuture<Result<Value, LoadError>> {
+    use roamgate_git::review_patch as patch;
+    let op = op.to_owned();
     Box::pin(async move {
-        let output = command
-            .output()
-            .await
-            .map_err(|error| LoadError::Failed(error.to_string()))?;
-        let text = String::from_utf8_lossy(&output.stdout);
-        let line = text.lines().last().unwrap_or("");
-        let answer: Value = serde_json::from_str(line).map_err(|_| {
-            LoadError::Failed(format!(
-                "bun: {}{}",
-                text,
-                String::from_utf8_lossy(&output.stderr)
-            ))
-        })?;
-        match (answer.get("ok"), answer["error"].as_str()) {
-            (Some(value), _) => Ok(value.clone()),
-            (None, Some(message)) => Err(match answer["code"].as_str() {
-                Some(code) if crate::model::is_review_gone_code(code) => LoadError::Gone {
-                    code: code.into(),
-                    message: message.into(),
-                },
-                _ => LoadError::Failed(message.into()),
-            }),
-            _ => Err(LoadError::Failed(line.into())),
+        let git = roamgate_git::exec::GitContext::local(std::sync::Arc::new(
+            roamgate_git::exec::LocalRunner::system(),
+        ));
+        let root = arg(&args, "root");
+        match op.as_str() {
+            "patch" => {
+                let target: roamgate_git::review::Target =
+                    serde_json::from_value(args["target"].clone())
+                        .map_err(|error| LoadError::Failed(error.to_string()))?;
+                let paths: Option<Vec<String>> =
+                    serde_json::from_value(args["paths"].clone()).unwrap_or(None);
+                git_answer(patch::read_review_patch(&git, &root, &target, paths.as_deref()).await)
+            }
+            "commitPatch" => git_answer(
+                patch::read_review_commit_patch(&git, &root, &arg(&args, "commit")).await,
+            ),
+            "commits" => git_answer(
+                patch::read_review_commits(&git, &root, &arg(&args, "base"), &arg(&args, "head"))
+                    .await,
+            ),
+            "heads" => {
+                let entries: Vec<(String, String)> = args["entries"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|entry| (arg(entry, "root"), arg(entry, "ref")))
+                    .collect();
+                git_answer(patch::read_review_heads(&git, &entries).await)
+            }
+            "patchIds" => {
+                let shas: Vec<String> =
+                    serde_json::from_value(args["shas"].clone()).unwrap_or_default();
+                git_answer(patch::read_review_patch_ids(&git, &root, &shas).await)
+            }
+            "defaultBase" => git_answer(patch::read_default_base(&git, &root).await),
+            "branchBase" => git_answer(
+                roamgate_git::diff_base::resolve_default_base(&git, &root, None, None)
+                    .await
+                    .map(|found| found.base),
+            ),
+            other => Err(LoadError::Failed(format!("no read {other}"))),
         }
     })
 }
 
-/// A host whose git reads are review-patch.ts's, as the TS suites wire
-/// them: a commit's patch, else the review's; its commits, heads and
-/// patch ids.
-pub(crate) fn git_host(bun: &Path) -> Host {
-    let (diff, commits, ids, heads) = (
-        bun.to_owned(),
-        bun.to_owned(),
-        bun.to_owned(),
-        bun.to_owned(),
-    );
+/// A host whose git reads are roamgate-git's: a commit's patch, else the
+/// review's; its commits, heads and patch ids.
+pub(crate) fn git_host() -> Host {
     Host {
         diff: Some(Box::new(move |session, commit, paths| match commit {
             Some(commit) => load_with(
-                &diff,
                 "commitPatch",
                 json!({"root": session.root, "commit": commit}),
             ),
             None => load_with(
-                &diff,
                 "patch",
                 json!({"root": session.root, "target": session.target.to_value(), "paths": paths}),
             ),
@@ -707,7 +682,6 @@ pub(crate) fn git_host(bun: &Path) -> Host {
         commits: Some(Box::new(move |session| {
             let load = match &session.target {
                 crate::model::ReviewTarget::Range { base, head, .. } => Some(load_with(
-                    &commits,
                     "commits",
                     json!({"root": session.root, "base": base, "head": head}),
                 )),
@@ -722,11 +696,7 @@ pub(crate) fn git_host(bun: &Path) -> Host {
             })
         })),
         patch_ids: Some(Box::new(move |session, shas| {
-            let load = load_with(
-                &ids,
-                "patchIds",
-                json!({"root": session.root, "shas": shas}),
-            );
+            let load = load_with("patchIds", json!({"root": session.root, "shas": shas}));
             Box::pin(async move {
                 serde_json::from_value(load.await?)
                     .map_err(|error| LoadError::Failed(error.to_string()))
@@ -737,7 +707,7 @@ pub(crate) fn git_host(bun: &Path) -> Host {
                 .into_iter()
                 .map(|(root, reference)| json!({"root": root, "ref": reference}))
                 .collect();
-            let load = load_with(&heads, "heads", json!({"entries": entries}));
+            let load = load_with("heads", json!({"entries": entries}));
             Box::pin(async move {
                 serde_json::from_value(load.await?)
                     .map_err(|error| LoadError::Failed(error.to_string()))

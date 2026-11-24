@@ -22,6 +22,8 @@ use std::sync::{Arc, Mutex};
 use futures_util::FutureExt;
 use futures_util::future::{BoxFuture, Shared};
 use roamgate_base::env::ProcessEnv;
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_connections::agent_summaries::{
     SummaryRuntime, TasksRuntime, read_connection_agent_tasks, read_connection_summary,
 };
@@ -29,8 +31,6 @@ use roamgate_connections::routing::CONNECTION_CHANGED_DURING_REQUEST;
 use roamgate_herdr::integration_versions::{
     CLI_TIMEOUT_MS, CliRun, SSH_STATUS_COMMAND, enrich_integration_versions,
 };
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Map, Value, json};
 
 use super::connections::{SshRun, run_local, run_ssh};
@@ -550,7 +550,7 @@ async fn settings(
 /// What Bun answered with code a standalone core does not have yet:
 /// refused as `standalone_unported`, named in the served log.
 pub(crate) fn unported(what: &str, method: &str) -> Reply {
-    roamgate_sidecar::core::note_served(&ProcessEnv, "unported", what);
+    roamgate_channel::core::note_served(&ProcessEnv, "unported", what);
     Reply::error(
         RpcError::with_code(
             format!("{method} is not served by the standalone core"),

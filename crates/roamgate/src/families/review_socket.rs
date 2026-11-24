@@ -11,6 +11,8 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use roamgate_base::env::{Env, ProcessEnv};
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_claude::plugin::{ClaudeModAction, claude_mod_host_script, claude_mod_integration};
 use roamgate_review::agent_socket::{
     AgentConnection, AgentExchange, AgentSocket, AgentSocketHost, AgentSocketOptions, ClaudeMods,
@@ -19,8 +21,6 @@ use roamgate_review::agent_socket::{
 use roamgate_review::error::{ReviewError, ReviewResult};
 use roamgate_review::service::{BoxFut, ReviewService};
 use roamgate_review::storage::review_directory;
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
@@ -231,7 +231,7 @@ impl Sockets {
             })),
             // The parity suite's proof that the core served the socket.
             on_exchange: Some(Arc::new(|exchange: &AgentExchange| {
-                roamgate_sidecar::core::note_served(
+                roamgate_channel::core::note_served(
                     &ProcessEnv,
                     "review",
                     &format!("agent {}", exchange.command),

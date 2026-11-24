@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use base64::Engine as _;
 use roamgate_base::clock::SharedClock;
-use roamgate_sidecar::peer::{Peer as Link, WsOpen};
-use roamgate_sidecar::protocol::Message;
+use roamgate_channel::peer::{Peer as Link, WsOpen};
+use roamgate_channel::protocol::Message;
 use roamgate_voice_server::companion::errands::VoiceErrands;
 use roamgate_voice_server::socket::signalling::same_site_socket;
 use roamgate_voice_server::socket::{
@@ -221,7 +221,7 @@ impl VoiceSockets {
             self.socket.open_signalling(&peer, id, &token);
             return json!({"accepted": true, "transport": "raw"});
         }
-        roamgate_sidecar::family::pass_to_bun()
+        roamgate_channel::family::not_served()
     }
 
     /// A `ws_message` or `ws_close` of an accepted socket.

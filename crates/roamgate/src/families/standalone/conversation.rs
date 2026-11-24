@@ -8,13 +8,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_connections::agent_profiles::discovery::{ModelDiscovery, ModelDiscoveryOptions};
 use roamgate_connections::agent_profiles::store::{
     LaunchSpec, SessionProfiles, profile_for_session,
 };
 use roamgate_connections::routing::serialize_herdr_event_envelope;
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 
 use super::{Layer, Target, call, launch_registry, text};
@@ -53,10 +53,6 @@ pub(super) const TARGETS: &[(&str, Target)] = &[
             }
             Ok(json!({"ok": true}))
         })
-    }),
-    // The core gave up review or conversation: only at its stop here.
-    ("claude_mod.released", |_, _, _| {
-        Box::pin(async { Ok(json!({"ok": true})) })
     }),
     ("claude_mod.panes", |layer, _, args| {
         Box::pin(async move {

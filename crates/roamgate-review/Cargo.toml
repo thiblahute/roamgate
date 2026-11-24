@@ -37,6 +37,7 @@ tracing = "0.1"
 
 [dev-dependencies]
 hyper = { version = "1", features = ["http1", "client", "server"] }
+roamgate-git = { path = "../roamgate-git" }
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
 tempfile = "3"
 tokio = { version = "1", features = ["full", "test-util"] }

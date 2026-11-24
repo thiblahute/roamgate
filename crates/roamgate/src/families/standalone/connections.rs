@@ -13,14 +13,14 @@ use roamgate_agents::files::BoxFut;
 use roamgate_agents::messenger::{
     AgentMessenger, MessengerOptions, MessengerRuntime, MessengerSnapshot,
 };
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_connections::host_ops::{HostCommand, HostWait};
 use roamgate_connections::profiles::ConnectionProfile;
 use roamgate_exec::lanes::Lane;
 use roamgate_exec::process::Command;
 use roamgate_exec::quote::shell_quote;
 use roamgate_herdr::control::{HerdrClient, HerdrClientOptions};
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 use tokio::io::AsyncBufReadExt;
 

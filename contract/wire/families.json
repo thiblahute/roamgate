@@ -1,56 +1,39 @@
 {
-  "description": "The families that move from Bun to Rust one at a time (Rust migration plan, section 8). A family names the browser RPC methods it answers (`rpc`: an exact name, or a prefix ending in a dot), the HTTP paths it serves (`http`: an exact path, or a prefix ending in a slash), the files it alone writes (`files`: keys of contract/storage/index.json; one writer per file), its cheap idempotent reads that may be shadowed (`shadow`), and the CLI commands it answers (`cli`: `roamgate <command>`, passed through to the core binary while Rust owns the family). `phase` is the plan's phase that flips it. The owner of each family is in <data>/runtime/owners.json; see contract/wire/core-channel.md.",
+  "description": "The families the core routes to (contract/wire/core-channel.md, Families in the core): each family's browser RPC methods (an entry ending in '.' is a prefix), HTTP paths (an entry ending in '/' is a prefix) and the files only it writes (One writer per file). What no family declares is the front family's.",
   "version": 1,
   "families": {
     "limit_resume": {
-      "phase": 2,
       "rpc": ["limit_resume."],
       "http": [],
-      "files": ["data:limit-resume.json"],
-      "shadow": ["limit_resume.list"]
+      "files": ["data:limit-resume.json"]
     },
     "time_report": {
-      "phase": 2,
       "rpc": ["bridge.time_report"],
       "http": [],
-      "files": [],
-      "shadow": []
+      "files": []
     },
     "herdr_setup": {
-      "phase": 2,
       "rpc": [],
       "http": ["/api/herdr/setup", "/api/herdr/status"],
-      "files": [],
-      "shadow": [],
-      "cli": ["herdr"]
+      "files": []
     },
     "update": {
-      "phase": 2,
       "rpc": [],
       "http": ["/api/update/check", "/api/update/install"],
-      "files": [],
-      "shadow": [],
-      "cli": ["update", "rollback"]
+      "files": []
     },
     "archive": {
-      "phase": 3,
       "note": "the archive's writers are its CLI's (sync, ingest, push, the text pass, rebuild-db), run in the core binary while Rust owns the family; Ranger's archive search goes to the core (internal.archive.search), its read-only lookups stay Bun's",
       "rpc": ["bridge.archive."],
       "http": [],
-      "files": ["file:archive.sqlite", "file:index.sqlite"],
-      "shadow": [],
-      "cli": ["archive"]
+      "files": ["file:archive.sqlite", "file:index.sqlite"]
     },
     "activity": {
-      "phase": 3,
       "rpc": ["bridge.activity.", "activity."],
       "http": [],
-      "files": ["file:activity.sqlite"],
-      "shadow": ["bridge.activity.timeline"],
-      "cli": ["activity"]
+      "files": ["file:activity.sqlite"]
     },
     "settings": {
-      "phase": 3,
       "note": "settings.json moves to Rust in phase 3; Bun then reads and writes it through the channel (internal.settings.get and .update, settings.changed). The settings methods that also need Herdr, git, worktree hooks, secret files or a provider (settings.profiles.*, settings.worktree_*, settings.update_repo, settings.workspace_auto_sync.*) stay with their families' phases and write through the same writer",
       "rpc": [
         "settings.get",
@@ -68,35 +51,26 @@
         "bridge.ui_settings.update"
       ],
       "http": ["/api/instance-settings"],
-      "files": ["data:settings.json"],
-      "shadow": ["bridge.ui_settings.get"]
+      "files": ["data:settings.json"]
     },
     "mr_cache": {
-      "phase": 3,
       "note": "the cache and its file; forge.status, forge.session and the PR card stay answered by Bun, whose forge reads (and forge gate) go with the host layer, asking the cache through internal.mr_cache.get while Rust owns it",
       "rpc": [],
       "http": [],
-      "files": ["data:mr-cache/state.json"],
-      "shadow": []
+      "files": ["data:mr-cache/state.json"]
     },
     "notifications": {
-      "phase": 3,
       "note": "the feed socket stays terminated in Bun until phase 7",
       "rpc": ["bridge.notifications."],
       "http": ["/api/notifications/push"],
-      "files": ["data:notifications.json", "data:web-push.json"],
-      "shadow": [],
-      "cli": ["push"]
+      "files": ["data:notifications.json", "data:web-push.json"]
     },
     "work": {
-      "phase": 4,
       "rpc": ["bridge.work."],
       "http": [],
-      "files": ["data:work"],
-      "shadow": ["bridge.work.board", "bridge.work.list"]
+      "files": ["data:work"]
     },
     "host": {
-      "phase": 5,
       "note": "one switch for connections.json, the manager's generations, the profile service, every SSH master and session slot, and the Herdr control client with its subscriptions; the front keeps each generation's composition root (conversation mode, the workspace, the terminal bridge...), built and disposed by the core's reverse calls, and reaches Herdr and the host through the core. connections.agent_sessions and connections.agent_tasks read agent sessions and stay with agent_sessions; /api/herdr-info is the front's, through its runtime",
       "rpc": [
         "connections.list",
@@ -109,12 +83,9 @@
         "connections.test"
       ],
       "http": [],
-      "files": ["data:connections.json"],
-      "shadow": [],
-      "cli": ["connections"]
+      "files": ["data:connections.json"]
     },
     "workspace": {
-      "phase": 6,
       "note": "the explorer, Changes, worktrees, the Workspaces arrangement and the settings that need git or worktree hooks; its writes of settings.json go through the settings family's writer (the core must own settings). The front tells the core its runtimes and their events (internal.workspace.*), the core reaches Herdr and SSH hosts through the front (herdr.call, workspace.ssh_run). /api/history stays with the history runtime, the front's",
       "rpc": [
         "file.",
@@ -128,20 +99,9 @@
         "settings.update_repo"
       ],
       "http": ["/api/file/delete", "/api/file/download", "/api/file/upload"],
-      "files": [],
-      "shadow": [
-        "file.list",
-        "file.stat",
-        "file.read",
-        "git.diff_summary",
-        "git.diff_files",
-        "git.commits",
-        "git.refs",
-        "bridge.workspace_tree.get"
-      ]
+      "files": []
     },
     "front": {
-      "phase": 7,
       "note": "the listener, auth and /ws: Rust becomes the front in phase 7, not through this table",
       "rpc": [],
       "http": [
@@ -157,39 +117,23 @@
         "data:session-secret-*.json",
         "data:rendered-storage.json",
         "data:profiles"
-      ],
-      "shadow": [],
-      "cli": [
-        "service",
-        "doctor",
-        "url",
-        "config",
-        "auth",
-        "plugin",
-        "completion"
       ]
     },
     "review": {
-      "phase": 8,
       "rpc": ["review.", "claude_mod."],
       "http": ["/api/review/image"],
-      "files": ["data:reviews", "data:claude-mod-inbox.json"],
-      "shadow": ["review.list", "review.get"]
+      "files": ["data:reviews", "data:claude-mod-inbox.json"]
     },
     "mr_reviews": {
-      "phase": 8,
       "rpc": ["bridge.mr_reviews."],
       "http": [],
       "files": [
         "data:mr-reviews/state.json",
         "data:mr-reviews/agent.json",
         "data:mr-reviews/efforts"
-      ],
-      "shadow": ["bridge.mr_reviews.inbox"],
-      "cli": ["reviews"]
+      ]
     },
     "agent_sessions": {
-      "phase": 9,
       "rpc": [
         "agent_history.",
         "agent_artifacts.",
@@ -200,29 +144,23 @@
         "agent_session."
       ],
       "http": ["/api/agent-session/atif", "/api/agent-session/download"],
-      "files": ["data:agent-seen.json"],
-      "shadow": ["agent_history.get"]
+      "files": ["data:agent-seen.json"]
     },
     "conversation": {
-      "phase": 9,
       "rpc": ["agent_chat."],
       "http": [],
       "files": [
         "data:conversation-leases.json",
         "file:conversation-suspended.json"
-      ],
-      "shadow": []
+      ]
     },
     "agent_profiles": {
-      "phase": 9,
       "note": "the session profiles, the launch registry and agent_profile.*: moved with conversation mode (S21), whose stores conversation, voice and MR reviews read synchronously",
       "rpc": ["agent_profile."],
       "http": [],
-      "files": ["data:session-profiles.json"],
-      "shadow": []
+      "files": ["data:session-profiles.json"]
     },
     "voice": {
-      "phase": 10,
       "rpc": [],
       "http": ["/api/voice", "/api/voice/"],
       "files": [
@@ -230,34 +168,25 @@
         "data:voice",
         "data:voices",
         "data:voice-gst-registry.bin"
-      ],
-      "shadow": [],
-      "cli": ["voice", "setup voice"]
+      ]
     },
     "assistant": {
-      "phase": 11,
       "rpc": ["bridge.assistant."],
       "http": [],
-      "files": ["data:assistant"],
-      "shadow": []
+      "files": ["data:assistant"]
     },
     "history": {
-      "phase": 12,
       "note": "the local history repo (<data>/history unless Settings moves it): its runtime (dirty sets, debounce, the 30 s polls of the file areas, the start pass, a commit per Work change), its route and `roamgate history`. One writer at a time: the core asks history.release (Bun's runtime stops, its last pass written) before it starts its own, and the front asks internal.history.release before Bun's runs again; the writes of the stores Bun still owns reach the core as internal.history.changed and internal.history.work_changed, in order",
       "rpc": [],
       "http": ["/api/history", "/api/history/commit"],
-      "files": ["file:roamgate-status.json", "file:roamgate-pass.lock"],
-      "shadow": [],
-      "cli": ["history"]
+      "files": ["file:roamgate-status.json", "file:roamgate-pass.lock"]
     },
     "test.echo": {
       "test": true,
-      "phase": 1,
       "note": "the channel's own cross-language test: only with ROAMGATE_CORE_TEST=1 on a server from source and a debug core",
       "rpc": ["test.echo."],
       "http": ["/api/test-echo/"],
-      "files": [],
-      "shadow": ["test.echo.read"]
+      "files": []
     }
   }
 }

@@ -1,9 +1,8 @@
 //! The server: `roamgate [server flags]` (and the hidden alias `roamgate
-//! front [server flags]`), the Rust front of contract/wire/core-channel.md
-//! with its own executable as the standalone `roamgate core` (no Bun), or
-//! the Bun server `ROAMGATE_SIDECAR_BIN` names as its portless core (stage
-//! 2). Reads the server's configuration as the Bun server does, holds the
-//! port and serves until SIGTERM or Ctrl-C.
+//! front [server flags]`), the front of contract/wire/core-channel.md with
+//! its own executable as its portless core (`roamgate core`). Reads the
+//! server's configuration, holds the port and serves until SIGTERM or
+//! Ctrl-C.
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
@@ -18,15 +17,12 @@ use roamgate_base::session_secret::{
     load_or_create_session_secret, revoked_sessions_path, session_secret_path_from_env,
 };
 use roamgate_base::settings::Settings;
+use roamgate_channel::peer::Peer;
 use roamgate_cli::auth_token::auth_token_print_command;
 use roamgate_cli::herdr::HerdrCli;
 use roamgate_cli::server_config::load_server_config_with_help;
 use roamgate_http::auth::{Auth, AuthConfig};
-use roamgate_http::front::{
-    Front, RustCoreLinkConfig, SidecarCommand, SidecarConfig, Sockets, StandaloneCore, app,
-    link_token, run_rust_core_link, run_sidecar, static_dirs,
-};
-use roamgate_sidecar::peer::Peer;
+use roamgate_http::front::{CoreConfig, CoreSetup, Front, Sockets, app, run_core, static_dirs};
 use serde_json::json;
 use tokio::sync::watch;
 
@@ -56,26 +52,16 @@ fn public_dir(args: &[String], env: &dyn Env) -> PathBuf {
     }
 }
 
-/// Where the front's test clock moves the core's.
-#[derive(Clone)]
-enum CoreClock {
-    /// The Bun core's own test clock, on a private socket started at the
-    /// front's time.
-    Socket(PathBuf),
-    /// A standalone core, which follows the front's clock from its
-    /// `welcome` on: `internal.clock.advance` on the channel.
-    Channel(watch::Receiver<Option<Peer>>),
-}
-
 /// The front's test clock (contract/wire/test-clock.md): served on the
-/// harness's socket, and relayed to the core. Each `advance` moves the
-/// front's clock, then the core's, and replies once both ran their due
-/// timers.
+/// harness's socket, and relayed to the core, which follows it from its
+/// `welcome` on (`internal.clock.advance` on the channel). Each `advance`
+/// moves the front's clock, then the core's, and replies once both ran
+/// their due timers.
 #[cfg(unix)]
 fn serve_front_clock(
     clock: roamgate_base::clock::TestClock,
     path: &std::path::Path,
-    core: CoreClock,
+    core: watch::Receiver<Option<Peer>>,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let _ = std::fs::remove_file(path);
@@ -93,22 +79,16 @@ fn serve_front_clock(
                     }
                     let reply = roamgate_base::clock::answer(&clock, &line).await;
                     if line.trim().starts_with("advance") && !reply.starts_with("error") {
-                        match &core {
-                            CoreClock::Socket(path) => relay_to_core(path, line.trim()).await,
-                            CoreClock::Channel(link) => {
-                                let peer = link.borrow().clone();
-                                if let Some(peer) = peer.filter(|peer| !peer.is_closed()) {
-                                    let to = roamgate_base::clock::Clock::now(&clock);
-                                    let _ = peer
-                                        .call(
-                                            "internal.clock.advance",
-                                            json!({ "to": to }),
-                                            Default::default(),
-                                            false,
-                                        )
-                                        .await;
-                                }
-                            }
+                        let peer = core.borrow().clone();
+                        if let Some(peer) = peer.filter(|peer| !peer.is_closed()) {
+                            let to = roamgate_base::clock::Clock::now(&clock);
+                            let _ = peer
+                                .call(
+                                    "internal.clock.advance",
+                                    json!({ "to": to }),
+                                    Default::default(),
+                                )
+                                .await;
                         }
                     }
                     if write
@@ -124,35 +104,7 @@ fn serve_front_clock(
     }))
 }
 
-/// Sends one request to the core's test clock and waits for its reply;
-/// a core that is not up (starting, restarting) is skipped.
-#[cfg(unix)]
-async fn relay_to_core(core: &std::path::Path, request: &str) {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    let Ok(mut stream) = tokio::net::UnixStream::connect(core).await else {
-        return;
-    };
-    if stream
-        .write_all(format!("{request}\n").as_bytes())
-        .await
-        .is_err()
-    {
-        return;
-    }
-    let mut reply = String::new();
-    let _ = BufReader::new(stream).read_line(&mut reply).await;
-}
-
-/// The web build served after the public directory behind a Bun core: its
-/// run from source (`server/src/index.ts`) serves `server/public`. With no
-/// Bun the front serves the build this binary carries instead
-/// ([`crate::embedded_web`]).
-fn built_public_dir(sidecar_bin: Option<&str>) -> Option<PathBuf> {
-    let entry = PathBuf::from(sidecar_bin.filter(|bin| bin.ends_with(".ts"))?);
-    Some(entry.parent()?.parent()?.join("public"))
-}
-
-/// Record mode's variable (contract-record/recorder.ts).
+/// Record mode's variable.
 pub const CONTRACT_RECORD_ENV: &str = "ROAMGATE_CONTRACT_RECORD";
 
 /// The recorder `ROAMGATE_CONTRACT_RECORD` asks for (`HERDR_GUI_*` names
@@ -178,6 +130,35 @@ fn start_recorder(
         Err(error) => {
             eprintln!("[bridge] contract record mode off: {error}");
             None
+        }
+    }
+}
+
+/// Opens the platform's browser on `url` (`--open`, `OPEN_BROWSER=1`); a
+/// failure is logged, never fatal.
+fn open_browser(logger: &roamgate_base::log::Logger, url: &str) {
+    let (opener, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
+        ("open", vec![url])
+    } else if cfg!(windows) {
+        ("cmd", vec!["/c", "start", "", url])
+    } else {
+        ("xdg-open", vec![url])
+    };
+    let spawned = std::process::Command::new(opener)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    match spawned {
+        // Reaped when it exits.
+        Ok(mut child) => {
+            std::thread::spawn(move || child.wait());
+        }
+        Err(error) => {
+            let mut fields = roamgate_base::log::LogFields::new();
+            fields.insert("error".into(), error.to_string().into());
+            logger.warn("failed to open browser", Some(&fields));
         }
     }
 }
@@ -354,30 +335,21 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
     }
     let channel = runtime_dir.join(format!("core-{}.sock", std::process::id()));
     let own_exe = std::env::current_exe().unwrap_or_default();
-    let command =
-        SidecarCommand::resolve(env.var("ROAMGATE_SIDECAR_BIN").as_deref(), &own_exe, args);
-    let standalone = command.standalone;
     let (link, core) = watch::channel(None);
     let mut clock_server = None;
     // The environment file's entries reach the core as the front's own.
     let mut core_env: Vec<(String, String)> = overrides.into_iter().collect();
-    // Record mode (`ROAMGATE_CONTRACT_RECORD`): with no Bun the front
-    // records the browser's requests and sockets, and its core the
-    // processes it runs, in the directory the front resolved. Behind a Bun
-    // core the recording stays Bun's (its channel's frames).
-    let recorder = if standalone {
-        let recorder = start_recorder(env.as_ref(), &root, &clock);
-        core_env.push((
-            CONTRACT_RECORD_ENV.into(),
-            recorder.as_ref().map_or_else(
-                || "0".into(),
-                |recorder| recorder.directory().to_string_lossy().into_owned(),
-            ),
-        ));
-        recorder
-    } else {
-        None
-    };
+    // Record mode (`ROAMGATE_CONTRACT_RECORD`): the front records the
+    // browser's requests and sockets, and its core the processes it runs,
+    // in the directory the front resolved.
+    let recorder = start_recorder(env.as_ref(), &root, &clock);
+    core_env.push((
+        CONTRACT_RECORD_ENV.into(),
+        recorder.as_ref().map_or_else(
+            || "0".into(),
+            |recorder| recorder.directory().to_string_lossy().into_owned(),
+        ),
+    ));
     if let Some(recorder) = &recorder {
         for secret in [
             config.password.as_str(),
@@ -396,49 +368,21 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
     let record_flusher = recorder
         .as_ref()
         .map(|recorder| recorder.run_flusher(clock.clone()));
-    // The Bun core runs the Rust core ROAMGATE_CORE_BIN names, as it does
-    // behind the Bun front (stage 1): its owners table and handovers are
-    // unchanged. The update family replaces this front's executable, in
-    // the Bun core's Rust core as in a standalone one.
+    // The update family replaces this front's executable.
     core_env.push((
         "ROAMGATE_CLI_EXEC".into(),
         own_exe.to_string_lossy().into_owned(),
     ));
-    // With no Bun, a debug build is a checkout's, not an installed binary
-    // (an update must not replace it), as the Bun server run from source.
-    let from_source = if standalone {
-        cfg!(debug_assertions)
-    } else {
-        env.var("ROAMGATE_SIDECAR_BIN")
-            .is_some_and(|bin| bin.ends_with(".ts"))
-    };
+    // A debug build is a checkout's, not an installed binary (an update
+    // must not replace it).
+    let from_source = cfg!(debug_assertions);
     core_env.push((
         "ROAMGATE_CLI_STANDALONE".into(),
         if from_source { "0" } else { "1" }.into(),
     ));
-    // The Rust core the Bun core runs links to this front for the
-    // sockets of the families it owns (the voice family's).
-    let link_path = runtime_dir.join(format!("front-{}.sock", std::process::id()));
-    let link_token = link_token();
-    if !standalone {
-        core_env.push((
-            roamgate_sidecar::core::FRONT_CHANNEL_ENV.into(),
-            link_path.to_string_lossy().into_owned(),
-        ));
-        core_env.push((
-            roamgate_sidecar::core::FRONT_TOKEN_ENV.into(),
-            link_token.clone(),
-        ));
-    }
-    let core_clock_path = runtime_dir.join(format!("core-clock-{}.sock", std::process::id()));
     if let (Some(found), Some(test)) = (&test_clock, &virtual_clock) {
-        let relay = if standalone {
-            CoreClock::Channel(core.clone())
-        } else {
-            CoreClock::Socket(core_clock_path.clone())
-        };
         #[cfg(unix)]
-        match serve_front_clock(test.clone(), &found.socket, relay) {
+        match serve_front_clock(test.clone(), &found.socket, core.clone()) {
             Ok(task) => clock_server = Some(task),
             Err(error) => {
                 eprintln!(
@@ -449,24 +393,15 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
             }
         }
         #[cfg(not(unix))]
-        let _ = relay;
-        // A standalone core follows this clock over the channel instead
-        // (empty: no test clock of its own).
-        core_env.push((
-            roamgate_base::clock::TEST_CLOCK_ENV.into(),
-            if standalone {
-                String::new()
-            } else {
-                core_clock_path.to_string_lossy().into_owned()
-            },
-        ));
+        let _ = (found, test);
+        // The core follows this clock over the channel (empty: no test
+        // clock of its own).
+        core_env.push((roamgate_base::clock::TEST_CLOCK_ENV.into(), String::new()));
     }
-    let start_clock = clock.clone();
-    let has_test_clock = virtual_clock.is_some() && !standalone;
-    // The CPU profile (`--profile`, utils/cpu-profile.ts) samples where the
-    // server's work runs: the standalone core, the first one only (a
-    // restarted core is not profiled again, as Bun profiled its one start).
-    let profile = config.profile.clone().filter(|_| standalone);
+    // The CPU profile (`--profile`) samples where the server's work runs:
+    // the core, the first one only (a restarted core is not profiled
+    // again).
+    let profile = config.profile.clone();
     let profiled = std::sync::atomic::AtomicBool::new(false);
     let core_env = Arc::new(move || {
         let mut env = core_env.clone();
@@ -484,16 +419,10 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
                     profile.directory.to_string_lossy().into_owned(),
                 ));
             }
-        } else if standalone {
+        } else {
             // The front decides: a profile its flags and environment did
             // not ask for is not the core's either.
             env.push((crate::PROFILE_ENV.into(), "0".into()));
-        }
-        if has_test_clock {
-            env.push((
-                roamgate_base::clock::TEST_CLOCK_EPOCH_ENV.into(),
-                start_clock.now().to_string(),
-            ));
         }
         env
     });
@@ -506,27 +435,28 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
         }
     };
     let bound: SocketAddr = listener.local_addr().expect("listener address");
+    let browser_url =
+        roamgate_cli::server_config::browser_url_for(&config.host, bound.port(), tls.is_some());
     let mut fields = roamgate_base::log::LogFields::new();
-    fields.insert(
-        "url".into(),
-        roamgate_cli::server_config::browser_url_for(&config.host, bound.port(), tls.is_some())
-            .into(),
-    );
+    fields.insert("url".into(), browser_url.clone().into());
     fields.insert("websocket".into(), "/ws".into());
     fields.insert("log_level".into(), config.log_level.as_str().into());
     // Listening as the first core is welcomed, before it starts its
-    // connections: the Bun server listens, then connects.
+    // connections.
     let listening = {
         let logged = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let logger = logger.clone();
+        let open = config.open_browser_requested;
         Arc::new(move || {
             if !logged.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 logger.info("listening", Some(&fields));
+                if open {
+                    open_browser(&logger, &browser_url);
+                }
             }
         })
     };
-    // The Bun core says how logins work; with no Bun, the front does.
-    if standalone && config.auth_required {
+    if config.auth_required {
         let mut fields = roamgate_base::log::LogFields::new();
         match &config.generated_auth_token_path {
             Some(path) => {
@@ -544,24 +474,10 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
         None => Sockets::default(),
     };
     let (stop_core, core_stop) = watch::channel(false);
-    let (rust_link, rust_core) = watch::channel(None);
-    // A standalone core is the Rust core: no link besides the channel.
-    let rust_link_task = (!standalone).then(|| {
-        tokio::spawn(run_rust_core_link(
-            RustCoreLinkConfig {
-                channel: link_path.to_string_lossy().into_owned(),
-                token: link_token,
-                clock: Arc::new(SystemClock),
-            },
-            sockets.clone(),
-            rust_link,
-            core_stop.clone(),
-        ))
-    });
     let exit_now = Arc::new(tokio::sync::Notify::new());
     // The front's auth, once the router holds it.
     let front_cell: Arc<std::sync::OnceLock<std::sync::Weak<Front>>> = Arc::default();
-    let standalone_core = standalone.then(|| StandaloneCore {
+    let setup = CoreSetup {
         test_clock: virtual_clock
             .clone()
             .map(|test| Arc::new(test) as roamgate_base::clock::SharedClock),
@@ -599,17 +515,17 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
                     .and_then(|front| front.auth.new_session_cookie())
             })
         },
-    });
-    let sidecar = tokio::spawn(run_sidecar(
-        SidecarConfig {
-            command,
+    };
+    let core_task = tokio::spawn(run_core(
+        CoreConfig {
+            program: own_exe,
             channel: channel.to_string_lossy().into_owned(),
-            // The channel's pings and silence run on real time, as the Bun
-            // front's do: a test clock's advance is no silence.
+            // The channel's pings and silence run on real time: a test
+            // clock's advance is no silence.
             clock: Arc::new(SystemClock),
             env: core_env,
             on_welcome: listening.clone(),
-            standalone: standalone_core,
+            setup,
         },
         sockets.clone(),
         link,
@@ -619,20 +535,14 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
         Front::new(
             auth,
             {
-                let mut files = static_dirs(
-                    public_dir(args, env.as_ref()),
-                    built_public_dir(env.var("ROAMGATE_SIDECAR_BIN").as_deref()),
-                );
-                if standalone {
-                    files.embedded = Some(crate::embedded_web());
-                }
+                let mut files = static_dirs(public_dir(args, env.as_ref()), None);
+                files.embedded = Some(crate::embedded_web());
                 files
             },
             title_suffix,
             core,
             sockets,
         )
-        .with_rust_core(rust_core)
         .with_node_origins(roamgate_http::node_origins::NodeOrigins::parse(
             roamgate_env(env.as_ref(), "NODE_ORIGINS").as_deref(),
         )),
@@ -669,10 +579,7 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
         }
     };
     let _ = stop_core.send(true);
-    let _ = sidecar.await;
-    if let Some(task) = rust_link_task {
-        let _ = task.await;
-    }
+    let _ = core_task.await;
     if let Some(task) = clock_server {
         task.abort();
     }
@@ -683,7 +590,6 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
         recorder.close();
     }
     let _ = std::fs::remove_file(&channel);
-    let _ = std::fs::remove_file(&core_clock_path);
     match served {
         Ok(()) => 0,
         Err(error) => {

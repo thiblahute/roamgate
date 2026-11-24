@@ -14,13 +14,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use roamgate_base::log::{LogFields, LogLevel, Logger, rpc_log_level};
+use roamgate_channel::protocol::Push;
 use roamgate_connections::manager::sanitize_connection_error;
 use roamgate_connections::routing::{
     CONNECTION_CHANGED_DURING_REQUEST, LegacyRoutingLogger, ReadyConnections, RouteError, RpcRoute,
     is_bridge_global_method, resolve_rpc_route, serialize_connection_envelope,
     serialize_connection_result, validate_connection_generation, validate_connection_id,
 };
-use roamgate_sidecar::protocol::Push;
 use serde_json::value::RawValue;
 use serde_json::{Map, Value, json};
 

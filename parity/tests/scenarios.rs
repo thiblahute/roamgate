@@ -1,5 +1,6 @@
 //! Every scenario under parity/scenarios, one test each, against the server
-//! `ROAMGATE_SERVER_CMD` names (the Bun server by default).
+//! `ROAMGATE_SERVER_CMD` names (this checkout's debug `roamgate` by
+//! default).
 //!
 //! `cargo test -p roamgate-parity --test scenarios [-- <filter>]`; at most
 //! `PARITY_JOBS` (default 4) servers run at once.
@@ -36,11 +37,7 @@ fn main() {
         .ok()
         .filter(|cli| !cli.trim().is_empty())
         .unwrap_or_else(|| server.join(" "));
-    eprintln!(
-        "parity: {} front, server `{}`, CLI `{cli}`",
-        scenario::current_front(),
-        server.join(" ")
-    );
+    eprintln!("parity: server `{}`, CLI `{cli}`", server.join(" "));
     let root = repo_root();
     let trials = scenario::all(&scenarios_dir())
         .into_iter()
@@ -52,17 +49,8 @@ fn main() {
                 .replace('\\', "/");
             let ignored = match scenario::load(&path) {
                 Ok(loaded) => {
-                    (!loaded.platforms.is_empty()
-                        && !loaded.platforms.iter().any(|name| name == platform()))
-                        || (!loaded.fronts.is_empty()
-                            && !loaded
-                                .fronts
-                                .iter()
-                                .any(|name| name == scenario::current_front()))
-                        || roamgate_parity::run::rust_owned_off_its_front(
-                            scenario::owner_family(&loaded.family),
-                            scenario::current_front(),
-                        )
+                    !loaded.platforms.is_empty()
+                        && !loaded.platforms.iter().any(|name| name == platform())
                 }
                 Err(_) => false,
             };

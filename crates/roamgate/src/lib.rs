@@ -8,10 +8,9 @@ pub mod families;
 pub mod front;
 pub mod front_tls;
 pub mod node;
-pub mod owners_cmd;
 pub mod reviews_cmd;
 
-pub use families::{core_families, standalone_families};
+pub use families::core_families;
 
 /// The version: `ROAMGATE_BUILD_VERSION` at build time (`cargo xtask
 /// package --version`), else the workspace's.
@@ -33,12 +32,10 @@ pub enum Options {
     /// alias. Its flags are the front's to read ([`front::run`]): `--help`
     /// and `--version` too, as the Bun server's `loadServerConfig`.
     Server(Vec<String>),
-    /// `roamgate core`: the portless core the front (or the Bun server)
-    /// spawns (contract/wire/core-channel.md). Not in the usage: only the
-    /// server runs it.
+    /// `roamgate core`: the portless core the front spawns
+    /// (contract/wire/core-channel.md). Not in the usage: only the server
+    /// runs it.
     Core,
-    /// `roamgate owners ...`: the owners table (hidden, temporary).
-    Owners(Vec<String>),
     /// `roamgate node ...`: a machine's node (the Mac's): `--listen` serves
     /// its own connection to the browser beside the home, `--stdio` the
     /// home's link over ssh ([`node`]).
@@ -49,9 +46,7 @@ pub enum Options {
 }
 
 /// The commands a family's code answers in this binary, outside
-/// roamgate-cli's router (main.rs dispatches them; the Bun CLI passes these
-/// through while Rust owns the family: contract/wire/core-channel.md, CLI
-/// pass-through).
+/// roamgate-cli's router (main.rs dispatches them).
 pub const FAMILY_COMMANDS: &[&str] = &[
     "update", "rollback", "herdr", "push", "activity", "archive", "history", "reviews", "voice",
     "setup",
@@ -65,7 +60,6 @@ pub fn parse_args(args: &[String]) -> Result<Options, String> {
             None => Ok(Options::Core),
             Some(extra) => Err(format!("unknown argument {extra}")),
         },
-        Some("owners") => Ok(Options::Owners(args[1..].to_vec())),
         Some("node") => Ok(Options::Node(args[1..].to_vec())),
         Some("front") => Ok(Options::Server(args[1..].to_vec())),
         Some(command) if !command.starts_with('-') => {
@@ -76,19 +70,19 @@ pub fn parse_args(args: &[String]) -> Result<Options, String> {
 }
 
 /// The CPU profile's variables (`--profile`, `--profile-duration`,
-/// `--profile-dir`), which the front sets on its standalone core.
+/// `--profile-dir`), which the front sets on its core.
 pub const PROFILE_ENV: &str = "ROAMGATE_PROFILE";
 pub const PROFILE_DURATION_ENV: &str = "ROAMGATE_PROFILE_DURATION";
 pub const PROFILE_DIR_ENV: &str = "ROAMGATE_PROFILE_DIR";
 
-/// The CPU profile a standalone core takes when its front asks for one
+/// The CPU profile the core takes when its front asks for one
 /// (`ROAMGATE_PROFILE=1` with the duration in seconds and the directory the
-/// front resolved), and its duration. A directory it cannot use is logged, and the core runs
-/// unprofiled (Bun's server exited on it: the front checked it already).
+/// front resolved), and its duration. A directory it cannot use is logged,
+/// and the core runs unprofiled (the front checked it already).
 pub fn start_core_profile(
     env: &dyn roamgate_base::env::Env,
 ) -> Option<(roamgate_cli::cpu_profile::CpuProfile, std::time::Duration)> {
-    if !roamgate_sidecar::core::standalone_on(env) || env.var(PROFILE_ENV).as_deref() != Some("1") {
+    if env.var(PROFILE_ENV).as_deref() != Some("1") {
         return None;
     }
     let seconds: u64 = env.var(PROFILE_DURATION_ENV)?.parse().ok()?;
@@ -121,16 +115,12 @@ pub fn start_core_profile(
     }
 }
 
-/// Record mode in a standalone core: the processes it runs (`spawn`
-/// lines, hooks.ts `recordSpawns`), in the directory its front resolved
-/// (`ROAMGATE_CONTRACT_RECORD`, absolute; `0` when off), flushed until
-/// the core stops.
+/// Record mode in the core: the processes it runs (`spawn` lines), in the
+/// directory its front resolved (`ROAMGATE_CONTRACT_RECORD`, absolute; `0`
+/// when off), flushed until the core stops.
 pub fn start_core_recorder(
     env: &dyn roamgate_base::env::Env,
 ) -> Option<std::sync::Arc<roamgate_base::record::ContractRecorder>> {
-    if !roamgate_sidecar::core::standalone_on(env) {
-        return None;
-    }
     let now: roamgate_base::log::NowFn = std::sync::Arc::new(|| {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

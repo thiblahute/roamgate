@@ -1,7 +1,7 @@
 //! Roamgate's parity suite (the Rust migration plan, section 5).
 //!
-//! It starts a Roamgate server, the Bun one or the Rust one, chosen by
-//! `ROAMGATE_SERVER_CMD`, in a run of its own (HOME, XDG directories,
+//! It starts a Roamgate server (this checkout's debug `roamgate`, or the
+//! one `ROAMGATE_SERVER_CMD` names) in a run of its own (HOME, XDG directories,
 //! APPDATA, TMPDIR, data root, its own fake Herdr and every other fake on
 //! its PATH or on sockets), drives it only from outside (the browser
 //! WebSocket, HTTP, the agent socket and its Python client, the

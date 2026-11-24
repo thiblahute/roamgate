@@ -22,14 +22,14 @@ use roamgate_base::clock::SystemClock;
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::log::Logger;
 use roamgate_base::paths::DataContext;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
+use roamgate_channel::protocol::RpcError;
 use roamgate_notify::feed::{Change, Extra, notification_feed_path};
 use roamgate_notify::service::{Notifications, Options};
 use roamgate_notify::web_push::{
     Answer, HttpsSender, IsCurrent, MAX_BODY_BYTES, web_push_path, web_push_subject,
 };
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
 
@@ -175,9 +175,9 @@ impl CoreFamily for NotificationsFamily {
         // only browser calls): the parity suite's proof that Rust served it.
         if call
             .method
-            .starts_with(roamgate_sidecar::family::INTERNAL_PREFIX)
+            .starts_with(roamgate_channel::family::INTERNAL_PREFIX)
         {
-            roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &call.method);
+            roamgate_channel::core::note_served(&ProcessEnv, FAMILY, &call.method);
         }
         let params = call.params;
         let outcome: Result<Value, RpcError> = match call.method.as_str() {
@@ -299,7 +299,7 @@ fn text_response(status: u16, text: &str) -> HttpResponse {
 /// `roamgate push ...`, passed through by the Bun CLI; the exit code.
 pub async fn cli(args: &[String]) -> u8 {
     use roamgate_base::clock::Clock;
-    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, "cli push");
+    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, "cli push");
     let runtime = super::update::cli_runtime(Arc::new(ProcessEnv));
     super::update::emit(
         roamgate_cli::push::push(

@@ -1,11 +1,8 @@
-//! What the Bun server answered the core's families with, answered in the
-//! process by a standalone core (contract/wire/core-channel.md, The
-//! standalone core; rust-migration-decisions.md, S25 cut-over): each
-//! reverse target does what Bun's did for it, on the core's own families
-//! (their `internal.<family>.<op>` calls, or their shared state) where
-//! Bun's went back into the core anyway.
+//! The reverse targets the core's families call, answered in the process
+//! (contract/wire/core-channel.md, The core): each works on the core's own
+//! families (their `internal.<family>.<op>` calls, or their shared state).
 //!
-//! - [`runtime`]: each connection generation's layer Bun built
+//! - [`runtime`]: each connection generation's layer
 //!   (`host.runtime_start`, `.runtime_stop`, `.events`, `.status`,
 //!   `.master_ready`): what its events and status changes fed the other
 //!   families; [`composition`]: its terminal bridge, task events and tab
@@ -17,7 +14,7 @@
 //! - [`profiles`]: the `profiles.*` targets.
 //! - [`assistant`]: the `assistant.*` targets.
 //! - [`others`]: `settings.changed`, `settings.limit_resume.get`,
-//!   `history.*`, `activity.dayInput`, `workspace.kept_steps`,
+//!   `history.*`, `workspace.kept_steps`,
 //!   `mr_cache.load`, `server.scheduleExit`.
 //! - [`reviews`]: `review.*` (the agent socket's host, the review
 //!   service's git reads and agents, the forge, a browser connection's
@@ -30,7 +27,7 @@
 //!   with `notifications.feed` and `.clients`.
 //! - [`forwards`]: the port forwards' registry and `forward.*`.
 //! - [`uploads`]: a connection's uploads and their sweeper.
-//! - [`browser`]: the browser RPCs Bun answered with its own code
+//! - [`browser`]: the browser RPCs of no family
 //!   (`agent.list`, `workspace.*`, Herdr's pass-through with its overlays,
 //!   `connections.agent_sessions`, `.agent_tasks`).
 
@@ -42,14 +39,14 @@ use futures_util::future::{BoxFuture as SharedFuture, Shared};
 use roamgate_base::clock::SharedClock;
 use roamgate_base::env::{ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogFields, LogLevel, Logger, LoggerOptions, parse_log_level};
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::peer::BoxFuture;
+use roamgate_channel::protocol::{Ctx, RpcError};
+use roamgate_channel::standalone::Standalone;
 use roamgate_connections::agent_profiles::store::LaunchRegistry;
 use roamgate_connections::host_runtime::HostRuntime;
 use roamgate_connections::manager::ReadyRuntimeLease;
 use roamgate_http::browser_rpc::BrowserClients;
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::peer::BoxFuture;
-use roamgate_sidecar::protocol::{Ctx, RpcError};
-use roamgate_sidecar::standalone::Standalone;
 use serde_json::{Value, json};
 
 use super::host::HostHandle;
@@ -172,20 +169,15 @@ pub(crate) async fn call(
     method: &str,
     params: Value,
 ) -> Result<Value, RpcError> {
-    match &cx.standalone {
-        Some(standalone) => standalone.call(method, params, Ctx::default()).await,
-        None => Err(RpcError::new("not a standalone core")),
-    }
+    cx.standalone.call(method, params, Ctx::default()).await
 }
 
 /// [`call`], its answer not awaited (Bun's `void core.call(...)`).
 pub(crate) fn tell(cx: &FamilyContext, method: &str, params: Value) {
-    if let Some(standalone) = &cx.standalone {
-        let call = standalone.call(method, params, Ctx::default());
-        tokio::spawn(async move {
-            let _ = call.await;
-        });
-    }
+    let call = cx.standalone.call(method, params, Ctx::default());
+    tokio::spawn(async move {
+        let _ = call.await;
+    });
 }
 
 impl Layer {

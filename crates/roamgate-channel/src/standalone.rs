@@ -1,6 +1,5 @@
-//! The standalone core (contract/wire/core-channel.md, The standalone
-//! core): a Rust front's own `roamgate core`, with no Bun server anywhere.
-//! What the families asked the Bun side for is answered in this process:
+//! What the core answers in its own process (contract/wire/core-channel.md,
+//! The core):
 //!
 //! - reverse targets: a registry the binary fills ([`Standalone::register`]);
 //!   a target nobody registered fails with `unknown_target`, naming it,
@@ -20,10 +19,6 @@ use serde_json::Value;
 use crate::family::{FamilyContext, Reply};
 use crate::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
 use crate::protocol::{Ctx, Push, RpcError};
-
-/// `ROAMGATE_CORE_STANDALONE=1`: set by a Rust front that runs its own
-/// executable as its core (no `ROAMGATE_SIDECAR_BIN`).
-pub const STANDALONE_ENV: &str = "ROAMGATE_CORE_STANDALONE";
 
 /// A reverse target answered in the process.
 pub type ReverseTarget =
@@ -51,7 +46,7 @@ pub trait LocalRouter: Send + Sync + 'static {
     ) -> BoxFuture<Result<HttpResponse, RpcError>>;
 }
 
-/// What a standalone core answers in its own process.
+/// What the core answers in its own process.
 #[derive(Default)]
 pub struct Standalone {
     targets: RwLock<HashMap<String, ReverseTarget>>,
@@ -131,7 +126,7 @@ impl Standalone {
             );
         }
         RpcError::with_code(
-            format!("reverse target {target} is not served by the standalone core"),
+            format!("reverse target {target} is not served by the core"),
             "unknown_target",
         )
     }
@@ -161,7 +156,6 @@ impl Standalone {
             method: method.to_owned(),
             params,
             ctx,
-            shadow: false,
         };
         match self.router() {
             Some(router) => router.call(call),
@@ -182,7 +176,6 @@ impl Standalone {
             method: method.to_owned(),
             params,
             ctx,
-            shadow: false,
         };
         match self.router() {
             Some(router) => router.call_reply(call),
@@ -207,9 +200,7 @@ impl Standalone {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::owners::Owners;
     use crate::peer::{Handler, Peer, PeerOptions};
-    use crate::protocol::Side;
     use roamgate_base::clock::{SharedClock, SystemClock};
 
     struct Nothing;
@@ -231,9 +222,8 @@ mod tests {
         (
             FamilyContext {
                 peer,
-                owners: Owners::new(Side::Rust, false),
                 clock,
-                standalone: Some(standalone),
+                standalone,
             },
             other,
         )

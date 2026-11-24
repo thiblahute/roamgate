@@ -1,18 +1,16 @@
-//! The rest of Bun's reverse targets of this package: what a settings
-//! write of the core's own handlers set going in Bun (its history, the
-//! claude start hook, the usage limit resumer, the connections' transport
-//! setting), the local history's writes, the activity log's day, the
-//! review's kept Last steps, and the supervisor's restart after an update.
+//! The rest of the reverse targets of this package: what a settings write
+//! sets going (the history, the claude start hook, the usage limit
+//! resumer, the connections' transport setting), the local history's
+//! writes, the review's kept Last steps, and the supervisor's restart
+//! after an update.
 
 use std::sync::Arc;
 
-use roamgate_activity::time_report::Failure;
 use roamgate_base::settings::Settings;
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::{Ctx, RpcError};
 use roamgate_connections::routing::serialize_herdr_event_envelope;
 use roamgate_connections::usage_limit::limit_resume_settings_of;
-use roamgate_http::history::HistoryChange;
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::{Ctx, RpcError};
 use serde_json::{Value, json};
 
 use super::{Layer, Target, call, text};
@@ -37,27 +35,6 @@ pub(super) const TARGETS: &[(&str, Target)] = &[
     }),
     ("history.work_changed", |_, cx, args| {
         Box::pin(async move { call(&cx, "internal.history.work_changed", args).await })
-    }),
-    ("history.configure", |_, cx, args| {
-        Box::pin(async move { history_configure(&cx, &args).await })
-    }),
-    ("activity.dayInput", |_, cx, args| {
-        Box::pin(async move {
-            let date = text(&args, "date")
-                .filter(|date| roamgate_activity::timeline::is_date(date))
-                .ok_or_else(|| RpcError::new("activity.dayInput needs a date, YYYY-MM-DD"))?
-                .to_owned();
-            super::super::activity::settle().await;
-            super::super::time_report::local_day_input(cx.clock.now(), date)
-                .await
-                .map_err(|failure| match failure {
-                    Failure::Report(error) => match error.code.as_str() {
-                        Some(code) => RpcError::with_code(error.message, code),
-                        None => RpcError::new(error.message),
-                    },
-                    Failure::Other(message) => RpcError::new(message),
-                })
-        })
     }),
     ("workspace.kept_steps", |_, cx, args| {
         Box::pin(async move {
@@ -181,30 +158,4 @@ fn settings_changed(
         }
     }
     Ok(json!({"applied": true}))
-}
-
-/// `history.configure`: settings.json's `history`, as `PUT /api/history`
-/// asks (index.ts `configureHistory`).
-async fn history_configure(cx: &FamilyContext, args: &Value) -> Result<Value, RpcError> {
-    let location = match args.get("location") {
-        None => None,
-        Some(Value::Null) => Some(None),
-        Some(Value::String(location)) => Some(Some(location.clone())),
-        Some(_) => {
-            return Err(RpcError::new(
-                "history.configure: location is a path or null",
-            ));
-        }
-    };
-    let enabled = match args.get("enabled") {
-        None => None,
-        Some(Value::Bool(enabled)) => Some(*enabled),
-        Some(_) => {
-            return Err(RpcError::new("history.configure: enabled is true or false"));
-        }
-    };
-    super::super::history::write_settings(cx, HistoryChange { location, enabled })
-        .await
-        .map_err(RpcError::new)?;
-    Ok(json!({}))
 }

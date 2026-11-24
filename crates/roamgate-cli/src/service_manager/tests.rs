@@ -288,10 +288,8 @@ fn is_token(text: &str) -> bool {
 
 /// The templates published with v0.7.0, for this home and binary.
 fn published_legacy_definition(platform: ServicePlatform, home: &Path, binary: &Path) -> String {
-    let templates: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../server/src/config/service-legacy-definitions.test.json"
-    ))
-    .unwrap();
+    let templates: serde_json::Value =
+        serde_json::from_str(include_str!("legacy-definitions.json")).unwrap();
     let paths = legacy_paths(platform, home);
     let values = [
         ("BINARY_PATH", text(binary)),

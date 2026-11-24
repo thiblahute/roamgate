@@ -45,9 +45,9 @@ use roamgate_agents::resolver::{HerdrCall, ResolverContext};
 use roamgate_agents::seen::{AgentSeenStore, agent_seen_path, mark_needs_fresh_boot, mark_params};
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
-use roamgate_sidecar::protocol::{Push, RpcError};
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
+use roamgate_channel::protocol::{Push, RpcError};
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 
@@ -463,9 +463,6 @@ impl CoreFamily for AgentSessionsFamily {
                 }
                 return internal(&shared, &cx, op, &call.params).await;
             }
-            // A shadow read while Bun owns the family: readers that write
-            // nothing.
-            let owned = owned && !call.shadow;
             let connection = shared
                 .connection(
                     &cx,
@@ -705,7 +702,7 @@ async fn internal(
     // The seen marks' own work counts as served for the parity suite's
     // proof (Bun's agent list reads them here); the notices do not.
     if matches!(op, "annotate" | "quiet_turn" | "note") {
-        roamgate_sidecar::core::note_served(
+        roamgate_channel::core::note_served(
             &ProcessEnv,
             FAMILY,
             &format!("internal.agent_sessions.{op}"),

@@ -5,7 +5,7 @@ The link between a Roamgate server (the **home**) and `roamgate node
 `"node": true` in `connections.json`; without it nothing here runs. The home
 side is `roamgate_connections::node_host`, the node side
 `crates/roamgate/src/node/stdio.rs`, their shared parts
-`roamgate_sidecar::node`.
+`roamgate_channel::node`.
 
 The link carries the core channel's frames and messages
 ([core-channel.md](core-channel.md), Frames and Messages): the same codec,
@@ -31,22 +31,22 @@ window, `ping`, `pong` and `bye`. Only what differs is written here.
 ## Handshake
 
 The home says `hello` with an empty `token` (ssh authenticated the link),
-`side: "rust"`, its version and `families: ["node"]`. The node answers
-`welcome` with `side: "rust"` and
+its version and `families: ["node"]`. The node answers `welcome` with
 
 ```json
 {
   "t": "welcome",
   "protocol": 1,
-  "side": "rust",
-  "node": { "version": "0.8.15", "contract": 1 }
+  "node": { "version": "0.8.15", "contract": 2 }
 }
 ```
 
 - `node.version`: the node's `roamgate` version, logged by the home.
 - `node.contract`: the node link's contract version (`NODE_CONTRACT`), raised
   with any change of what follows. The home links only to a node of the same
-  one.
+  one. Contract 2 dropped `side` from `hello` and `welcome`; a node or home of
+  contract 1 cannot read the other's handshake, which is a failed start
+  (Fallback).
 
 ## Fallback
 

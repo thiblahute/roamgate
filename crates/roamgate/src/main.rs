@@ -1,6 +1,6 @@
 //! The `roamgate` executable: the server (`roamgate [server flags]`, the
 //! front with its standalone core), the management commands
-//! (`roamgate <command> [arguments]`) and the hidden `core` and `owners`.
+//! (`roamgate <command> [arguments]`) and the hidden `core`.
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
@@ -27,19 +27,15 @@ async fn main() -> ExitCode {
         Options::Server(args) => ExitCode::from(roamgate::front::run(&args, BTreeMap::new()).await),
         Options::Core => {
             let env = roamgate_base::env::ProcessEnv;
-            let families = if roamgate_sidecar::core::standalone_on(&env) {
-                if roamgate_base::node::active() {
-                    roamgate::node::node_families()
-                } else {
-                    roamgate::standalone_families()
-                }
+            let families = if roamgate_base::node::active() {
+                roamgate::node::node_families()
             } else {
                 roamgate::core_families()
             };
             let recorder = roamgate::start_core_recorder(&env);
             let profile = roamgate::start_core_profile(&env)
                 .map(|(profile, duration)| (std::sync::Arc::new(profile), duration));
-            // The capture ends on the server's clock, as Bun's timer did.
+            // The capture ends on the server's clock.
             let timed = profile.clone();
             let on_clock = Box::new(move |clock: roamgate_base::clock::SharedClock| {
                 if let Some((profile, duration)) = timed {
@@ -49,7 +45,7 @@ async fn main() -> ExitCode {
                     });
                 }
             });
-            let code = roamgate_sidecar::core::run_core_with_clock(
+            let code = roamgate_channel::core::run_core_with_clock(
                 &env,
                 roamgate::VERSION,
                 families,
@@ -66,13 +62,6 @@ async fn main() -> ExitCode {
             ExitCode::from(code)
         }
         Options::Node(args) => ExitCode::from(roamgate::node::run(&args).await),
-        Options::Owners(args) => {
-            let (code, out, err) =
-                roamgate::owners_cmd::run(&roamgate_base::env::ProcessEnv, &args);
-            print!("{out}");
-            eprint!("{err}");
-            ExitCode::from(code)
-        }
         Options::Command(command, args) => ExitCode::from(match command.as_str() {
             "herdr" => roamgate::families::herdr::cli(&args).await,
             "push" => roamgate::families::notifications::cli(&args).await,

@@ -10,6 +10,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
+use roamgate_channel::family::FamilyContext;
+use roamgate_channel::protocol::RpcError;
 use roamgate_conversation::pane_child::{Form, parse_holder_status};
 use roamgate_conversation::suspended::{parse_holder_shell, parse_suspended_spec};
 use roamgate_forge::review::gitlab::{
@@ -27,8 +29,6 @@ use roamgate_git::review_patch::{
 use roamgate_git::{GitContext, GitError};
 use roamgate_review::model::ReviewSession;
 use roamgate_review::service::{LoadError, ReviewForge};
-use roamgate_sidecar::family::FamilyContext;
-use roamgate_sidecar::protocol::RpcError;
 use roamgate_workspace::tree::store::{
     GroupPlacement, agent_group_paths, agent_group_placement_ops,
 };
@@ -55,16 +55,6 @@ pub(super) const TARGETS: &[(&str, Reverse)] = &[
         Box::pin(async move {
             published(&layer, &cx, &args);
             Ok(json!({}))
-        })
-    }),
-    ("review.addThread", |_, cx, args| {
-        Box::pin(async move {
-            call(
-                &cx,
-                "internal.review.call",
-                json!({"method": "addThread", "params": args}),
-            )
-            .await
         })
     }),
 ];

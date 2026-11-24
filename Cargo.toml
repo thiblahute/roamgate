@@ -2,7 +2,7 @@
 # `roamgate` (crates/roamgate) is the server binary, `roamgate-ws`
 # (crates/roamgate-ws) its /ws transport, `roamgate-protocol`,
 # `roamgate-base` and `roamgate-exec` the foundation crates (wire types,
-# storage and process plumbing), `roamgate-sidecar` the internal channel
+# storage and process plumbing), `roamgate-channel` the internal channel
 # to the Bun server while families move (`roamgate core`; deleted at the
 # cut-over), the parity suite drives a server
 # from outside, xtask builds and packages the release targets of
@@ -10,8 +10,8 @@
 # (`-p roamgate-voice`, or from voice/helper): it pulls GStreamer's bundle.
 [workspace]
 resolver = "3"
-members = ["crates/roamgate", "crates/roamgate-activity", "crates/roamgate-agents", "crates/roamgate-archive", "crates/roamgate-assistant", "crates/roamgate-base", "crates/roamgate-claude", "crates/roamgate-cli", "crates/roamgate-connections", "crates/roamgate-conversation", "crates/roamgate-exec", "crates/roamgate-forge", "crates/roamgate-git", "crates/roamgate-herdr", "crates/roamgate-history", "crates/roamgate-http", "crates/roamgate-mr-reviews", "crates/roamgate-notify", "crates/roamgate-pi", "crates/roamgate-protocol", "crates/roamgate-review", "crates/roamgate-sidecar", "crates/roamgate-voice-server", "crates/roamgate-work", "crates/roamgate-workspace", "crates/roamgate-ws", "parity", "parity/herdr-api", "voice/helper", "xtask"]
-default-members = ["crates/roamgate", "crates/roamgate-activity", "crates/roamgate-agents", "crates/roamgate-archive", "crates/roamgate-assistant", "crates/roamgate-base", "crates/roamgate-claude", "crates/roamgate-cli", "crates/roamgate-connections", "crates/roamgate-conversation", "crates/roamgate-exec", "crates/roamgate-forge", "crates/roamgate-git", "crates/roamgate-herdr", "crates/roamgate-history", "crates/roamgate-http", "crates/roamgate-mr-reviews", "crates/roamgate-notify", "crates/roamgate-pi", "crates/roamgate-protocol", "crates/roamgate-review", "crates/roamgate-sidecar", "crates/roamgate-voice-server", "crates/roamgate-work", "crates/roamgate-workspace", "crates/roamgate-ws", "parity", "parity/herdr-api", "xtask"]
+members = ["crates/roamgate", "crates/roamgate-activity", "crates/roamgate-agents", "crates/roamgate-archive", "crates/roamgate-assistant", "crates/roamgate-base", "crates/roamgate-claude", "crates/roamgate-cli", "crates/roamgate-connections", "crates/roamgate-conversation", "crates/roamgate-exec", "crates/roamgate-forge", "crates/roamgate-git", "crates/roamgate-herdr", "crates/roamgate-history", "crates/roamgate-http", "crates/roamgate-mr-reviews", "crates/roamgate-notify", "crates/roamgate-pi", "crates/roamgate-protocol", "crates/roamgate-review", "crates/roamgate-channel", "crates/roamgate-voice-server", "crates/roamgate-work", "crates/roamgate-workspace", "crates/roamgate-ws", "parity", "parity/herdr-api", "voice/helper", "xtask"]
+default-members = ["crates/roamgate", "crates/roamgate-activity", "crates/roamgate-agents", "crates/roamgate-archive", "crates/roamgate-assistant", "crates/roamgate-base", "crates/roamgate-claude", "crates/roamgate-cli", "crates/roamgate-connections", "crates/roamgate-conversation", "crates/roamgate-exec", "crates/roamgate-forge", "crates/roamgate-git", "crates/roamgate-herdr", "crates/roamgate-history", "crates/roamgate-http", "crates/roamgate-mr-reviews", "crates/roamgate-notify", "crates/roamgate-pi", "crates/roamgate-protocol", "crates/roamgate-review", "crates/roamgate-channel", "crates/roamgate-voice-server", "crates/roamgate-work", "crates/roamgate-workspace", "crates/roamgate-ws", "parity", "parity/herdr-api", "xtask"]
 # Its own workspace: a benchmark with its own lockfile.
 exclude = ["scripts/bench-terminal"]
 

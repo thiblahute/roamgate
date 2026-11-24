@@ -23,14 +23,14 @@ use std::time::Duration;
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::log::{LogFields, Logger};
 use roamgate_base::paths::DataContext;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BoxFuture as PeerFuture, IncomingCall};
+use roamgate_channel::protocol::RpcError;
 use roamgate_connections::agent_profiles::rpc::{
     HostFuture, ProfileRpcContext, ProfileRpcHost, ResetConnection, Restart, handle_profile_rpc,
     return_after_reset,
 };
 use roamgate_connections::agent_profiles::store::{LaunchSpec, SessionProfiles};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BoxFuture as PeerFuture, IncomingCall};
-use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Map, Value, json};
 use tokio::sync::{mpsc, watch};
 
@@ -86,15 +86,10 @@ fn running_store(cx: &FamilyContext) -> Running {
             let _ = sender.send((seq, sessions.clone()));
         })
     };
-    let owners = cx.owners.clone();
     let store = Arc::new(SessionProfiles::at_data_root(
         DataContext::from_env(&ProcessEnv),
         Some(observer),
-        Some(Arc::new(move || {
-            owners
-                .check_write(FAMILY)
-                .map_err(|error| error.to_string())
-        })),
+        None,
     ));
     let teller = {
         let cx = cx.clone();

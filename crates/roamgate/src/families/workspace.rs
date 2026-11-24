@@ -33,14 +33,14 @@ use futures_util::future::BoxFuture as FutureBox;
 use roamgate_base::env::{ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogLevel, Logger, LoggerOptions, parse_log_level};
 use roamgate_base::settings::Settings;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
+use roamgate_channel::protocol::{Push, RpcError};
 use roamgate_forge::mr_cache::MrCache;
 use roamgate_forge::pull_request::{CardCache, PullRequests};
 use roamgate_git::exec::{LocalRunner, RunFuture};
 use roamgate_git::steps::LastStepStore;
 use roamgate_git::{GitContext, Invocation, Ran, Request, RunError, Runner};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
-use roamgate_sidecar::protocol::{Push, RpcError};
 use roamgate_workspace::auto_sync::{
     AutoSync, AutoSyncArgs, GitRootResolver, Invalidate, ResolvedRoot,
 };
@@ -809,14 +809,8 @@ impl WorkspaceFamily {
     }
 }
 
-/// A browser call's runtime: the one the front started, else (a shadow
-/// read while the front owns the family) the connection as the front
-/// says it is now, with nothing running in the background.
-async fn call_runtime(
-    inner: &Arc<Inner>,
-    cx: &FamilyContext,
-    call: &IncomingCall,
-) -> Result<Arc<Runtime>, RpcError> {
+/// A browser call's runtime: the one the connection's generation started.
+async fn call_runtime(inner: &Arc<Inner>, call: &IncomingCall) -> Result<Arc<Runtime>, RpcError> {
     let connection_id = call
         .ctx
         .connection_id
@@ -832,59 +826,10 @@ async fn call_runtime(
         }
         return Ok(runtime);
     }
-    if !call.shadow {
-        return Err(RpcError::with_code(
-            format!("connection not ready: {connection_id}"),
-            "not_ready",
-        ));
-    }
-    let ready = cx.reverse("connections.ready", Value::Null).await?;
-    let entry = ready
-        .as_array()
-        .and_then(|list| {
-            list.iter()
-                .find(|each| param(each, "id") == Some(&connection_id))
-        })
-        .cloned()
-        .ok_or_else(|| {
-            RpcError::with_code(
-                format!("connection not ready: {connection_id}"),
-                "not_ready",
-            )
-        })?;
-    let info = RuntimeInfo {
-        connection_id,
-        generation: entry.get("generation").and_then(Value::as_u64).unwrap_or(0),
-        ssh_host: param(&entry, "ssh_host").map(str::to_owned),
-        remote_platform: param(&entry, "remote_platform").map(str::to_owned),
-    };
-    let conn = connection(cx, &info);
-    let store = LastStepStore::new(conn.git.clone(), true);
-    let files = Arc::new(Files::new().with_last_steps(store.clone()));
-    let status = GitStatus::new(conn.clone(), cx.clock.clone(), GIT_STATUS_COLD_BUDGET);
-    let turns = LastStepTurns::new(
-        Arc::new(ConnectionTurnHooks {
-            conn: conn.clone(),
-            store,
-            status: status.clone(),
-            resolve_git_root: resolver(&files, &conn),
-            logger: logger(cx, "bridge"),
-            disposed: Arc::new(AtomicBool::new(true)),
-        }),
-        cx.clock.clone(),
-        LAST_STEP_TRANSITION_DEBOUNCE,
-    );
-    Ok(Arc::new(Runtime {
-        conn,
-        files,
-        status,
-        auto_sync: None,
-        turns,
-        worktrees: Worktrees::default(),
-        disposed: Arc::new(AtomicBool::new(true)),
-        lists: Mutex::new(BTreeMap::new()),
-        events: tokio::sync::Mutex::new(()),
-    }))
+    Err(RpcError::with_code(
+        format!("connection not ready: {connection_id}"),
+        "not_ready",
+    ))
 }
 
 /// A browser RPC of the family on its connection's runtime.
@@ -896,24 +841,13 @@ async fn browser_call(
     let method = call.method.as_str();
     let params = &call.params;
     if method.starts_with("bridge.workspace_tree.") {
-        let store = match inner.tree() {
-            Ok(tree) => tree.store.clone(),
-            // A shadow read while the front owns the family: the
-            // arrangement as settings.json holds it, nothing written.
-            Err(_) if call.shadow && method == "bridge.workspace_tree.get" => {
-                WorkspaceTreeStore::new(Arc::new(CoreSettings {
-                    cx: cx.clone(),
-                    connection_id: String::new(),
-                }))
-            }
-            Err(error) => return Err(error),
-        };
+        let store = inner.tree()?.store.clone();
         return tree_store::rpc(&store, method, params)
             .await
             .unwrap_or_else(|| Err(WorkspaceError::new(format!("unknown method {method}"))))
             .map_err(rpc_error);
     }
-    let runtime = call_runtime(&inner, &cx, &call).await?;
+    let runtime = call_runtime(&inner, &call).await?;
     let conn = &runtime.conn;
     if method == "git.pull_request" {
         let answer = match runtime.files.pull_request_target(conn, params).await {
@@ -1051,7 +985,7 @@ async fn internal(
     // The family's own answers to the front's other parts count as served
     // (the parity suite's proof), the bookkeeping does not.
     if matches!(op, "enrich" | "last_step" | "tree") {
-        roamgate_sidecar::core::note_served(
+        roamgate_channel::core::note_served(
             &ProcessEnv,
             FAMILY,
             &format!("internal.workspace.{op}"),
@@ -1296,11 +1230,10 @@ impl CoreFamily for WorkspaceFamily {
 
     fn http(
         &self,
-        cx: &FamilyContext,
+        _cx: &FamilyContext,
         request: HttpRequest,
         body: Option<BodyReceiver>,
     ) -> BoxFuture<Result<HttpResponse, RpcError>> {
-        let cx = cx.clone();
         let inner = self.0.clone();
         Box::pin(async move {
             let (path, query) = request
@@ -1312,9 +1245,8 @@ impl CoreFamily for WorkspaceFamily {
                 method: path.to_owned(),
                 params: Value::Null,
                 ctx: request.ctx.clone(),
-                shadow: false,
             };
-            let runtime = call_runtime(&inner, &cx, &call).await?;
+            let runtime = call_runtime(&inner, &call).await?;
             let files = &runtime.files;
             let conn = &runtime.conn;
             let answer = match (request.method.as_str(), path) {

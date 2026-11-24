@@ -10,7 +10,7 @@ const FAMILY: &str = "mr_reviews";
 
 /// `roamgate reviews ...`; returns the exit code.
 pub fn cli(args: &[String]) -> u8 {
-    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, "cli reviews");
+    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, "cli reviews");
     let runtime = crate::families::update::cli_runtime(Arc::new(ProcessEnv));
     let now = || SystemClock.now() as f64;
     crate::families::update::emit(

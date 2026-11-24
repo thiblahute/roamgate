@@ -1,11 +1,12 @@
 //! The core process (`roamgate core`): connects to the front named by
 //! `ROAMGATE_CORE_CHANNEL`, proves itself with `ROAMGATE_CORE_TOKEN`, and
 //! serves the families it is given (the `roamgate` binary's, see
-//! [`crate::family`]) until the channel closes. The `test.echo` family
-//! exists only for the channel's cross-language test, with
+//! [`crate::family`]) until the channel closes. What the families ask of
+//! each other is answered in the process ([`crate::standalone`]). The
+//! `test.echo` family exists only for the channel's own test, with
 //! `ROAMGATE_CORE_TEST=1` on a debug build.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use roamgate_base::clock::TestClock;
@@ -15,26 +16,19 @@ use roamgate_base::log::{LogLayer, LogLevel, Logger, LoggerOptions, parse_log_le
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
 
-use crate::family::{CoreFamily, Families, FamilyContext, INTERNAL_PREFIX, Reply, pass_to_bun};
-use crate::owners::{Owners, families as declared_families, implemented};
+use crate::declared::{families as declared_families, implemented};
+use crate::family::{CoreFamily, Families, FamilyContext, INTERNAL_PREFIX, Reply, not_served};
 use crate::peer::{
     BodyReceiver, BoxFuture, Handler, HttpRequest, HttpResponse, IncomingCall, Peer, PeerOptions,
     WsOpen, say_hello,
 };
-use crate::protocol::{
-    Message, PROTOCOL, Push, RpcError, ShadowSettings, Side, family_of, http_family_of,
-};
-use crate::standalone::{LocalRouter, STANDALONE_ENV, Standalone};
+use crate::protocol::{Message, PROTOCOL, Push, RpcError, family_of, http_family_of};
+use crate::standalone::{LocalRouter, Standalone};
 use crate::transport;
 
 pub const CHANNEL_ENV: &str = "ROAMGATE_CORE_CHANNEL";
 pub const TOKEN_ENV: &str = "ROAMGATE_CORE_TOKEN";
 pub const TEST_ENV: &str = "ROAMGATE_CORE_TEST";
-/// The Rust front's link for the core (contract/wire/core-channel.md, The
-/// Rust core's link to the Rust front): set by the Rust front on its Bun
-/// core, whose Rust core inherits them.
-pub const FRONT_CHANNEL_ENV: &str = "ROAMGATE_FRONT_CHANNEL";
-pub const FRONT_TOKEN_ENV: &str = "ROAMGATE_FRONT_TOKEN";
 
 /// Exit codes of `roamgate core`.
 pub mod exit {
@@ -78,7 +72,7 @@ pub fn test_family_on(env: &dyn Env) -> bool {
     cfg!(debug_assertions) && env.var(TEST_ENV).as_deref() == Some("1")
 }
 
-/// Logs as the Bun server does, at ROAMGATE_LOG_LEVEL, scope `core`.
+/// Logs at ROAMGATE_LOG_LEVEL, scope `core`.
 fn install_logger(env: &dyn Env, clock: SharedClock) {
     let level = roamgate_env(env, "LOG_LEVEL")
         .and_then(|value| parse_log_level(&value).ok())
@@ -94,18 +88,12 @@ fn install_logger(env: &dyn Env, clock: SharedClock) {
     let _ = tracing::subscriber::set_global_default(subscriber);
 }
 
-/// Whether this core is a Rust front's own (`ROAMGATE_CORE_STANDALONE=1`):
-/// no Bun anywhere, see [`crate::standalone`].
-pub fn standalone_on(env: &dyn Env) -> bool {
-    env.var(STANDALONE_ENV).as_deref() == Some("1")
-}
-
-/// The families whose paths are a connection's endpoints: a standalone
-/// core's front family resolves their connection first.
+/// The families whose paths are a connection's endpoints: the front
+/// family resolves their connection first.
 const ROUTED_IN_PLACE: [&str; 2] = ["agent_sessions", "workspace"];
 
-/// The family a standalone core gives what no family declares: the
-/// `/ws` socket and its RPCs, and the routes Bun answered itself.
+/// The family that serves what no family declares: the `/ws` socket and
+/// its RPCs, and the routes of no other family.
 pub const FRONT_FAMILY: &str = "front";
 
 /// Runs the core with `families`; returns its exit code.
@@ -134,11 +122,9 @@ pub async fn run_core_with_clock(
         return exit::USAGE;
     };
     let test = test_family_on(env);
-    let standalone = standalone_on(env).then(|| {
-        Arc::new(Standalone::new(
-            env.var(SERVED_LOG_ENV).filter(|_| cfg!(debug_assertions)),
-        ))
-    });
+    let standalone = Arc::new(Standalone::new(
+        env.var(SERVED_LOG_ENV).filter(|_| cfg!(debug_assertions)),
+    ));
     let mut stream = match transport::connect(&address).await {
         Ok(stream) => stream,
         Err(error) => {
@@ -154,46 +140,15 @@ pub async fn run_core_with_clock(
     let hello = Message::Hello {
         protocol: PROTOCOL,
         token,
-        side: Side::Rust,
         version: version.to_owned(),
         pid: std::process::id(),
         families: hello_families.clone(),
         test,
     };
-    // Linked to the Rust front before the Bun core knows this core: by the
-    // time the Bun core routes it a family, the front can give it that
-    // family's sockets.
-    let link = match (
-        env.var(FRONT_CHANNEL_ENV).filter(|value| !value.is_empty()),
-        env.var(FRONT_TOKEN_ENV).filter(|value| !value.is_empty()),
-    ) {
-        // A standalone core's front sends it every socket on the channel.
-        (Some(address), Some(token)) if standalone.is_none() => {
-            let hello = Message::Hello {
-                protocol: PROTOCOL,
-                token,
-                side: Side::Rust,
-                version: version.to_owned(),
-                pid: std::process::id(),
-                families: hello_families.clone(),
-                test,
-            };
-            link_front(&address, &hello).await
-        }
-        _ => None,
-    };
-    let owners = Owners::new(Side::Rust, test);
     let (followed, raw_data) = match say_hello(&mut stream, &hello).await {
         Ok(Message::Welcome {
-            owners: table,
-            shadow,
-            clock,
-            raw_data,
-            ..
-        }) => {
-            owners.set(table, shadow);
-            (clock, raw_data)
-        }
+            clock, raw_data, ..
+        }) => (clock, raw_data),
         Ok(_) => return exit::FAILED,
         Err(crate::peer::HandshakeError::Refused(reason)) => {
             tracing::error!(reason, "the server refused this core");
@@ -223,29 +178,23 @@ pub async fn run_core_with_clock(
     let handler = Arc::new(CoreHandler {
         served_log: env.var(SERVED_LOG_ENV).filter(|_| cfg!(debug_assertions)),
         test,
-        owners: owners.clone(),
         families,
         context: OnceLock::new(),
-        owned: Mutex::default(),
+        serving: Mutex::default(),
         test_clock,
         ready: tokio::sync::watch::channel(false).0,
         me: OnceLock::new(),
-        standalone: standalone.clone(),
         sockets: Arc::default(),
     });
     let _ = handler.me.set(Arc::downgrade(&handler));
-    if let Some(standalone) = &standalone {
-        let router: Arc<dyn LocalRouter> = handler.clone();
-        standalone.set_router(Arc::downgrade(&router));
-        // The test family's reverse target, answered as the Bun front does.
-        if test {
-            standalone.register(
-                "test.echo",
-                Arc::new(|_, args, ctx| {
-                    Box::pin(async move { Ok(json!({"args": args, "ctx": ctx})) })
-                }),
-            );
-        }
+    let router: Arc<dyn LocalRouter> = handler.clone();
+    standalone.set_router(Arc::downgrade(&router));
+    // The test family's reverse target: its arguments and context back.
+    if test {
+        standalone.register(
+            "test.echo",
+            Arc::new(|_, args, ctx| Box::pin(async move { Ok(json!({"args": args, "ctx": ctx})) })),
+        );
     }
     let peer = Peer::start(
         stream,
@@ -257,41 +206,20 @@ pub async fn run_core_with_clock(
     );
     let _ = handler.context.set(FamilyContext {
         peer: peer.clone(),
-        owners,
         clock: family_clock,
         standalone: standalone.clone(),
     });
-    handler.ownership_changed();
+    handler.start_all();
     handler.ready.send_replace(true);
-    // What the front sent on the link meanwhile waits in the stream.
-    let link = link.map(|(stream, raw_data)| {
-        let handler = Arc::new(FrontLink {
-            core: handler.clone(),
-            sockets: Arc::default(),
-        });
-        Peer::start(
-            stream,
-            handler,
-            PeerOptions {
-                raw_data,
-                ..PeerOptions::core(clock)
-            },
-        )
-    });
     peer.closed().await;
-    if let Some(link) = link {
-        link.bye();
-    }
     handler.stop_all();
-    if let Some(standalone) = &standalone {
-        let missing = standalone.missing();
-        if !missing.is_empty() {
-            tracing::info!(
-                scope = "core",
-                targets = ?missing,
-                "reverse targets the standalone core was asked for and does not serve"
-            );
-        }
+    let missing = standalone.missing();
+    if !missing.is_empty() {
+        tracing::info!(
+            scope = "core",
+            targets = ?missing,
+            "reverse targets the core was asked for and does not serve"
+        );
     }
     tracing::debug!("core channel closed: exiting");
     exit::CLOSED
@@ -302,23 +230,18 @@ struct CoreHandler {
     /// [`SERVED_LOG_ENV`], on a debug build.
     served_log: Option<String>,
     test: bool,
-    owners: Owners,
     families: Families,
     /// Set once the peer runs.
     context: OnceLock<FamilyContext>,
-    /// The families the core owns, as last told to them.
-    owned: Mutex<BTreeSet<&'static str>>,
+    /// The families serving, from the welcome until the channel closes.
+    serving: Mutex<BTreeSet<&'static str>>,
     /// The front's test clock, followed.
     test_clock: Option<TestClock>,
-    /// True once the families heard the welcome's table: what the peer
-    /// reads before waits for it (a call or a clock advance never
-    /// overtakes the families' start).
+    /// True once the families started: what the peer reads before waits
+    /// for it (a call or a clock advance never overtakes their start).
     ready: tokio::sync::watch::Sender<bool>,
     me: OnceLock<Weak<CoreHandler>>,
-    /// A standalone core: what it answers in its own process.
-    standalone: Option<Arc<Standalone>>,
-    /// A standalone core's browser sockets (the front sends them on the
-    /// channel), by the front's number.
+    /// The browser sockets the front sent on the channel, by its number.
     sockets: SocketMap,
 }
 
@@ -335,15 +258,11 @@ impl CoreHandler {
     }
 
     /// The family serving an HTTP path or a socket: the one that declares
-    /// it, else, in a standalone core, the front family.
+    /// it, else the front family.
     fn path_family(&self, path: &str) -> Option<Arc<dyn CoreFamily>> {
         http_family_of(path, declared_families())
             .and_then(|name| self.family(&name).cloned())
-            .or_else(|| {
-                self.standalone
-                    .as_ref()
-                    .and_then(|_| self.family(FRONT_FAMILY).cloned())
-            })
+            .or_else(|| self.family(FRONT_FAMILY).cloned())
     }
 
     /// A call routed to the family that declares its method (or the
@@ -372,10 +291,9 @@ impl CoreHandler {
         let Some(cx) = self.context.get() else {
             return unknown_method(&call.method);
         };
-        // A standalone core's front family routes the test family's calls
-        // here.
+        // The front family routes the test family's calls here.
         if self.test && call.method.starts_with("test.echo.") {
-            let echoed = test_echo_call(Echo::Local(cx.clone()), call);
+            let echoed = test_echo_call(cx.clone(), call);
             return Box::pin(async move { echoed.await.map(Into::into) });
         }
         let name = match call.method.strip_prefix(INTERNAL_PREFIX) {
@@ -384,7 +302,7 @@ impl CoreHandler {
         };
         match name.as_deref().and_then(|name| self.family(name)) {
             Some(family) => {
-                if !call.shadow && !call.method.starts_with(INTERNAL_PREFIX) {
+                if !call.method.starts_with(INTERNAL_PREFIX) {
                     self.served(family.name(), &call.method);
                 }
                 answer(family, cx, call)
@@ -404,10 +322,9 @@ impl CoreHandler {
         // are routed, their connection resolved, by the front family
         // first, which hands them on with the connection in their context
         // (Bun's routing in place).
-        let family = match (&self.standalone, request.ctx.connection_id.as_deref()) {
-            (Some(_), None)
-                if http_family_of(&path, declared_families())
-                    .is_some_and(|family| ROUTED_IN_PLACE.contains(&family.as_str())) =>
+        let family = match request.ctx.connection_id.as_deref() {
+            None if http_family_of(&path, declared_families())
+                .is_some_and(|family| ROUTED_IN_PLACE.contains(&family.as_str())) =>
             {
                 self.family(FRONT_FAMILY).cloned()
             }
@@ -428,28 +345,20 @@ impl CoreHandler {
         }
     }
 
-    /// Tells each family whether the core owns it now, when that changed.
-    fn ownership_changed(&self) {
+    /// The front welcomed the core: every family starts, in order.
+    fn start_all(&self) {
         let Some(cx) = self.context.get() else {
             return;
         };
-        let mut owned = self.owned.lock().unwrap();
+        let mut serving = self.serving.lock().unwrap();
         for family in &self.families {
-            let now = self.owners.owner(family.name()) == Side::Rust;
-            if now != owned.contains(family.name()) {
-                if now {
-                    owned.insert(family.name());
-                } else {
-                    owned.remove(family.name());
-                }
-                tracing::info!(
-                    family = family.name(),
-                    "{} the {} family",
-                    if now { "serving" } else { "no longer serving" },
-                    family.name()
-                );
-                family.owned(cx, now);
-            }
+            serving.insert(family.name());
+            tracing::info!(
+                family = family.name(),
+                "serving the {} family",
+                family.name()
+            );
+            family.owned(cx, true);
         }
     }
 
@@ -458,9 +367,9 @@ impl CoreHandler {
         let Some(cx) = self.context.get() else {
             return;
         };
-        let owned = std::mem::take(&mut *self.owned.lock().unwrap());
+        let serving = std::mem::take(&mut *self.serving.lock().unwrap());
         for family in &self.families {
-            if owned.contains(family.name()) {
+            if serving.contains(family.name()) {
                 family.owned(cx, false);
             }
         }
@@ -486,9 +395,6 @@ impl CoreHandler {
 
 impl Handler for CoreHandler {
     fn call(&self, peer: &Peer, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
-        if self.test && call.method.starts_with("test.echo.") {
-            return test_echo_call(Echo::Peer(peer.clone()), call);
-        }
         if !*self.ready.borrow()
             && let Some(me) = self.me.get().and_then(Weak::upgrade)
         {
@@ -528,20 +434,13 @@ impl Handler for CoreHandler {
         self.route_http(request, body)
     }
 
-    fn owner(&self, owners: BTreeMap<String, Side>, shadow: ShadowSettings) {
-        self.owners.set(owners, shadow);
-        self.ownership_changed();
-    }
-
-    /// A standalone core's browser sockets come on the channel.
+    /// The browser sockets come on the channel.
     fn ws_open(&self, peer: &Peer, open: WsOpen) -> BoxFuture<Result<Value, RpcError>> {
         match self.me.get().and_then(Weak::upgrade) {
-            Some(core) if self.standalone.is_some() => {
-                open_socket(core, self.sockets.clone(), peer.clone(), open)
-            }
-            _ => Box::pin(async {
+            Some(core) => open_socket(core, self.sockets.clone(), peer.clone(), open),
+            None => Box::pin(async {
                 Err(RpcError::with_code(
-                    "this side serves no browser socket",
+                    "the core is stopping",
                     "unknown_method",
                 ))
             }),
@@ -549,9 +448,7 @@ impl Handler for CoreHandler {
     }
 
     fn socket(&self, peer: &Peer, message: Message) {
-        if self.standalone.is_some() {
-            socket_message(self, &self.sockets, peer, message);
-        }
+        socket_message(self, &self.sockets, peer, message);
     }
 }
 
@@ -573,9 +470,8 @@ impl LocalRouter for CoreHandler {
     }
 }
 
-/// A browser socket the front asks the core to take (on the channel of a
-/// standalone core, or on the link of a hybrid one): the family that
-/// serves its path answers, once the families heard the welcome.
+/// A browser socket the front asks the core to take: the family that
+/// serves its path answers, once the families started.
 fn open_socket(
     core: Arc<CoreHandler>,
     sockets: SocketMap,
@@ -587,9 +483,9 @@ fn open_socket(
         let path = path_of(&open.url).to_owned();
         let family = core
             .path_family(&path)
-            .filter(|family| core.owned.lock().unwrap().contains(family.name()));
+            .filter(|family| core.serving.lock().unwrap().contains(family.name()));
         let (Some(family), Some(cx)) = (family, core.context.get()) else {
-            return Ok(pass_to_bun());
+            return Ok(not_served());
         };
         let socket_id = open.socket_id;
         // Known before the answer: its first messages follow it at once.
@@ -624,46 +520,6 @@ fn socket_message(core: &CoreHandler, sockets: &SocketMap, peer: &Peer, message:
     }
 }
 
-/// Connects to the Rust front's link and says hello; None when it cannot
-/// (the front then gives every socket to the Bun core).
-/// The link's stream, and whether the front reads raw data frames.
-async fn link_front(address: &str, hello: &Message) -> Option<(transport::BoxStream, bool)> {
-    let mut stream = match transport::connect(address).await {
-        Ok(stream) => stream,
-        Err(error) => {
-            tracing::warn!(address, %error, "cannot reach the Rust front's link");
-            return None;
-        }
-    };
-    let raw_data = match say_hello(&mut stream, hello).await {
-        Ok(Message::Welcome { raw_data, .. }) => raw_data,
-        Ok(_) => false,
-        Err(error) => {
-            tracing::warn!(%error, "the Rust front's link refused this core");
-            return None;
-        }
-    };
-    tracing::debug!("linked to the Rust front");
-    Some((stream, raw_data))
-}
-
-/// The core's side of the Rust front's link: the browser sockets of the
-/// families the core owns, by the front's number.
-struct FrontLink {
-    core: Arc<CoreHandler>,
-    sockets: SocketMap,
-}
-
-impl Handler for FrontLink {
-    fn ws_open(&self, peer: &Peer, open: WsOpen) -> BoxFuture<Result<Value, RpcError>> {
-        open_socket(self.core.clone(), self.sockets.clone(), peer.clone(), open)
-    }
-
-    fn socket(&self, peer: &Peer, message: Message) {
-        socket_message(&self.core, &self.sockets, peer, message);
-    }
-}
-
 fn path_of(url: &str) -> &str {
     url.split(['?', '#']).next().unwrap_or("")
 }
@@ -677,31 +533,9 @@ fn query_param<'a>(url: &'a str, name: &str) -> Option<&'a str> {
         .map(|(_, value)| value)
 }
 
-/// Where the test family's pushes and reverse calls go: the channel, or
-/// a standalone core's own process.
-enum Echo {
-    Peer(Peer),
-    Local(FamilyContext),
-}
-
-impl Echo {
-    fn push(&self, push: Push) {
-        match self {
-            Self::Peer(peer) => peer.push(push),
-            Self::Local(cx) => cx.push(push),
-        }
-    }
-
-    async fn reverse(&self, args: Value, ctx: crate::protocol::Ctx) -> Result<Value, RpcError> {
-        match self {
-            Self::Peer(peer) => peer.reverse_call("test.echo", args, ctx).await,
-            Self::Local(cx) => cx.reverse_with("test.echo", args, ctx).await,
-        }
-    }
-}
-
-/// The test family's calls.
-fn test_echo_call(peer: Echo, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
+/// The test family's calls: a read of what the front knew, pushes on the
+/// channel, a reverse call answered in the core.
+fn test_echo_call(cx: FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
     Box::pin(async move {
         match call.method.as_str() {
             "test.echo.read" => Ok(json!({"params": call.params, "ctx": call.ctx})),
@@ -722,7 +556,8 @@ fn test_echo_call(peer: Echo, call: IncomingCall) -> BoxFuture<Result<Value, Rpc
                             message.insert(name.clone(), value.clone());
                         }
                     }
-                    peer.push(Push {
+                    // On the channel itself: its keyed coalescing.
+                    cx.peer.push(Push {
                         message: Value::Object(message),
                         key: key.clone(),
                         connection_id: params
@@ -741,7 +576,7 @@ fn test_echo_call(peer: Echo, call: IncomingCall) -> BoxFuture<Result<Value, Rpc
                 }
                 Ok(json!({"pushed": count}))
             }
-            "test.echo.reverse" => peer.reverse(call.params, call.ctx).await,
+            "test.echo.reverse" => cx.reverse_with("test.echo", call.params, call.ctx).await,
             other => Err(RpcError::with_code(
                 format!("unknown method {other}"),
                 "unknown_method",

@@ -8,7 +8,6 @@ description: >
   command (the integration versions' CLI) runs as a local spawn on the node
   in its HOME, with no ssh command of its own. Herdr's events reach the
   browser through the link's subscription (contract/wire/node-link.md).
-fronts: [rust-only]
 server:
   start: false
   herdr: false

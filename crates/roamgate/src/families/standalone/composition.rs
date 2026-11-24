@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use roamgate_base::env::{ProcessEnv, roamgate_env};
 use roamgate_base::log::{Logger, RecoveryReporter};
+use roamgate_channel::family::FamilyContext;
 use roamgate_connections::agent_tab_title::{AgentTabTitleOptions, AgentTabTitleReader, RunOutput};
 use roamgate_connections::manager::sanitize_connection_error;
 use roamgate_connections::routing::serialize_herdr_event_envelope;
@@ -21,7 +22,6 @@ use roamgate_herdr::endpoint::creation::{EmptyWorkspaceCreator, assert_creation_
 use roamgate_http::terminal::bridge::{BridgeOptions, TerminalBridge, TerminalSink};
 use roamgate_notify::listener::{HerdrNotificationListener, ListenerOptions};
 use roamgate_notify::task_events::{TaskEventTracker, TaskNotificationSource};
-use roamgate_sidecar::family::FamilyContext;
 use serde_json::{Map, Value, json};
 
 use super::{Layer, fields, logger};

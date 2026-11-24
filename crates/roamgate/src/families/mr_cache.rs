@@ -21,12 +21,12 @@ use std::time::Duration;
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
 use roamgate_base::settings::Settings;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::{BoxFuture, IncomingCall};
+use roamgate_channel::protocol::{Push, RpcError};
 use roamgate_forge::mr_cache::{
     LoadError, Loaded, MrCache, MrCacheSettings, Persist, SAVE_DELAY, mr_cache_path, reader_options,
 };
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BoxFuture, IncomingCall};
-use roamgate_sidecar::protocol::{Push, RpcError};
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
@@ -210,7 +210,7 @@ impl CoreFamily for MrCacheFamily {
                 "internal.mr_cache.get" => {
                     // The front's surfaces are answered from this cache:
                     // the parity suite's proof that Rust served them.
-                    roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &call.method);
+                    roamgate_channel::core::note_served(&ProcessEnv, FAMILY, &call.method);
                     this.get(&cx, call.params).await
                 }
                 "internal.mr_cache.flush" => {
@@ -247,21 +247,15 @@ impl CoreFamily for MrCacheFamily {
         let slots = self.slot.clone();
         *self.settings_read.lock().unwrap() = 0;
         tokio::spawn(async move {
-            // Bun writes and drops its own cache before this one reads the
-            // file: one writer, nothing lost across the flip.
-            if let Err(error) = cx.reverse("mr_cache.release", json!({})).await {
-                tracing::debug!(scope = "mr-cache", error = %error.message, "release not answered");
-            }
             let context = DataContext::from_env(&ProcessEnv);
             let path = mr_cache_path(&context.data_root());
-            let owners = cx.owners.clone();
             let publisher = cx.clone();
             let cache = MrCache::open(
                 cx.clock.clone(),
                 Some(Persist {
                     context,
                     path,
-                    may_write: Arc::new(move || owners.check_write(FAMILY).is_ok()),
+                    may_write: Arc::new(|| true),
                     delay: SAVE_DELAY,
                 }),
                 Some(Arc::new(move |message: Value| {

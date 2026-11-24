@@ -24,7 +24,7 @@ rand = "0.9"
 regex = "1"
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
-roamgate-sidecar = { path = "../roamgate-sidecar" }
+roamgate-channel = { path = "../roamgate-channel" }
 roamgate-ws = { path = "../roamgate-ws" }
 roamgate-protocol = { path = "../roamgate-protocol" }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }

@@ -27,6 +27,9 @@ use std::sync::{Arc, Mutex};
 use roamgate_base::env::{Env, ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogFields, LogLevel, Logger, LoggerOptions, parse_log_level};
 use roamgate_base::paths::DataContext;
+use roamgate_channel::family::{CoreFamily, FamilyContext};
+use roamgate_channel::peer::IncomingCall;
+use roamgate_channel::protocol::{Push, RpcError};
 use roamgate_connections::BoxFuture;
 use roamgate_connections::limit_resume::connection::{
     HostConnection, LimitConnection, LimitHost, ModPane, OwnedPane,
@@ -34,9 +37,6 @@ use roamgate_connections::limit_resume::connection::{
 use roamgate_connections::limit_resume::scheduler::{LimitResumer, ResumerOptions, Timings};
 use roamgate_connections::limit_resume::store::{LimitResumeStore, StoreFile};
 use roamgate_connections::usage_limit::{LIMIT_PAUSES_EVENT, LimitPause, LimitResumeSettings};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::IncomingCall;
-use roamgate_sidecar::protocol::{Push, RpcError};
 use serde_json::{Value, json};
 
 pub const FAMILY: &str = "limit_resume";
@@ -232,15 +232,10 @@ fn resumer(cx: &FamilyContext, owned: bool) -> LimitResumer {
     let clock = cx.clock.clone();
     let path = store_path(&ProcessEnv);
     let file = if owned {
-        let owners = cx.owners.clone();
         StoreFile::File {
             path,
             context: DataContext::from_env(&ProcessEnv),
-            can_write: Arc::new(move || {
-                owners
-                    .check_write(FAMILY)
-                    .map_err(|error| error.to_string())
-            }),
+            can_write: Arc::new(|| Ok(())),
         }
     } else {
         StoreFile::ReadOnly(Some(path))
