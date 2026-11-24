@@ -420,6 +420,31 @@ pub fn read_voice_config(path: &Path) -> Result<VoiceConfig, String> {
     check(&shown, config)
 }
 
+/// The valid reading settings of voice.json at `path`, whatever else it
+/// holds (storedVoiceSettings): what a voice.json that is no usable
+/// configuration still says of `speech_rate` and `max_pause_ms`.
+pub fn stored_voice_settings(path: &Path) -> Map<String, Value> {
+    let mut stored = Map::new();
+    let Some(Value::Object(config)) = fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+    else {
+        return stored;
+    };
+    if let Some(rate) = config
+        .get("speech_rate")
+        .filter(|rate| is_speech_rate(rate))
+    {
+        stored.insert("speech_rate".into(), rate.clone());
+    }
+    if let Some(pause) = config.get("max_pause_ms")
+        && pause.as_f64() == Some(max_pause_ms(Some(pause)))
+    {
+        stored.insert("max_pause_ms".into(), pause.clone());
+    }
+    stored
+}
+
 fn check(path: &str, config: Map<String, Value>) -> Result<VoiceConfig, String> {
     let get = |key: &str| config.get(key);
     let bad = |message: String| Err(format!("{path}: {message}"));

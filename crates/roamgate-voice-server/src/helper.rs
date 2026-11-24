@@ -44,6 +44,9 @@ pub const HELPER_STOPPED: &str = "The voice helper stopped";
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 /// voice.json as the helper is to start with (the low-GPU profile's).
 pub type ConfigSource = Arc<dyn Fn() -> Result<VoiceConfig, String> + Send + Sync>;
+/// voice.json's valid `speech_rate` and `max_pause_ms`, read whatever else
+/// it holds.
+pub type StoredSettings = Arc<dyn Fn() -> Map<String, Value> + Send + Sync>;
 /// Where a session's or a call's events go.
 pub type EventSink = Arc<dyn Fn(Map<String, Value>) + Send + Sync>;
 /// Where the `[voice]` lines go (the server's stderr).
@@ -165,6 +168,9 @@ struct Inner {
     spawn: Spawn,
     save_speech_rate: Arc<dyn Fn(f64) -> Result<(), String> + Send + Sync>,
     save_max_pause: Arc<dyn Fn(f64) -> Result<(), String> + Send + Sync>,
+    /// The valid reading settings of a voice.json that is no usable
+    /// configuration (readVoiceConfig's `stored`).
+    stored: StoredSettings,
     clock: SharedClock,
     errors: ErrorSink,
     log: Logger,
@@ -299,6 +305,7 @@ impl VoiceHelper {
                 spawn,
                 save_speech_rate: Arc::new(|_| Ok(())),
                 save_max_pause: Arc::new(|_| Ok(())),
+                stored: Arc::new(Map::new),
                 clock,
                 errors: Arc::new(|line| eprintln!("{line}")),
                 log,
@@ -353,6 +360,14 @@ impl VoiceHelper {
     }
 
     /// Where the `[voice]` lines go.
+    /// Where the reading settings of an unusable voice.json come from.
+    pub fn with_stored(mut self, stored: StoredSettings) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("not shared yet")
+            .stored = stored;
+        self
+    }
+
     pub fn with_errors(mut self, errors: ErrorSink) -> Self {
         Arc::get_mut(&mut self.inner)
             .expect("not shared yet")
@@ -389,7 +404,7 @@ impl VoiceHelper {
     pub fn max_pause_ms(&self) -> f64 {
         match (self.inner.config)() {
             Ok(config) => max_pause_ms(config.get("max_pause_ms")),
-            Err(_) => max_pause_ms(None),
+            Err(_) => max_pause_ms((self.inner.stored)().get("max_pause_ms")),
         }
     }
 
@@ -401,7 +416,7 @@ impl VoiceHelper {
     pub fn speech_rate(&self) -> f64 {
         match (self.inner.config)() {
             Ok(config) => config.speech_rate(),
-            Err(_) => speech_rate_or(None),
+            Err(_) => speech_rate_or((self.inner.stored)().get("speech_rate")),
         }
     }
 

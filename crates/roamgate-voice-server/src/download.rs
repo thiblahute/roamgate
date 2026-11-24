@@ -82,6 +82,9 @@ pub struct DownloadOptions {
     pub verify: bool,
     pub attempts: Option<u32>,
     pub retry_delay_ms: Option<u64>,
+    /// The clock retries wait on (Bun's timers: the test clock in tests);
+    /// None: tokio's.
+    pub clock: Option<roamgate_base::clock::SharedClock>,
 }
 
 /// What failed.
@@ -339,15 +342,19 @@ pub async fn download_file(
                     let wait = Duration::from_millis(
                         options.retry_delay_ms.unwrap_or(2000) * u64::from(tried + 1),
                     );
+                    let sleep: roamgate_base::clock::BoxFuture<()> = match &options.clock {
+                        Some(clock) => clock.sleep(wait),
+                        None => Box::pin(tokio::time::sleep(wait)),
+                    };
                     match &options.signal {
                         Some(signal) => {
                             let mut signal = signal.clone();
                             tokio::select! {
-                                () = tokio::time::sleep(wait) => {}
+                                () = sleep => {}
                                 _ = signal.wait_for(|done| *done) => return Err(DownloadError::Aborted),
                             }
                         }
-                        None => tokio::time::sleep(wait).await,
+                        None => sleep.await,
                     }
                 }
             }

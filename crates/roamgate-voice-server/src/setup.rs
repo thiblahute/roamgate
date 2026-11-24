@@ -823,6 +823,7 @@ pub async fn install_voice_models(
             verify: options.verify,
             attempts: None,
             retry_delay_ms: deps.retry_delay_ms,
+            clock: Some(deps.clock.clone()),
         };
         if let Err(error) = download_file(&file.target, &download).await {
             return Err(InstallError {
@@ -1016,7 +1017,7 @@ impl VoiceSetupRunner {
                 }
             })
         };
-        tokio::spawn(async move {
+        let install = async move {
             let options = InstallOptions {
                 signal: Some(signal.clone()),
                 on_progress: Some(on_progress),
@@ -1055,8 +1056,17 @@ impl VoiceSetupRunner {
             {
                 state.abort = None;
             }
-        });
-        Ok(job)
+        };
+        // As Bun's start runs the install up to its first wait before it
+        // answers: a setup with nothing to download is done at once.
+        let mut install = Box::pin(install);
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        if std::future::Future::poll(install.as_mut(), &mut context).is_pending() {
+            // Spawned tasks are polled at once: the real waker takes over.
+            tokio::spawn(install);
+        }
+        let current = lock(&self.state).current.clone();
+        Ok(current.unwrap_or(job))
     }
 
     pub fn cancel(&self) -> bool {

@@ -92,6 +92,61 @@ fn resolve_command() -> ResolveCommand {
     )
 }
 
+/// The setup assistant's deps: the host's, on the family's clock, with
+/// what a test server gives instead of the real world
+/// (ROAMGATE_TEST_VOICE_HARDWARE, ROAMGATE_TEST_VOICE_MODELS_URL).
+fn setup_deps(
+    runtime: &roamgate_cli::commands::CliRuntime,
+    clock: roamgate_base::clock::SharedClock,
+) -> roamgate_voice_server::setup::SetupDeps {
+    use roamgate_voice_server::companion::test_env::{TEST_VOICE_HONOURED, voice_test_overrides};
+    let mut deps = roamgate_cli::setup_voice::runtime_setup_deps(runtime);
+    deps.clock = clock;
+    match voice_test_overrides(
+        &|name| std::env::var(name).ok(),
+        TEST_VOICE_HONOURED,
+        roamgate_voice_server::models::packages(),
+    ) {
+        Ok(overrides) => {
+            if let Some(hardware) = overrides.hardware {
+                let host = deps.hardware.clone();
+                deps.hardware = Arc::new(move || {
+                    hardware().unwrap_or_else(|error| {
+                        tracing::warn!(scope = "voice", "the test hardware file: {error}");
+                        host()
+                    })
+                });
+            }
+            if let Some(packages) = overrides.packages {
+                deps.packages = Some(packages);
+            }
+        }
+        Err(error) => tracing::error!(scope = "voice", "{error}"),
+    }
+    deps
+}
+
+/// After a setup: the helper reloads its models now, after the call, or
+/// is not running (index.ts's reload, retried every 15 s after a call).
+fn reload_after_setup(helper: VoiceHelper) -> roamgate_voice_server::setup::Reload {
+    use roamgate_voice_server::helper::Reload;
+    Arc::new(move || {
+        let reload = helper.reload_models();
+        if reload == Reload::AfterCall {
+            let helper = helper.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                    if helper.reload_models() != Reload::AfterCall {
+                        break;
+                    }
+                }
+            });
+        }
+        reload.as_str()
+    })
+}
+
 /// The errands' sessions, reached through Bun's own code for them.
 struct ReverseErrands {
     cx: FamilyContext,
@@ -247,6 +302,10 @@ impl VoiceServer {
                 Arc::new(move |rate| write_speech_rate(rate, &rate_path)),
                 Arc::new(move |ms| write_max_pause(ms, &pause_path)),
             )
+            .with_stored({
+                let path = config_path.clone();
+                Arc::new(move || roamgate_voice_server::config::stored_voice_settings(&path))
+            })
             .with_errors(errors.clone());
         let models_dir = default_models_dir(&runtime.home, &runtime.platform, app_data);
         let low_gpu = VoiceLowGpu::new(LowGpuDeps {
@@ -484,8 +543,8 @@ impl VoiceServer {
             )
         };
         let setup = SetupRoute::new(VoiceSetupRunner::new(
-            roamgate_cli::setup_voice::runtime_setup_deps(&runtime),
-            None,
+            setup_deps(&runtime, clock.clone()),
+            Some(reload_after_setup(helper.clone())),
         ));
         let cookie: Arc<Mutex<Option<String>>> = Arc::default();
         let handoff = {
