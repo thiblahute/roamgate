@@ -596,5 +596,131 @@ impl InstanceChange {
     }
 }
 
+/// What a browser sees of the agent profiles (`profilesReply`): every
+/// value but secret files' contents (it gets their paths), whether each
+/// file can be used, and the model each runs.
+pub fn profiles_reply(settings: &Settings, home: &std::path::Path) -> Value {
+    use roamgate_connections::agent_profiles::shared::{
+        all_profiles, profile_model_label, profile_name, profile_view,
+    };
+    let raw = Value::Object(settings.as_map().clone());
+    let profiles = roamgate_connections::agent_profiles::store::profiles_of(Some(&raw));
+    let list = roamgate_connections::agent_profiles::store::profiles_list(&profiles);
+    let own: std::collections::HashSet<&str> = list.iter().map(profile_name).collect();
+    let shown: Vec<Value> = all_profiles(&list)
+        .iter()
+        .map(|profile| {
+            let mut view = profile_view(profile, !own.contains(profile_name(profile)));
+            if let Some(env) = view.get_mut("env").and_then(Value::as_array_mut) {
+                for entry in env.iter_mut() {
+                    let Some(file) = entry.get("file").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    if let Err(problem) =
+                        roamgate_connections::agent_profiles::store::read_secret_file(file, home)
+                        && let Some(entry) = entry.as_object_mut()
+                    {
+                        entry.insert("problem".into(), json!(problem));
+                    }
+                }
+            }
+            if let Some(view) = view.as_object_mut() {
+                view.insert("label".into(), json!(profile_model_label(profile)));
+            }
+            view
+        })
+        .collect();
+    json!({
+        "profiles": shown,
+        "default": profiles.get("default").cloned().unwrap_or(Value::Null),
+        "return_after_reset": profiles.get("return_after_reset").cloned().unwrap_or(Value::Null),
+    })
+}
+
+/// A profile as the browser edits it (`profileFromView`): its env entries
+/// back to `{NAME: value | {file}}`.
+pub fn profile_from_view(raw: &Value) -> Value {
+    let Some(view) = raw.as_object() else {
+        return raw.clone();
+    };
+    let Some(entries) = view.get("env").and_then(Value::as_array) else {
+        return raw.clone();
+    };
+    let broken = || {
+        let mut broken = view.clone();
+        broken.insert("env".into(), Value::Null);
+        Value::Object(broken)
+    };
+    let mut env = Map::new();
+    for entry in entries {
+        let Some(entry) = entry.as_object() else {
+            return broken();
+        };
+        let Some(name) = entry.get("name").and_then(Value::as_str) else {
+            return broken();
+        };
+        let value = match entry.get("file") {
+            Some(Value::String(file)) => json!({ "file": file }),
+            _ => entry.get("value").cloned().unwrap_or(Value::Null),
+        };
+        env.insert(name.to_owned(), value);
+    }
+    let mut profile = Map::new();
+    for key in ["name", "agent"] {
+        if let Some(value) = view.get(key) {
+            profile.insert(key.into(), value.clone());
+        }
+    }
+    profile.insert("env".into(), Value::Object(env));
+    if let Some(command) = view
+        .get("command")
+        .and_then(Value::as_str)
+        .filter(|command| !js_trim(command).is_empty())
+    {
+        profile.insert("command".into(), json!(command));
+    }
+    if let Some(unset) = view
+        .get("unset")
+        .filter(|unset| unset.as_array().is_some_and(|unset| !unset.is_empty()))
+    {
+        profile.insert("unset".into(), unset.clone());
+    }
+    Value::Object(profile)
+}
+
+/// `settings.profiles.update`'s parameters as the `profiles` section to
+/// write (normalised), or the error the browser gets.
+pub fn profiles_update(params: &Value) -> Result<Value, String> {
+    let empty = Map::new();
+    let params = params.as_object().unwrap_or(&empty);
+    let mut raw = Map::new();
+    if let Some(list) = params.get("list") {
+        raw.insert(
+            "list".into(),
+            match list {
+                Value::Array(list) => Value::Array(list.iter().map(profile_from_view).collect()),
+                other => other.clone(),
+            },
+        );
+    }
+    for key in ["default", "return_after_reset"] {
+        if let Some(value) = params.get(key) {
+            raw.insert(key.into(), value.clone());
+        }
+    }
+    let raw = Value::Object(raw);
+    if params
+        .keys()
+        .any(|key| !matches!(key.as_str(), "list" | "default" | "return_after_reset"))
+    {
+        return Err("settings.profiles.update takes list, default and return_after_reset".into());
+    }
+    if let Some(error) = roamgate_connections::agent_profiles::shared::profiles_settings_error(&raw)
+    {
+        return Err(error);
+    }
+    Ok(roamgate_base::settings::sections::normalize_profiles_settings(Some(&raw)))
+}
+
 #[cfg(test)]
 mod tests;

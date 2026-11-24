@@ -612,7 +612,7 @@ async fn inference_models(cx: &FamilyContext) -> Result<Value, RpcError> {
     let automatic = roamgate_mr_reviews::inference::profile_inference_model(
         profile.get("env").and_then(Value::as_object),
     );
-    let models = super::conversation::discovery()
+    let models = super::conversation::discovery(cx)
         .models(&profile, false)
         .await;
     Ok(json!({

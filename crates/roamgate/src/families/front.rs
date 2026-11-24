@@ -64,13 +64,7 @@ const SETTLE_WAIT: Duration = Duration::from_secs(10);
 /// The methods the Bun server answered with its own code that no family
 /// declares and the standalone core does not serve yet (S25 step 1,
 /// item 2): exact names, or prefixes ending in a dot.
-const UNPORTED: &[&str] = &[
-    "forge.status",
-    "forge.session",
-    "forward.",
-    "settings.",
-    "terminal.",
-];
+const UNPORTED: &[&str] = &["forge.status", "forge.session", "forward.", "terminal."];
 
 fn unported(method: &str) -> bool {
     UNPORTED.iter().any(|entry| {
@@ -950,11 +944,12 @@ mod tests {
 
     #[test]
     fn the_methods_bun_answered_itself_are_named() {
-        for method in ["terminal.attach", "forward.open", "settings.profiles.get"] {
+        for method in ["terminal.attach", "forward.open"] {
             assert!(unported(method), "{method}");
         }
         for method in [
             "agent.list",
+            "settings.profiles.get",
             "pane.list",
             "tab.list",
             "workspace.list",

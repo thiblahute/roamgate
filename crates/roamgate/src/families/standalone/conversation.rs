@@ -6,7 +6,7 @@
 //! browsers' events.
 
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 use roamgate_connections::agent_profiles::discovery::{ModelDiscovery, ModelDiscoveryOptions};
 use roamgate_connections::agent_profiles::store::{
@@ -83,17 +83,19 @@ fn pane_text(args: &Value) -> Result<(String, String), RpcError> {
     }
 }
 
-/// The profiles' models (profiles/models.ts `profileModels`), kept an hour.
-pub(super) fn discovery() -> &'static ModelDiscovery {
-    static DISCOVERY: LazyLock<ModelDiscovery> = LazyLock::new(|| {
+/// The profiles' models (profiles/models.ts `profileModels`), kept an hour
+/// on the families' clock (Bun's `Date.now`, the test clock's in a run).
+pub(super) fn discovery(cx: &FamilyContext) -> &'static ModelDiscovery {
+    static DISCOVERY: std::sync::OnceLock<ModelDiscovery> = std::sync::OnceLock::new();
+    DISCOVERY.get_or_init(|| {
+        let clock = cx.clock.clone();
         ModelDiscovery::new(ModelDiscoveryOptions {
             fetch: None,
-            now: None,
+            now: Some(Arc::new(move || clock.now())),
             timeout: None,
             home: home(),
         })
-    });
-    &DISCOVERY
+    })
 }
 
 fn home() -> PathBuf {
@@ -324,7 +326,7 @@ async fn host(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result<Va
                 Some(text(args, "session_id").unwrap_or("")),
                 Some(&store),
             );
-            Ok(discovery().models(&profile, false).await)
+            Ok(discovery(cx).models(&profile, false).await)
         }
         "choose_model" => {
             let mut write = json!({

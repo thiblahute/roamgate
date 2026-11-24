@@ -425,3 +425,77 @@ async fn settings_rpc_errors_carry_their_runtime_connection_identity() {
         })
     );
 }
+
+#[tokio::test]
+async fn agent_profiles_listed_with_the_built_in_secrets_by_path_validated_on_update() {
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join("settings.json");
+    let settings = service(&path);
+    let read = settings.store().read().await;
+    assert_eq!(
+        profiles_reply(&read, home.path()),
+        json!({
+            "profiles": [{
+                "name": "Claude",
+                "agent": "claude",
+                "builtin": true,
+                "env": [],
+                "unset": [],
+                "label": "Claude",
+            }],
+            "default": "Claude",
+            "return_after_reset": false,
+        })
+    );
+    // Nothing written until the user saves profiles.
+    assert!(!path.exists() || file(&path).get("profiles").is_none());
+    let profiles = profiles_update(&json!({
+        "list": [{
+            "name": "Igalia GLM",
+            "agent": "claude",
+            "env": [
+                {"name": "ANTHROPIC_MODEL", "value": "glm-5p3"},
+                {"name": "ANTHROPIC_AUTH_TOKEN", "file": "/nonexistent/token"},
+            ],
+            "unset": [],
+        }],
+        "default": "Claude",
+        "return_after_reset": true,
+    }))
+    .unwrap();
+    let written = settings
+        .update(|current| current.with("profiles", Some(profiles)))
+        .await
+        .unwrap();
+    let result = profiles_reply(&written.settings, home.path());
+    assert_eq!(result["default"], "Claude");
+    assert_eq!(result["return_after_reset"], true);
+    let glm = &result["profiles"][1];
+    assert_eq!(glm["name"], "Igalia GLM");
+    assert_eq!(glm["label"], "GLM 5p3");
+    assert_eq!(
+        glm["env"][0],
+        json!({"name": "ANTHROPIC_MODEL", "value": "glm-5p3"})
+    );
+    assert_eq!(glm["env"][1]["file"], "/nonexistent/token");
+    assert!(
+        glm["env"][1]["problem"]
+            .as_str()
+            .is_some_and(|problem| problem.contains("cannot be read"))
+    );
+    assert_eq!(
+        file(&path)["profiles"]["list"][0]["env"]["ANTHROPIC_AUTH_TOKEN"],
+        json!({"file": "/nonexistent/token"})
+    );
+    for params in [
+        json!({"list": [], "default": "Nope"}),
+        json!({"list": [{"name": "", "agent": "claude", "env": []}], "default": "Claude"}),
+        json!({"list": [], "default": "Claude", "other": 1}),
+    ] {
+        assert!(profiles_update(&params).is_err(), "{params}");
+    }
+    assert_eq!(
+        file(&path)["profiles"]["list"].as_array().map(Vec::len),
+        Some(1)
+    );
+}

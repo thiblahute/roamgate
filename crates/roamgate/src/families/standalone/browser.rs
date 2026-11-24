@@ -153,7 +153,73 @@ pub(crate) async fn connection(
             Err(error) => Reply::error(error, "agent-list-error"),
         };
     }
+    if method.starts_with("settings.") {
+        return settings(cx, &method, &request.params, &request.is_current).await;
+    }
     pass_through(layer, &lease, windows, request).await
+}
+
+/// The settings methods no family declares (bridge/settings-rpc.ts): the
+/// agent profiles, on the settings family's writer.
+async fn settings(
+    cx: &FamilyContext,
+    method: &str,
+    params: &Value,
+    is_current: &IsCurrent,
+) -> Reply {
+    let fail = |message: String| {
+        let message = if is_current() {
+            message
+        } else {
+            CONNECTION_CHANGED_DURING_REQUEST.to_owned()
+        };
+        Reply::error(RpcError::new(message), format!("{method}-error"))
+    };
+    if !is_current() {
+        return fail(String::new());
+    }
+    let home = std::env::home_dir().unwrap_or_default();
+    let result = match method {
+        "settings.profiles.get" => {
+            let settings = super::super::settings::read_shared(cx).await;
+            roamgate_http::settings::profiles_reply(&settings, &home)
+        }
+        "settings.profiles.update" => {
+            let profiles = match roamgate_http::settings::profiles_update(params) {
+                Ok(profiles) => profiles,
+                Err(error) => return fail(error),
+            };
+            let written =
+                super::super::settings::update_shared(cx, json!({"method": method}), |current| {
+                    Some(current.with("profiles", Some(profiles)))
+                })
+                .await;
+            match written {
+                Ok(settings) => roamgate_http::settings::profiles_reply(&settings, &home),
+                Err(error) => return fail(error.message),
+            }
+        }
+        "settings.profiles.models" => {
+            let name = text(params, "name").unwrap_or("");
+            let settings = super::super::settings::read_shared(cx).await;
+            let raw = Value::Object(settings.as_map().clone());
+            let profiles = roamgate_connections::agent_profiles::store::profiles_of(Some(&raw));
+            let list = roamgate_connections::agent_profiles::store::profiles_list(&profiles);
+            let Some(profile) =
+                roamgate_connections::agent_profiles::shared::profile_named(&list, Some(name))
+            else {
+                return fail(format!("No profile is named {name}"));
+            };
+            super::conversation::discovery(cx)
+                .models(&profile, params.get("refresh") == Some(&Value::Bool(true)))
+                .await
+        }
+        _ => return fail(format!("unknown settings method: {method}")),
+    };
+    if !is_current() {
+        return fail(String::new());
+    }
+    Reply::ok(result, method)
 }
 
 /// What Bun answered with code a standalone core does not have yet:
