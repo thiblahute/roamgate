@@ -741,7 +741,7 @@ impl ReviewService {
         } else if !due.is_empty() && chat {
             lines.push(String::new());
             lines.push(format!(
-                "{} Answer each in its thread with {}, and say there what you did or changed. The thread is where the answer goes: do not repeat it in the chat, which only needs a word that you answered, if anything.",
+                "{} Answer each in its thread with {}, and say there what you did or changed. The thread is where the answer goes: do not repeat it in the chat, and write nothing there about it: no \"answered in the thread\"; say in the chat only what is in no thread, and nothing when that is all.",
                 if on_files {
                     "These are threads on our conversation; those on a file you changed are about its lines, as review comments on code are: make in the file the change they ask for."
                 } else {
