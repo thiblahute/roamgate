@@ -153,10 +153,74 @@ pub(crate) async fn connection(
             Err(error) => Reply::error(error, "agent-list-error"),
         };
     }
+    if method == "forge.status" || method == "forge.session" {
+        if windows {
+            return Reply::error(
+                RpcError::new(roamgate_workspace::worktree::hooks::unix_only_message(
+                    "This operation",
+                )),
+                "unsupported-windows-operation",
+            );
+        }
+        return match forge(layer, &lease, &method, &request.params).await {
+            Ok(result) => Reply::ok(result, "forge"),
+            Err(error) => Reply::error(error, "forge-error"),
+        };
+    }
     if method.starts_with("settings.") {
         return settings(cx, &method, &request.params, &request.is_current).await;
     }
     pass_through(layer, &lease, windows, request).await
+}
+
+/// `forge.status` (a request's chip) and `forge.session` (a chat's
+/// repositories and their requests): read only, what they say never goes
+/// to an agent.
+async fn forge(
+    layer: &Arc<Layer>,
+    lease: &Lease,
+    method: &str,
+    params: &Value,
+) -> Result<Value, RpcError> {
+    let path = text(params, "path")
+        .filter(|path| roamgate_git::review::is_host_path(path))
+        .unwrap_or("");
+    let host = lease.runtime.ssh_host();
+    let fresh = params.get("fresh") == Some(&Value::Bool(true));
+    let cache = super::forge::forge_cache(layer);
+    if method == "forge.status" {
+        let reference = roamgate_forge::review::status::parse_forge_ref_param(&params["ref"])
+            .ok_or_else(|| RpcError::new("invalid merge request reference"))?;
+        return cache
+            .status(&super::forge::context(layer, path, host), &reference, fresh)
+            .await
+            .map_err(RpcError::new);
+    }
+    let root = if path.is_empty() {
+        let runtime = super::super::workspace::ranger_runtime(&lease.connection_id)
+            .filter(|runtime| runtime.generation() == lease.generation)
+            .ok_or_else(|| {
+                RpcError::new(format!("connection not ready: {}", lease.connection_id))
+            })?;
+        let mut query = serde_json::Map::new();
+        if let Some(workspace) = params.get("workspace_id") {
+            query.insert("workspace_id".into(), workspace.clone());
+        }
+        let resolved = runtime.git_root(&Value::Object(query)).await?;
+        resolved["root"].as_str().unwrap_or("").to_owned()
+    } else {
+        path.to_owned()
+    };
+    let agent_path =
+        text(params, "agent_path").filter(|path| roamgate_git::review::is_host_path(path));
+    cache
+        .session(
+            &super::forge::context(layer, &root, host),
+            agent_path,
+            fresh,
+        )
+        .await
+        .map_err(RpcError::new)
 }
 
 /// The settings methods no family declares (bridge/settings-rpc.ts): the

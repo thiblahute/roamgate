@@ -15,8 +15,8 @@ its own code (S25 cut-over, WP3; wire/core-channel.md, The standalone
 core): Herdr's topology and input methods with Bun's overlays,
 `workspace.path`, `workspace.create`, `agent.list`,
 `connections.agent_sessions`, `connections.agent_tasks`,
-`integration.list`, `settings.profiles.*`, the uploads and the
-notification feed's socket. `internal.front.start` carries `tls`, the
+`integration.list`, `forge.status`, `forge.session`, `settings.profiles.*`,
+the uploads and the notification feed's socket. `internal.front.start` carries `tls`, the
 scheme of the URLs the front was reached on. Hybrid modes and the browser
 surface are unchanged; the inventory too.
 

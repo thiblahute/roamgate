@@ -12,11 +12,13 @@ use roamgate_agents::js::{self, Obj};
 use roamgate_base::clock::BoxFuture;
 use roamgate_exec::process::ProcessRunner;
 use roamgate_forge::gate::{ForgeCall, ForgeGate, ProcessOutput, Spawn};
+use roamgate_forge::mr_cache::MrCache;
 use roamgate_forge::review::cli::{
     ForgeContext, ForgeProcess, ForgeRunner, ForgeTools, LocalForgeRunner, RunError,
 };
 use roamgate_forge::review::gitlab::{FieldKind, GlabCall, GlabHost, glab, glab_host_access};
 use roamgate_forge::review::status::gh_host_login;
+use roamgate_forge::review::{ForgeCache, ForgeWorkspace, ScannedRepo};
 use roamgate_mr_reviews::fetchers::{FetchCall, FetchError, FetchResult, InboxFetchers};
 use serde_json::Value;
 
@@ -351,5 +353,101 @@ impl InboxFetchers for LocalFetchers {
                 .await?;
             Ok(roamgate_mr_reviews::queries::parse_label_events(&answer))
         }))
+    }
+}
+
+/// The chips' and sessions' forge reads (index.ts `forgeCache`, one per
+/// server, on the shared MR cache once the core holds it).
+pub(super) fn forge_cache(layer: &Arc<Layer>) -> ForgeCache {
+    static CACHE: Mutex<Option<(bool, ForgeCache)>> = Mutex::new(None);
+    let shared = super::super::mr_cache::shared_cache();
+    let mut slot = CACHE.lock().unwrap();
+    match (&*slot, &shared) {
+        (Some((true, cache)), _) | (Some((false, cache)), None) => return cache.clone(),
+        _ => {}
+    }
+    let on_shared = shared.is_some();
+    let mr_cache = shared.unwrap_or_else(|| MrCache::open(layer.clock.clone(), None, None));
+    let cache = ForgeCache::new(
+        layer.clock.clone(),
+        mr_cache,
+        Some(Arc::new(SessionWorkspace {
+            layer: layer.clone(),
+        })),
+    );
+    *slot = Some((on_shared, cache.clone()));
+    cache
+}
+
+/// A session's checkouts as the forge reads them: git on the ready
+/// connection whose host is the context's.
+struct SessionWorkspace {
+    layer: Arc<Layer>,
+}
+
+impl SessionWorkspace {
+    fn git(&self, context: &ForgeContext) -> Result<roamgate_git::GitContext, String> {
+        let manager = self
+            .layer
+            .host
+            .manager_now()
+            .ok_or_else(|| "the connections are not started".to_owned())?;
+        manager
+            .list()
+            .into_iter()
+            .filter_map(|connection| manager.ready_runtime_lease(&connection.id).ok().flatten())
+            .filter(|lease| lease.runtime.ssh_host().map(str::to_owned) == context.host)
+            .find_map(|lease| {
+                super::super::workspace::ranger_runtime(&lease.connection_id)
+                    .map(|runtime| runtime.git().clone())
+            })
+            .ok_or_else(|| "no ready connection on that host".to_owned())
+    }
+}
+
+impl ForgeWorkspace for SessionWorkspace {
+    fn scan_repos(
+        &self,
+        context: &ForgeContext,
+        agent_path: Option<String>,
+    ) -> BoxFuture<Result<Vec<ScannedRepo>, String>> {
+        let git = self.git(context);
+        let root = context.root.clone();
+        Box::pin(async move {
+            let git = git?;
+            let repos = roamgate_git::review_patch::scan_review_repos(
+                &git,
+                &[root],
+                &agent_path.into_iter().collect::<Vec<_>>(),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+            Ok(repos
+                .into_iter()
+                .map(|repo| ScannedRepo {
+                    root: repo.root,
+                    branch: repo.branch,
+                    seed: repo.seed,
+                })
+                .collect())
+        })
+    }
+
+    fn pull_request_status(&self, context: &ForgeContext) -> BoxFuture<Result<Value, String>> {
+        let git = self.git(context);
+        let reader = super::super::workspace::pull_request_reader(&self.layer.clock);
+        let root = context.root.clone();
+        Box::pin(async move {
+            let reader = reader.ok_or_else(|| "the workspace family is not running".to_owned())?;
+            let mut params = serde_json::Map::new();
+            params.insert("summary".into(), Value::Bool(true));
+            params.insert("latest".into(), Value::Bool(true));
+            Ok(reader
+                .read_status(
+                    &roamgate_forge::pull_request::Checkout::new(git?, root),
+                    &params,
+                )
+                .await)
+        })
     }
 }

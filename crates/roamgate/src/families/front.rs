@@ -69,7 +69,7 @@ const SETTLE_WAIT: Duration = Duration::from_secs(10);
 /// The methods the Bun server answered with its own code that no family
 /// declares and the standalone core does not serve yet (S25 step 1,
 /// item 2): exact names, or prefixes ending in a dot.
-const UNPORTED: &[&str] = &["forge.status", "forge.session", "forward.", "terminal."];
+const UNPORTED: &[&str] = &["forward.", "terminal."];
 
 fn unported(method: &str) -> bool {
     UNPORTED.iter().any(|entry| {

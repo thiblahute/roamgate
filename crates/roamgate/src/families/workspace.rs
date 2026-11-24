@@ -111,6 +111,23 @@ pub(crate) async fn tree_apply(ops: Vec<Value>) -> Result<Value, (String, bool)>
         })
 }
 
+/// The server's pull request lookups (the cards' and the forge sessions'),
+/// while the workspace family runs here.
+pub(crate) fn pull_request_reader(
+    clock: &roamgate_base::clock::SharedClock,
+) -> Option<Arc<PullRequests>> {
+    let inner = shared().ok()?;
+    let reader = inner
+        .pull_requests
+        .lock()
+        .unwrap()
+        .get_or_insert_with(|| {
+            PullRequests::new(clock.clone(), super::standalone::forge_gate(clock))
+        })
+        .clone();
+    Some(reader)
+}
+
 /// A connection's runtime for Ranger's Workspaces tools: its Herdr, its
 /// worktree parents, its git status and its platform. None when the core
 /// runs no runtime of it.
