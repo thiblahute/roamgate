@@ -21,6 +21,7 @@
 //! | [`secrets`] | finding credentials in text and diffs | utils/secrets |
 //! | [`record`] | record mode's redacted JSONL recorder | contract-record/recorder, redact |
 //! | [`swr`] | `SwrCache`: single flight, TTL per entry, LRU, budget | mr-cache core, review/memo |
+//! | `unix_socket` | Unix socket listeners at paths past `SUN_LEN` (Linux) | Bun's long socket paths |
 
 pub mod assets;
 pub mod clock;
@@ -41,3 +42,5 @@ pub mod session_secret;
 pub mod settings;
 pub mod sqlite;
 pub mod swr;
+#[cfg(unix)]
+pub mod unix_socket;

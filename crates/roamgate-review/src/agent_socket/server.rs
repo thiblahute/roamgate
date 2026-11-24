@@ -18,7 +18,6 @@ use roamgate_claude::mod_hub::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use tokio::net::UnixListener;
 
 use super::form::{Form, automatic_target, form_of, parse_questions, parse_target_flags};
 use super::host::{AgentConnection, AgentSocketHost, HostError};
@@ -275,7 +274,7 @@ impl AgentSocket {
             self.socket_path_for(socket_key)
         };
         let _ = std::fs::remove_file(&path);
-        let listener = UnixListener::bind(&path)?;
+        let listener = roamgate_base::unix_socket::bind_tokio_listener(&path)?;
         set_mode(&path, 0o600)?;
         let this = self.clone();
         let key = socket_key.to_owned();
