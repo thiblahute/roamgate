@@ -19,14 +19,13 @@ use std::time::Duration;
 
 use roamgate_base::clock::{BoxFuture, SharedClock, SystemClock};
 use roamgate_base::json::js_value;
-use roamgate_base::log::Logger;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::task::AbortHandle;
 
 use crate::config::VoiceConfig;
 use crate::hardware::{Cpu, VoiceHardware};
-use crate::helper::{BeforeCall, ConfigSource, Reload, VoiceHelper};
+use crate::helper::{BeforeCall, ConfigSource, ErrorSink, Reload, VoiceHelper};
 use crate::models::{
     CUSTOM_MODEL, ModelPackage, NO_MODEL, POCKET_MODEL, PackageRoots, VOICE_COMPONENTS,
     VoiceChoices, choices_json, components, config_patch, normalize_choices, option_of, options,
@@ -497,7 +496,8 @@ pub struct LowGpuDeps {
     /// How often a switch waiting for a call's end tries again.
     pub retry_ms: Option<u64>,
     pub clock: SharedClock,
-    pub log: Logger,
+    /// Where its notices go (Bun's console.error): stderr by default.
+    pub errors: ErrorSink,
 }
 
 impl LowGpuDeps {
@@ -517,7 +517,7 @@ impl LowGpuDeps {
             packages: None,
             retry_ms: None,
             clock: Arc::new(SystemClock),
-            log: Logger::silent(),
+            errors: Arc::new(|line| eprintln!("{line}")),
         }
     }
 
@@ -701,12 +701,9 @@ impl VoiceLowGpu {
             Err(message) => {
                 let mut state = self.state();
                 if state.last_error.as_deref() != Some(message.as_str()) {
-                    self.deps().log.error(
-                        &format!(
-                            "[voice] the low-GPU set cannot be made ({message}): voice.json's models are used"
-                        ),
-                        None,
-                    );
+                    (self.deps().errors)(&format!(
+                        "[voice] the low-GPU set cannot be made ({message}): voice.json's models are used"
+                    ));
                 }
                 state.last_error = Some(message);
                 Ok(raw)
@@ -804,24 +801,18 @@ impl VoiceLowGpu {
             if !helper.restart_models() {
                 return "not-running";
             }
-            self.deps().log.error(
-                &format!(
-                    "[voice] restarting the voice helper now for its {} models",
-                    set_name(wanted)
-                ),
-                None,
-            );
+            (self.deps().errors)(&format!(
+                "[voice] restarting the voice helper now for its {} models",
+                set_name(wanted)
+            ));
             return "now";
         }
         let mut state = self.state();
         if state.retry.is_none() {
-            self.deps().log.error(
-                &format!(
-                    "[voice] the voice helper switches to its {} models once the call ends",
-                    set_name(wanted)
-                ),
-                None,
-            );
+            (self.deps().errors)(&format!(
+                "[voice] the voice helper switches to its {} models once the call ends",
+                set_name(wanted)
+            ));
             let period = Duration::from_millis(self.deps().retry_ms.unwrap_or(RETRY_MS));
             let mut interval = self.deps().clock.interval(period);
             let profile = self.clone();
@@ -848,10 +839,9 @@ impl VoiceLowGpu {
         )
         .await;
         if let Ok(Err(message)) = said {
-            self.deps().log.error(
-                &format!("[voice] the switch notice was not said: {message}"),
-                None,
-            );
+            (self.deps().errors)(&format!(
+                "[voice] the switch notice was not said: {message}"
+            ));
         }
     }
 
@@ -879,13 +869,10 @@ impl VoiceLowGpu {
             return;
         }
         if helper.reload_models_and_wait().await == Reload::Now {
-            self.deps().log.error(
-                &format!(
-                    "[voice] a call starts: the voice helper restarts with its {} models",
-                    set_name(self.wanted())
-                ),
-                None,
-            );
+            (self.deps().errors)(&format!(
+                "[voice] a call starts: the voice helper restarts with its {} models",
+                set_name(self.wanted())
+            ));
         }
     }
 

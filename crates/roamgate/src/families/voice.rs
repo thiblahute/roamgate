@@ -27,7 +27,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 use futures_util::FutureExt;
 use futures_util::future::{BoxFuture as FutureBox, Shared};
 use roamgate_base::env::ProcessEnv;
-use roamgate_base::log::Logger;
 use roamgate_base::paths::DataContext;
 use roamgate_sidecar::family::{CoreFamily, FamilyContext};
 use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
@@ -234,9 +233,10 @@ impl VoiceServer {
             let path = config_path.clone();
             Arc::new(move || read_voice_config(&path))
         };
-        let errors: roamgate_voice_server::helper::ErrorSink =
-            Arc::new(|line| tracing::warn!(scope = "voice", "{line}"));
-        let log = Logger::silent();
+        // Bun's voice code writes these lines to stderr as they are
+        // (console.error), and its timings through the server's logger.
+        let errors: roamgate_voice_server::helper::ErrorSink = Arc::new(|line| eprintln!("{line}"));
+        let log = super::limit_resume::scoped_logger(cx, "bridge.voice");
         let spawn = {
             let (data, errors) = (data.clone(), errors.clone());
             Arc::new(move |config: &VoiceConfig| spawn_voice_helper(config, &data, errors.clone()))
@@ -262,7 +262,7 @@ impl VoiceServer {
                 })
             })),
             clock: clock.clone(),
-            log: log.clone(),
+            errors: errors.clone(),
             ..LowGpuDeps::new(
                 low_gpu_path(&runtime.home, &runtime.platform, app_data),
                 read.clone(),
@@ -377,6 +377,12 @@ impl VoiceServer {
                 },
                 log: log.clone(),
                 errors: errors.clone(),
+                // ROAMGATE_VOICE_DEBUG: the call's steps, as Bun traces them.
+                debug: Some(Arc::new(|line| {
+                    if std::env::var_os("ROAMGATE_VOICE_DEBUG").is_some_and(|v| !v.is_empty()) {
+                        eprintln!("{line}");
+                    }
+                })),
                 ..VoiceSocketOptions::new(clock.clone())
             },
         ));

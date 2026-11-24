@@ -56,6 +56,12 @@ steps:
     headers: { x-roamgate-voice: "1" }
     body: { text: Another one. }
     no_wait: unreadable
+  # The sentence reached the new helper (through the core too) before the
+  # clock moves.
+  - assert_file:
+      path: "${ROOT}/fakes/roamgate-voice.frames.jsonl"
+      jsonl: { $contains: [{ op: speak, text: Another one. }] }
+    retry: 10000
   - advance: 45000
   - advance: 2000
   - expect_log:
@@ -64,3 +70,10 @@ steps:
           "[voice] the voice helper answered no ping in 2 s while a sentence waited 45 s: its output is unreadable, restarting it",
         ]
       within_ms: 10000
+contract_exceptions:
+  - {
+      surface: http,
+      name: POST /api/voice/speak,
+      kind: mismatch,
+      reason: "the sentence still waiting when the server restarts: through the Rust core the front answers it 502 as the channel closes, Bun alone drops it",
+    }
