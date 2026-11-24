@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use roamgate_base::env::{ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogFields, LogLevel, Logger, LoggerOptions, parse_log_level};
 use roamgate_base::paths::DataContext;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
+use roamgate_sidecar::family::{CoreFamily, FamilyContext, Reply};
 use roamgate_sidecar::peer::{BoxFuture as PeerFuture, IncomingCall};
 use roamgate_sidecar::protocol::{Push, RpcError};
 use roamgate_work::service::{
@@ -511,22 +511,34 @@ impl CoreFamily for WorkFamily {
                 board.service.start();
                 return internal(&board, op, params).await;
             }
-            // A browser's call: the board's, or a shadow read's one look.
-            let board = match running {
-                Some(board) => {
-                    board.deps.ensure_checkout().await;
-                    board.service.start();
-                    board
-                }
-                None => {
-                    let once = board(&cx, false);
-                    once.deps.ensure_checkout().await;
-                    once
-                }
-            };
+            let board = browser_board(&cx, running).await;
             roamgate_work::rpc::handle_work_rpc(&board.service, method, &params_of(params))
                 .await
                 // As Bun's `work-error` reply: the message alone.
+                .map_err(|error| RpcError::new(error.message))
+        })
+    }
+
+    /// `bridge.work.board` written as text from the store; the rest as
+    /// [`CoreFamily::call`] answers.
+    fn call_reply(
+        &self,
+        cx: &FamilyContext,
+        call: IncomingCall,
+    ) -> PeerFuture<Result<Reply, RpcError>> {
+        if call.method != "bridge.work.board" {
+            let answer = self.call(cx, call);
+            return Box::pin(async move { answer.await.map(Reply::Value) });
+        }
+        let running = self.running();
+        let cx = cx.clone();
+        Box::pin(async move {
+            let board = browser_board(&cx, running).await;
+            board
+                .service
+                .board_text()
+                .await
+                .map(Reply::Text)
                 .map_err(|error| RpcError::new(error.message))
         })
     }
@@ -539,6 +551,23 @@ impl CoreFamily for WorkFamily {
         if owned {
             // The file as Bun left it; the checks start with the first call.
             *running = Some(board(cx, true));
+        }
+    }
+}
+
+/// The board a browser's call reads: the running one, or a shadow read's
+/// one look.
+async fn browser_board(cx: &FamilyContext, running: Option<Board>) -> Board {
+    match running {
+        Some(board) => {
+            board.deps.ensure_checkout().await;
+            board.service.start();
+            board
+        }
+        None => {
+            let once = board(cx, false);
+            once.deps.ensure_checkout().await;
+            once
         }
     }
 }

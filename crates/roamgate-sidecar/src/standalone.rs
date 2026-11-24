@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock, Weak};
 
 use serde_json::Value;
 
-use crate::family::FamilyContext;
+use crate::family::{FamilyContext, Reply};
 use crate::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
 use crate::protocol::{Ctx, Push, RpcError};
 
@@ -37,6 +37,12 @@ pub trait LocalRouter: Send + Sync + 'static {
     /// A call (`internal.<family>.<op>` or a browser method), routed to
     /// the family that declares it.
     fn call(&self, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>>;
+    /// A call answered as the family's [`Reply`] (its text for the large
+    /// reads).
+    fn call_reply(&self, call: IncomingCall) -> BoxFuture<Result<Reply, RpcError>> {
+        let answer = self.call(call);
+        Box::pin(async move { answer.await.map(Reply::Value) })
+    }
     /// An HTTP request, routed to the family that declares its path.
     fn http(
         &self,
@@ -159,6 +165,27 @@ impl Standalone {
         };
         match self.router() {
             Some(router) => router.call(call),
+            None => Box::pin(async { Err(RpcError::closed()) }),
+        }
+    }
+
+    /// A browser's call routed by the core, answered as the family's
+    /// [`Reply`]: sent as is, it skips a pass through [`Value`].
+    pub fn call_reply(
+        &self,
+        method: &str,
+        params: Value,
+        ctx: Ctx,
+    ) -> BoxFuture<Result<Reply, RpcError>> {
+        let call = IncomingCall {
+            id: 0,
+            method: method.to_owned(),
+            params,
+            ctx,
+            shadow: false,
+        };
+        match self.router() {
+            Some(router) => router.call_reply(call),
             None => Box::pin(async { Err(RpcError::closed()) }),
         }
     }

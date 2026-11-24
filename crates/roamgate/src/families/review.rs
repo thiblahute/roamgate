@@ -36,13 +36,15 @@ use roamgate_review::model::{
     ReviewAnchor, ReviewComment, ReviewCommit, ReviewSession, ReviewTarget, ReviewThread,
 };
 use roamgate_review::prompts::PermissionRequest;
-use roamgate_review::rpc::{ReviewRpcConnection, RpcFut, handle_review_rpc, is_review_method};
+use roamgate_review::rpc::{
+    ReviewRpcConnection, RpcFut, handle_review_rpc, is_review_method, review_get_text,
+};
 use roamgate_review::service::host::{Ask, Load};
 use roamgate_review::service::{
     LoadError, ReviewForge, ReviewHost, ReviewService, ReviewServiceOptions,
 };
 use roamgate_review::storage::{ReviewStorage, review_directory};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
+use roamgate_sidecar::family::{CoreFamily, FamilyContext, Reply};
 use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
 use roamgate_sidecar::protocol::{Push, RpcError};
 use serde::de::DeserializeOwned;
@@ -102,6 +104,19 @@ fn unknown(method: &str) -> RpcError {
 }
 
 /// A review error as the browser gets it: a gone checkout with its code.
+/// A browser's review call answered: its failure logged.
+fn answered<T>(method: &str, answer: ReviewResult<T>) -> Result<T, RpcError> {
+    if let Err(error) = &answer {
+        // A removed checkout fails each poll the same way.
+        if error.code.is_some() {
+            tracing::debug!(scope = "review", method, error = %error, "review request failed");
+        } else {
+            tracing::warn!(scope = "review", method, error = %error, "review request failed");
+        }
+    }
+    answer.map_err(rpc_error)
+}
+
 fn rpc_error(error: ReviewError) -> RpcError {
     match error.code {
         Some(code) => RpcError::with_code(error.message, &code),
@@ -955,18 +970,35 @@ impl CoreFamily for ReviewFamily {
                         &call.params,
                     )
                     .await;
-                    if let Err(error) = &answer {
-                        // A removed checkout fails each poll the same way.
-                        if error.code.is_some() {
-                            tracing::debug!(scope = "review", method, error = %error, "review request failed");
-                        } else {
-                            tracing::warn!(scope = "review", method, error = %error, "review request failed");
-                        }
-                    }
-                    answer.map_err(rpc_error)
+                    answered(method, answer)
                 }
                 _ => Err(unknown(&method)),
             }
+        })
+    }
+
+    /// `review.get` written as text from the reviews' state; the rest as
+    /// [`CoreFamily::call`] answers.
+    fn call_reply(
+        &self,
+        cx: &FamilyContext,
+        call: IncomingCall,
+    ) -> BoxFuture<Result<Reply, RpcError>> {
+        if call.method != "review.get" || call.shadow {
+            let answer = self.call(cx, call);
+            return Box::pin(async move { answer.await.map(Reply::Value) });
+        }
+        let this = self.clone();
+        let cx = cx.clone();
+        Box::pin(async move {
+            let service = this.service(&cx).await?;
+            roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &call.method);
+            let connection = this.connection(&cx, &call).await?;
+            answered(
+                &call.method,
+                review_get_text(&service, &connection, &call.params),
+            )
+            .map(Reply::Text)
         })
     }
 

@@ -51,7 +51,7 @@ use roamgate_http::browser_rpc::{
 };
 use roamgate_http::list_delta::{ListDeltas, shape_of};
 use roamgate_sidecar::core::FRONT_FAMILY;
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
+use roamgate_sidecar::family::{CoreFamily, FamilyContext, Reply};
 use roamgate_sidecar::owners::families as declared_families;
 use roamgate_sidecar::peer::{
     BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall, Peer, WsOpen,
@@ -683,8 +683,10 @@ impl Inner {
                     &json!({"by": "user", "via": "chat"}),
                 );
             }
-            return match standalone.call(method, request.params, ctx).await {
-                Ok(result) => {
+            return match standalone.call_reply(method, request.params, ctx).await {
+                // A large read written once by its family.
+                Ok(Reply::Text(text)) => send(publisher.result_text(&text, "core")),
+                Ok(Reply::Value(result)) => {
                     if method == "bridge.ui_settings.update" {
                         let line = json!({"ui_settings": result}).to_string();
                         clients.broadcast(&line, "ui-settings", Some(socket_id));

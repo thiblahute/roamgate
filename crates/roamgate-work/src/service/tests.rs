@@ -2916,3 +2916,20 @@ async fn adopts_a_thread_into_an_existing_item_once_and_the_rpcs_route_to_the_se
         json!({"kind": "work", "item": item.id})
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn the_board_written_as_text_is_the_board_serialised() {
+    let kit = setup();
+    let service = &kit.service;
+    for title in ["Fix the keys", "Quote \"this\" \u{2028} 1.5e3"] {
+        service
+            .add(
+                &p(json!({"title": title, "tags": ["Reviews"], "owner": "desktop/w35:p1"})),
+                &agent(Some("Claude in roamgate"), None),
+            )
+            .await
+            .unwrap();
+    }
+    let by_value = service.board().await.unwrap().to_string();
+    assert_eq!(service.board_text().await.unwrap().get(), by_value);
+}

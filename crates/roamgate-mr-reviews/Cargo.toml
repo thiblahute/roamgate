@@ -20,7 +20,8 @@ roamgate-base = { path = "../roamgate-base" }
 roamgate-claude = { path = "../roamgate-claude" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-forge = { path = "../roamgate-forge" }
-serde_json = { version = "1", features = ["preserve_order"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 tokio-util = "0.7"
 tracing = "0.1"

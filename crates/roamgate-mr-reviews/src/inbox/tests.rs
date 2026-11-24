@@ -120,6 +120,11 @@ async fn lists_the_users_requests_per_host_says_which_hosts_failed() {
         .collect();
     assert_eq!(drafts, ["drafts 1"]);
     let snapshot = inbox.snapshot(&settings);
+    // Written as text, the snapshot is the same bytes.
+    assert_eq!(
+        inbox.snapshot_text(&settings).unwrap().get(),
+        Value::Object(snapshot.clone()).to_string()
+    );
     let rows: Vec<(u64, String)> = entries(&inbox, &settings)
         .iter()
         .map(|e| (number(e), js::sv(e.get("section")).to_owned()))

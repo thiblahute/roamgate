@@ -989,3 +989,26 @@ async fn listing_many_reviews_looks_through_each_ones_checkout_alone() {
     assert_eq!(service.list(&json!({})).len(), 50);
     assert_eq!(service.summaries(&json!({})).len(), 50);
 }
+
+#[tokio::test]
+async fn a_snapshot_written_as_text_is_the_snapshot_serialised() {
+    let Setup { service, .. } = setup();
+    let session = open_session(&service);
+    for (line, text) in [(3, "Why a let?"), (9, "Quote \"this\" \u{2028} 1.5e3")] {
+        let thread = service
+            .add_thread(&json!({"sessionId": session.id, "anchor": {"path": "src/a.ts", "line": line, "side": "new", "text": "let x = 1;"}, "text": text}))
+            .await
+            .unwrap();
+        service
+            .reply(&json!({"sessionId": session.id, "commentId": thread.id, "author": "Claude", "text": "Done"}))
+            .await
+            .unwrap();
+    }
+    let asked = json!({"sessionId": &session.id[..8]});
+    let by_value = serde_json::to_value(service.get(&asked).unwrap())
+        .unwrap()
+        .to_string();
+    assert_eq!(service.get_text(&asked, "local").unwrap().get(), by_value);
+    // Another connection's review is not found.
+    assert!(service.get_text(&asked, "other").is_err());
+}

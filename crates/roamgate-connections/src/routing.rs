@@ -204,9 +204,6 @@ pub fn serialize_connection_envelope(
     message: &Map<String, Value>,
     connection_generation: Option<u64>,
 ) -> Result<String, String> {
-    if !is_valid_connection_id(connection_id) {
-        return Err("invalid connection_id".into());
-    }
     for reserved in ["connection_id", "connection_generation"] {
         if message.contains_key(reserved) {
             return Err(format!(
@@ -214,9 +211,46 @@ pub fn serialize_connection_envelope(
             ));
         }
     }
-    // Written as the object `{connection_id, connection_generation?,
-    // ...message}` serialises, without copying the message (a reply can be
-    // hundreds of kilobytes).
+    envelope(connection_id, connection_generation, |out| {
+        for (key, value) in message {
+            out.push(b',');
+            write_json(out, key)?;
+            out.push(b':');
+            write_json(out, value)?;
+        }
+        Ok(())
+    })
+}
+
+/// The envelope of `{id, result}` whose result is JSON text already
+/// written: what [`serialize_connection_envelope`] gives for that message,
+/// the result not parsed again.
+pub fn serialize_connection_result(
+    connection_id: &str,
+    id: &str,
+    result: &serde_json::value::RawValue,
+    connection_generation: Option<u64>,
+) -> Result<String, String> {
+    envelope(connection_id, connection_generation, |out| {
+        out.extend_from_slice(b",\"id\":");
+        write_json(out, id)?;
+        out.extend_from_slice(b",\"result\":");
+        out.extend_from_slice(result.get().as_bytes());
+        Ok(())
+    })
+}
+
+/// `{connection_id, connection_generation?, ...}`, the rest written by
+/// `body`, without copying the message (a reply can be hundreds of
+/// kilobytes).
+fn envelope(
+    connection_id: &str,
+    connection_generation: Option<u64>,
+    body: impl FnOnce(&mut Vec<u8>) -> Result<(), String>,
+) -> Result<String, String> {
+    if !is_valid_connection_id(connection_id) {
+        return Err("invalid connection_id".into());
+    }
     let mut out: Vec<u8> = Vec::with_capacity(256);
     out.extend_from_slice(b"{\"connection_id\":");
     write_json(&mut out, connection_id)?;
@@ -224,12 +258,7 @@ pub fn serialize_connection_envelope(
         out.extend_from_slice(b",\"connection_generation\":");
         write_json(&mut out, &generation)?;
     }
-    for (key, value) in message {
-        out.push(b',');
-        write_json(&mut out, key)?;
-        out.push(b':');
-        write_json(&mut out, value)?;
-    }
+    body(&mut out)?;
     out.push(b'}');
     String::from_utf8(out).map_err(|error| error.to_string())
 }

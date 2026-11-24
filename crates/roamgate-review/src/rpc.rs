@@ -221,6 +221,18 @@ async fn rendered_place(
     .await
 }
 
+/// `review.get` as [`handle_review_rpc`] answers it, written as text from
+/// the reviews' state (no copy of its threads, no pass through a
+/// [`Value`]).
+pub fn review_get_text(
+    service: &ReviewService,
+    connection: &dyn ReviewRpcConnection,
+    raw: &Value,
+) -> ReviewResult<Box<serde_json::value::RawValue>> {
+    let session_id = either(raw, "session_id", "sessionId");
+    service.get_text(&json!({"sessionId": session_id}), connection.id())
+}
+
 /// A browser's review call on its connection (`handleReviewRpc`).
 /// `images` is the reviews' directory, where pasted images go.
 pub async fn handle_review_rpc(

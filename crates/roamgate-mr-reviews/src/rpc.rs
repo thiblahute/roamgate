@@ -340,6 +340,14 @@ impl MrReviewsRpcDeps {
     }
 }
 
+/// `bridge.mr_reviews.inbox`'s options.
+pub fn inbox_options(params: &Obj) -> GetOptions {
+    GetOptions {
+        fresh: params.get("fresh") == Some(&json!(true)),
+        viewer: params.get("viewer") != Some(&json!(false)),
+    }
+}
+
 /// `handleMrReviewsRpc`.
 pub async fn handle_mr_reviews_rpc(
     deps: &MrReviewsRpcDeps,
@@ -347,14 +355,7 @@ pub async fn handle_mr_reviews_rpc(
     params: &Obj,
 ) -> RpcResult<Value> {
     match method {
-        "bridge.mr_reviews.inbox" => Ok(Value::Object(
-            deps.inbox
-                .get(GetOptions {
-                    fresh: params.get("fresh") == Some(&json!(true)),
-                    viewer: params.get("viewer") != Some(&json!(false)),
-                })
-                .await,
-        )),
+        "bridge.mr_reviews.inbox" => Ok(Value::Object(deps.inbox.get(inbox_options(params)).await)),
         "bridge.mr_reviews.seen" => Ok(json!({"ok": deps.inbox.mark_seen(&key(params)?)})),
         "bridge.mr_reviews.feedback" => {
             let verdict = match params.get("verdict") {

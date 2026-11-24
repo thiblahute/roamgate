@@ -17,15 +17,33 @@ mod reanchor;
 mod threads;
 mod watch;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use futures_util::future::Shared;
 use indexmap::{IndexMap, IndexSet};
 use roamgate_base::clock::SharedClock;
+use serde::Serialize;
+use serde_json::value::RawValue;
 use serde_json::{Map, Value, json};
 
 pub use host::{BoxFut, LoadError, ReviewForge, ReviewHost};
+
+/// [`ReviewSnapshot`] borrowing the state: its fields and attributes are
+/// the snapshot's, so both write the same text.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SnapshotView<'a> {
+    session: &'a ReviewSession,
+    threads: Vec<Cow<'a, ReviewThread>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shared: Option<Vec<ReviewThread>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    merge_request: Option<ReviewMergeRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gitlab_error: Option<&'a String>,
+}
 
 use crate::error::{ReviewError, ReviewResult};
 use crate::model::{
@@ -352,7 +370,38 @@ impl State {
         with_shared: bool,
         has_forge: bool,
     ) -> ReviewSnapshot {
-        let local = self.thread_list(&target.id);
+        let view = self.snapshot_view(target, with_shared, has_forge);
+        ReviewSnapshot {
+            session: view.session.clone(),
+            threads: view.threads.into_iter().map(Cow::into_owned).collect(),
+            shared: view.shared,
+            merge_request: view.merge_request,
+            gitlab_error: view.gitlab_error.cloned(),
+        }
+    }
+
+    /// The text of [`State::snapshot`], written from the state without
+    /// copying its threads.
+    pub fn snapshot_text(
+        &self,
+        target: &ReviewSession,
+        with_shared: bool,
+        has_forge: bool,
+    ) -> serde_json::Result<Box<RawValue>> {
+        serde_json::value::to_raw_value(&self.snapshot_view(target, with_shared, has_forge))
+    }
+
+    fn snapshot_view<'a>(
+        &'a self,
+        target: &'a ReviewSession,
+        with_shared: bool,
+        has_forge: bool,
+    ) -> SnapshotView<'a> {
+        let local: Vec<Cow<'a, ReviewThread>> = self
+            .threads
+            .get(&target.id)
+            .map(|map| map.values().map(Cow::Borrowed).collect())
+            .unwrap_or_default();
         let remote = if self.gitlab_mode(target, has_forge) {
             self.gitlab.get(&target.id)
         } else {
@@ -366,8 +415,8 @@ impl State {
         let threads = match remote {
             Some(remote) => {
                 let mut all = local;
-                all.extend(self.pending_drafts(target));
-                all.extend(remote.threads.iter().cloned());
+                all.extend(self.pending_drafts(target).into_iter().map(Cow::Owned));
+                all.extend(remote.threads.iter().map(Cow::Borrowed));
                 all
             }
             None => local,
@@ -390,12 +439,12 @@ impl State {
                 },
             }
         });
-        ReviewSnapshot {
-            session: target.clone(),
+        SnapshotView {
+            session: target,
             threads,
             shared: (!shared.is_empty()).then_some(shared),
             merge_request,
-            gitlab_error: remote.and_then(|remote| remote.error.clone()),
+            gitlab_error: remote.and_then(|remote| remote.error.as_ref()),
         }
     }
 
@@ -937,6 +986,32 @@ impl ReviewService {
 
     /// A review's snapshot, for a browser or an agent (`get`).
     pub fn get(&self, params: &Value) -> ReviewResult<ReviewSnapshot> {
+        let id = self.read_session(params)?;
+        let state = self.0.lock();
+        let target = state
+            .sessions
+            .get(&id)
+            .ok_or_else(|| ReviewError::not_found("no such review"))?;
+        Ok(self.0.snapshot_of(&state, target))
+    }
+
+    /// [`ReviewService::get`]'s text, for a browser of `connection_id`:
+    /// a review of another connection is not found.
+    pub fn get_text(&self, params: &Value, connection_id: &str) -> ReviewResult<Box<RawValue>> {
+        let id = self.read_session(params)?;
+        let state = self.0.lock();
+        let target = state
+            .sessions
+            .get(&id)
+            .filter(|target| target.connection_id == connection_id)
+            .ok_or_else(|| ReviewError::not_found("no such review"))?;
+        state
+            .snapshot_text(target, true, self.0.has_forge())
+            .map_err(|error| ReviewError::status(error.to_string(), 500))
+    }
+
+    /// The review a read is for, its anchors kept up to date: its id.
+    fn read_session(&self, params: &Value) -> ReviewResult<String> {
         let target = self.session(params)?;
         self.spawn_migrate(target.id.clone());
         self.spawn_reanchor_file(target.id.clone());
@@ -956,12 +1031,7 @@ impl ReviewService {
             let id = target.id.clone();
             tokio::spawn(async move { this.reanchor_rewritten_id(&id, None).await });
         }
-        let state = self.0.lock();
-        let target = state
-            .sessions
-            .get(&target.id)
-            .ok_or_else(|| ReviewError::not_found("no such review"))?;
-        Ok(self.0.snapshot_of(&state, target))
+        Ok(target.id)
     }
 
     /// Opens (or raises) a review (`open`).

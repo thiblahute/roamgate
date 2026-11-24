@@ -44,7 +44,7 @@ use roamgate_mr_reviews::module::{
 use roamgate_mr_reviews::open::DefaultConnection;
 use roamgate_mr_reviews::rpc::RpcError as ReviewsError;
 use roamgate_mr_reviews::store::{MrStore, state_path};
-use roamgate_sidecar::family::{CoreFamily, FamilyContext};
+use roamgate_sidecar::family::{CoreFamily, FamilyContext, Reply};
 use roamgate_sidecar::peer::{BoxFuture, IncomingCall};
 use roamgate_sidecar::protocol::{Push, RpcError};
 use serde_json::{Map, Value, json};
@@ -665,6 +665,36 @@ impl MrReviewsFamily {
 impl CoreFamily for MrReviewsFamily {
     fn name(&self) -> &'static str {
         FAMILY
+    }
+
+    /// The inbox written as text from what it holds; the rest as
+    /// [`CoreFamily::call`] answers.
+    fn call_reply(
+        &self,
+        cx: &FamilyContext,
+        call: IncomingCall,
+    ) -> BoxFuture<Result<Reply, RpcError>> {
+        let reviews = self
+            .reviews()
+            .filter(|_| cx.owners.check_write(FAMILY).is_ok());
+        let (Some(reviews), "bridge.mr_reviews.inbox", false) =
+            (reviews, call.method.as_str(), call.shadow)
+        else {
+            let answer = self.call(cx, call);
+            return Box::pin(async move { answer.await.map(Reply::Value) });
+        };
+        let host = self.host.clone();
+        let cx = cx.clone();
+        Box::pin(async move {
+            host.refresh(&cx).await;
+            let params = call.params.as_object().cloned().unwrap_or_default();
+            reviews
+                .inbox()
+                .get_text(roamgate_mr_reviews::rpc::inbox_options(&params))
+                .await
+                .map(Reply::Text)
+                .map_err(|error| RpcError::new(error.to_string()))
+        })
     }
 
     fn call(&self, cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {

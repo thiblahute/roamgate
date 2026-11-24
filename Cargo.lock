@@ -7405,6 +7405,7 @@ dependencies = [
  "roamgate-exec",
  "roamgate-forge",
  "roamgate-protocol",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",

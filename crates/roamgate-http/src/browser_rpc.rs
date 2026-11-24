@@ -18,9 +18,10 @@ use roamgate_connections::manager::sanitize_connection_error;
 use roamgate_connections::routing::{
     CONNECTION_CHANGED_DURING_REQUEST, LegacyRoutingLogger, ReadyConnections, RouteError, RpcRoute,
     is_bridge_global_method, resolve_rpc_route, serialize_connection_envelope,
-    validate_connection_generation, validate_connection_id,
+    serialize_connection_result, validate_connection_generation, validate_connection_id,
 };
 use roamgate_sidecar::protocol::Push;
+use serde_json::value::RawValue;
 use serde_json::{Map, Value, json};
 
 /// Where the server's messages to one browser socket go.
@@ -432,9 +433,29 @@ impl ReplyPublisher {
             .and_then(|error| error.get("message"))
             .and_then(Value::as_str)
             .map(str::to_owned);
+        self.deliver(
+            context,
+            error,
+            || json_text(&message),
+            |connection_id, generation| {
+                serialize_connection_envelope(connection_id, &message, Some(generation))
+            },
+        )
+    }
+
+    /// The payload while the request's connection is current (`plain`
+    /// without a connection, else `enveloped` in its envelope), or the
+    /// stale reply once.
+    fn deliver(
+        &self,
+        context: &str,
+        error: Option<String>,
+        plain: impl FnOnce() -> String,
+        enveloped: impl FnOnce(&str, u64) -> Result<String, String>,
+    ) -> Option<Outgoing> {
         let RpcRoute::Connection(resolved) = &self.route else {
             return Some(Outgoing {
-                payload: json_text(&message),
+                payload: plain(),
                 context: context.to_owned(),
                 error,
             });
@@ -442,12 +463,8 @@ impl ReplyPublisher {
         let lease = &resolved.lease;
         if lease.is_current() {
             return Some(Outgoing {
-                payload: serialize_connection_envelope(
-                    &lease.connection_id,
-                    &message,
-                    Some(lease.generation),
-                )
-                .unwrap_or_else(|_| json_text(&message)),
+                payload: enveloped(&lease.connection_id, lease.generation)
+                    .unwrap_or_else(|_| plain()),
                 context: context.to_owned(),
                 error,
             });
@@ -474,6 +491,28 @@ impl ReplyPublisher {
         message.insert("id".into(), self.request_id.clone().into());
         message.insert("result".into(), result);
         self.publish(message, context)
+    }
+
+    /// `{id, result}` whose result is JSON text already written: the bytes
+    /// [`ReplyPublisher::result`] sends for its value.
+    pub fn result_text(&self, result: &RawValue, context: &str) -> Option<Outgoing> {
+        let id = &self.request_id;
+        self.deliver(
+            context,
+            None,
+            || {
+                let mut out = String::with_capacity(result.get().len() + id.len() + 24);
+                out.push_str("{\"id\":");
+                out.push_str(&json_text(id));
+                out.push_str(",\"result\":");
+                out.push_str(result.get());
+                out.push('}');
+                out
+            },
+            |connection_id, generation| {
+                serialize_connection_result(connection_id, id, result, Some(generation))
+            },
+        )
     }
 
     /// `{id, error: {message, code?}}`.
@@ -770,6 +809,49 @@ mod tests {
             ("pane.list-stale", Some(CONNECTION_CHANGED_DURING_REQUEST))
         );
         assert!(publisher.result(json!([]), "pane.list").is_none());
+    }
+
+    #[test]
+    fn a_result_written_as_text_is_sent_as_its_value_is() {
+        let result = json!({"b": [1, 2.5, "x\"\u{2028}"], "a": {"z": null, "y": true}});
+        let text = serde_json::value::to_raw_value(&result).unwrap();
+        let current = Arc::new(AtomicBool::new(true));
+        // On a connection, and bridge-global (no envelope).
+        for raw in [
+            r#"{"id":"7","method":"pane.list"}"#,
+            r#"{"id":"7","method":"bridge.work.board"}"#,
+        ] {
+            let request = parse_request(raw).ok().unwrap();
+            let route = || {
+                route_request(&request, &One(current.clone()), 1, None)
+                    .ok()
+                    .unwrap()
+            };
+            let by_value = ReplyPublisher::new(route(), &request.id)
+                .result(result.clone(), "c")
+                .unwrap();
+            let by_text = ReplyPublisher::new(route(), &request.id)
+                .result_text(&text, "c")
+                .unwrap();
+            assert_eq!(by_text, by_value);
+        }
+        // Stale: the one error, as for a value.
+        let request = parse_request(r#"{"id":"7","method":"pane.list"}"#)
+            .ok()
+            .unwrap();
+        let publisher = ReplyPublisher::new(
+            route_request(&request, &One(current.clone()), 1, None)
+                .ok()
+                .unwrap(),
+            &request.id,
+        );
+        current.store(false, Ordering::SeqCst);
+        let stale = publisher.result_text(&text, "c").unwrap();
+        assert_eq!(
+            stale.error.as_deref(),
+            Some(CONNECTION_CHANGED_DURING_REQUEST)
+        );
+        assert!(publisher.result_text(&text, "c").is_none());
     }
 
     #[test]

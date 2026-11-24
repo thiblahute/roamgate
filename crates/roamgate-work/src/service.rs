@@ -678,6 +678,28 @@ impl WorkService {
         }))
     }
 
+    /// [`WorkService::board`]'s text, written from the store as is.
+    pub async fn board_text(&self) -> WorkResult<Box<serde_json::value::RawValue>> {
+        /// The board's fields in [`WorkService::board`]'s order.
+        #[derive(serde::Serialize)]
+        struct Board<'a> {
+            projects: &'a [WorkProject],
+            items: &'a [WorkItem],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            deployed: Option<String>,
+        }
+        self.seed().await?;
+        let deployed = self.deps().deployed();
+        self.read(|store| {
+            serde_json::value::to_raw_value(&Board {
+                projects: store.projects(),
+                items: store.items(),
+                deployed,
+            })
+        })
+        .map_err(|error| WorkError::other(error.to_string()))
+    }
+
     /// The items a filter keeps.
     pub async fn list(&self, params: &Params, address: Option<&str>) -> WorkResult<Vec<WorkItem>> {
         self.seed().await?;

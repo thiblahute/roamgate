@@ -15,7 +15,7 @@ use roamgate_base::log::{LogLayer, LogLevel, Logger, LoggerOptions, parse_log_le
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
 
-use crate::family::{CoreFamily, Families, FamilyContext, INTERNAL_PREFIX, pass_to_bun};
+use crate::family::{CoreFamily, Families, FamilyContext, INTERNAL_PREFIX, Reply, pass_to_bun};
 use crate::owners::{Owners, families as declared_families, implemented};
 use crate::peer::{
     BodyReceiver, BoxFuture, Handler, HttpRequest, HttpResponse, IncomingCall, Peer, PeerOptions,
@@ -324,7 +324,7 @@ struct CoreHandler {
 
 type SocketMap = Arc<Mutex<std::collections::HashMap<u64, Arc<dyn CoreFamily>>>>;
 
-fn unknown_method(method: &str) -> BoxFuture<Result<Value, RpcError>> {
+fn unknown_method<T: Send + 'static>(method: &str) -> BoxFuture<Result<T, RpcError>> {
     let message = format!("unknown method {method}");
     Box::pin(async move { Err(RpcError::with_code(message, "unknown_method")) })
 }
@@ -349,13 +349,34 @@ impl CoreHandler {
     /// A call routed to the family that declares its method (or the
     /// family an `internal.<family>.` call names).
     fn route_call(&self, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
+        self.route(call, |family, cx, call| family.call(cx, call))
+    }
+
+    /// [`CoreHandler::route_call`], answered as the family's [`Reply`].
+    fn route_call_reply(&self, call: IncomingCall) -> BoxFuture<Result<Reply, RpcError>> {
+        self.route(call, |family, cx, call| family.call_reply(cx, call))
+    }
+
+    fn route<T: Send + 'static>(
+        &self,
+        call: IncomingCall,
+        answer: impl FnOnce(
+            &Arc<dyn CoreFamily>,
+            &FamilyContext,
+            IncomingCall,
+        ) -> BoxFuture<Result<T, RpcError>>,
+    ) -> BoxFuture<Result<T, RpcError>>
+    where
+        Value: Into<T>,
+    {
         let Some(cx) = self.context.get() else {
             return unknown_method(&call.method);
         };
         // A standalone core's front family routes the test family's calls
         // here.
         if self.test && call.method.starts_with("test.echo.") {
-            return test_echo_call(Echo::Local(cx.clone()), call);
+            let echoed = test_echo_call(Echo::Local(cx.clone()), call);
+            return Box::pin(async move { echoed.await.map(Into::into) });
         }
         let name = match call.method.strip_prefix(INTERNAL_PREFIX) {
             Some(rest) => rest.split('.').next().map(str::to_owned),
@@ -366,7 +387,7 @@ impl CoreHandler {
                 if !call.shadow && !call.method.starts_with(INTERNAL_PREFIX) {
                     self.served(family.name(), &call.method);
                 }
-                family.call(cx, call)
+                answer(family, cx, call)
             }
             None => unknown_method(&call.method),
         }
@@ -537,6 +558,10 @@ impl Handler for CoreHandler {
 impl LocalRouter for CoreHandler {
     fn call(&self, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
         self.route_call(call)
+    }
+
+    fn call_reply(&self, call: IncomingCall) -> BoxFuture<Result<Reply, RpcError>> {
+        self.route_call_reply(call)
     }
 
     fn http(

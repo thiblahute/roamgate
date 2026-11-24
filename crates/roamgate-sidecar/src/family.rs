@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use roamgate_base::clock::SharedClock;
+use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
 use crate::owners::Owners;
@@ -61,6 +62,39 @@ impl FamilyContext {
     }
 }
 
+/// A family's answer to a call: a value, or its JSON text already
+/// written, sent to the browser as is (no struct to [`Value`] to text on
+/// the way; the text is what serialising the value would give).
+#[derive(Debug)]
+pub enum Reply {
+    Value(Value),
+    Text(Box<RawValue>),
+}
+
+impl Reply {
+    /// The text of `value`, written once.
+    pub fn text<T: serde::Serialize + ?Sized>(value: &T) -> Result<Self, RpcError> {
+        serde_json::value::to_raw_value(value)
+            .map(Reply::Text)
+            .map_err(|error| RpcError::new(error.to_string()))
+    }
+
+    /// The answer as a value (a text parsed again), for a caller that
+    /// reads it.
+    pub fn into_value(self) -> Value {
+        match self {
+            Reply::Value(value) => value,
+            Reply::Text(text) => serde_json::from_str(text.get()).unwrap_or(Value::Null),
+        }
+    }
+}
+
+impl From<Value> for Reply {
+    fn from(value: Value) -> Self {
+        Reply::Value(value)
+    }
+}
+
 /// A family the core implements.
 pub trait CoreFamily: Send + Sync + 'static {
     /// Its name in contract/owners/families.json.
@@ -76,6 +110,18 @@ pub trait CoreFamily: Send + Sync + 'static {
                 "unknown_method",
             ))
         })
+    }
+
+    /// [`CoreFamily::call`] for a browser's call in a standalone core: a
+    /// family may answer the large reads with their text
+    /// ([`Reply::Text`]). The answer is the one `call` gives.
+    fn call_reply(
+        &self,
+        cx: &FamilyContext,
+        call: IncomingCall,
+    ) -> BoxFuture<Result<Reply, RpcError>> {
+        let answer = self.call(cx, call);
+        Box::pin(async move { answer.await.map(Reply::Value) })
     }
 
     /// An HTTP request on one of the family's paths.

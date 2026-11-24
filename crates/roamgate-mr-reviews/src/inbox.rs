@@ -15,6 +15,7 @@ use std::time::Duration;
 use roamgate_agents::js::{self, Obj};
 use roamgate_base::log::{LogFields, Logger};
 use roamgate_forge::complexity::{AskError, ComplexityGuard, Provider};
+use serde_json::value::RawValue;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
@@ -35,6 +36,30 @@ use crate::queries::{
 use crate::shared::merge::{MergeInput, merge_after_label, merge_info, rules_for};
 use crate::shared::types::{activity_marker, forge_ref_key, project_key, seen_of, unread};
 use crate::store::MrStore;
+
+/// A host's state in the snapshot: as the inbox holds it, or pending.
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum HostState<'a> {
+    Known(&'a Obj),
+    Pending(Value),
+}
+
+/// The hosts in effect's states (only each host's state, not what it read).
+fn host_states<'a>(settings: &Obj, known: &'a HashMap<String, HostResult>) -> Vec<HostState<'a>> {
+    list(settings.get("hosts"))
+        .iter()
+        .map(|host| {
+            let name = js::sv(host.get("host"));
+            match known.get(name) {
+                Some(result) => HostState::Known(&result.state),
+                None => HostState::Pending(
+                    json!({"host": name, "provider": host.get("provider").cloned().unwrap_or(Value::Null), "state": "pending"}),
+                ),
+            }
+        })
+        .collect()
+}
 
 #[cfg(test)]
 mod merge_tests;
@@ -1354,6 +1379,13 @@ impl MrInbox {
 
     /// The inbox as known, without waiting; asks a refresh when stale.
     pub async fn get(&self, options: GetOptions) -> Obj {
+        let settings = self.read_settings(options).await;
+        self.snapshot(&settings)
+    }
+
+    /// The settings a read of the inbox uses; tells a viewer is here and
+    /// asks a refresh when stale.
+    async fn read_settings(&self, options: GetOptions) -> Obj {
         let inner = &self.0;
         if options.viewer {
             if let Some(hook) = &inner.deps.on_viewer {
@@ -1380,7 +1412,7 @@ impl MrInbox {
         if stale && !self.refreshing() {
             self.refresh_soon();
         }
-        self.snapshot(&settings)
+        settings
     }
 
     /// The rows shown and those removed by the user (`entries`).
@@ -1411,8 +1443,8 @@ impl MrInbox {
                 entry.get("verdict").cloned().unwrap_or(Value::Null),
             );
         }
-        let ranked = state.get("ranked").cloned().unwrap_or(json!({}));
-        let overrides = settings.get("overrides").cloned().unwrap_or(json!({}));
+        let ranked = state.get("ranked").unwrap_or(&Value::Null);
+        let overrides = settings.get("overrides").unwrap_or(&Value::Null);
         let upstream = inner.deps.upstream.as_ref().map(|f| f(settings));
         let mut hidden: Vec<Obj> = Vec::new();
         let mut out: Vec<Obj> = Vec::new();
@@ -1643,7 +1675,7 @@ impl MrInbox {
                     .map(|u| (host.clone(), u.to_owned()))
             })
             .collect();
-        let own_details = state.get("ownDetails").cloned().unwrap_or(json!({}));
+        let own_details = state.get("ownDetails").unwrap_or(&Value::Null);
         let mut wake = f64::INFINITY;
         for entry in out.iter_mut() {
             if truthy(entry.get("branch")) || !reasons_has(entry, "authored") {
@@ -1685,7 +1717,7 @@ impl MrInbox {
         }
         self.wake_at(wake);
         // What was inferred of one's own work, unless it moved on since.
-        let inferred = state.get("inferred").cloned().unwrap_or(json!({}));
+        let inferred = state.get("inferred").unwrap_or(&Value::Null);
         for entry in out.iter_mut() {
             let Some(found) = inferred.get(key_of(entry)).and_then(Value::as_object) else {
                 continue;
@@ -1748,21 +1780,17 @@ impl MrInbox {
 
     /// The inbox every page reads (`MrInbox`).
     pub fn snapshot(&self, settings: &Obj) -> Obj {
-        let inner = &self.0;
-        let (entries, hidden) = self.entries(settings);
-        // Only each host's state is copied, not what it read.
-        let known = lock(&inner.hosts);
-        let hosts: Vec<Value> = list(settings.get("hosts"))
-            .iter()
-            .map(|host| {
-                let name = js::sv(host.get("host"));
-                match known.get(name) {
-                    Some(result) => Value::Object(result.state.clone()),
-                    None => json!({"host": name, "provider": host.get("provider").cloned().unwrap_or(Value::Null), "state": "pending"}),
-                }
-            })
-            .collect();
-        drop(known);
+        let (entries, hidden, rest) = self.snapshot_parts(settings);
+        let hosts: Vec<Value> = {
+            let known = lock(&self.0.hosts);
+            host_states(settings, &known)
+                .into_iter()
+                .map(|host| match host {
+                    HostState::Known(state) => Value::Object(state.clone()),
+                    HostState::Pending(value) => value,
+                })
+                .collect()
+        };
         let mut out = Obj::new();
         out.insert(
             "entries".into(),
@@ -1773,6 +1801,42 @@ impl MrInbox {
             Value::Array(hidden.into_iter().map(Value::Object).collect()),
         );
         out.insert("hosts".into(), Value::Array(hosts));
+        out.extend(rest);
+        out
+    }
+
+    /// [`MrInbox::snapshot`]'s text, the hosts' states written as they
+    /// are held.
+    pub fn snapshot_text(&self, settings: &Obj) -> serde_json::Result<Box<RawValue>> {
+        #[derive(serde::Serialize)]
+        struct Snapshot<'a> {
+            entries: &'a [Obj],
+            hidden: &'a [Obj],
+            hosts: Vec<HostState<'a>>,
+            #[serde(flatten)]
+            rest: &'a Obj,
+        }
+        let (entries, hidden, rest) = self.snapshot_parts(settings);
+        let known = lock(&self.0.hosts);
+        serde_json::value::to_raw_value(&Snapshot {
+            entries: &entries,
+            hidden: &hidden,
+            hosts: host_states(settings, &known),
+            rest: &rest,
+        })
+    }
+
+    /// The inbox as known, as text, without waiting ([`MrInbox::get`]).
+    pub async fn get_text(&self, options: GetOptions) -> serde_json::Result<Box<RawValue>> {
+        let settings = self.read_settings(options).await;
+        self.snapshot_text(&settings)
+    }
+
+    /// The snapshot's rows, its removed rows and its fields after `hosts`.
+    fn snapshot_parts(&self, settings: &Obj) -> (Vec<Obj>, Vec<Obj>, Obj) {
+        let inner = &self.0;
+        let (entries, hidden) = self.entries(settings);
+        let mut out = Obj::new();
         out.insert(
             "curation".into(),
             inner
@@ -1823,7 +1887,7 @@ impl MrInbox {
         {
             out.insert("efforts".into(), Value::Array(efforts(settings)));
         }
-        out
+        (entries, hidden, out)
     }
 
     /// The forge hosts in effect (those set, or those signed in to).

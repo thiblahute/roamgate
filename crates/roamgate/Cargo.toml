@@ -46,7 +46,7 @@ roamgate-workspace = { path = "../roamgate-workspace" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = "1"
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path", "mime-guess"] }
 tokio = { version = "1", features = ["fs", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
