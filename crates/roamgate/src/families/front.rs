@@ -691,6 +691,20 @@ impl Inner {
             };
             return Ok(text_response(status, text));
         }
+        // A rendered page's frame off its token: never the login page,
+        // nor anything behind the gate.
+        if let Some(stray) = super::standalone::rendered_stray(&request) {
+            return Ok(stray);
+        }
+        // A rendered review's page, before the gate (its token is its
+        // credential).
+        if path.starts_with("/rendered/")
+            && let Some(layer) = self.layer.get()
+        {
+            return Ok(super::standalone::rendered_http(layer, &request, body)
+                .await
+                .unwrap_or_else(|| HttpResponse::status(404)));
+        }
         if path == "/api/health" {
             let config = self.config();
             return Ok(json_response(

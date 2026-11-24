@@ -167,12 +167,19 @@ impl Sockets {
 /// What the front does when its standalone core asks it to exit.
 pub type ScheduleExit = Arc<dyn Fn() + Send + Sync>;
 
+/// A new login's cookie (`Auth::new_session_cookie`), for a standalone
+/// core's `voice.session_cookie`.
+pub type SessionCookie = Arc<dyn Fn() -> Option<String> + Send + Sync>;
+
 /// The front's handler of the core's messages.
 pub struct FrontHandler {
     pub sockets: Sockets,
     /// Set for a standalone core: `server.scheduleExit` (after an install
     /// the supervisor starts the new one) is the front's to do.
     pub schedule_exit: Option<ScheduleExit>,
+    /// Set for a standalone core: a call handed to another device gets a
+    /// login of the front's auth (`voice.session_cookie`).
+    pub session_cookie: Option<SessionCookie>,
 }
 
 impl Handler for FrontHandler {
@@ -192,17 +199,22 @@ impl Handler for FrontHandler {
             .schedule_exit
             .clone()
             .filter(|_| target == "server.scheduleExit");
+        let cookie = self
+            .session_cookie
+            .clone()
+            .filter(|_| target == "voice.session_cookie");
         Box::pin(async move {
-            match exit {
-                Some(exit) => {
-                    exit();
-                    Ok(serde_json::json!({"scheduled": true}))
-                }
-                None => Err(roamgate_sidecar::protocol::RpcError::with_code(
-                    format!("unknown target {target}"),
-                    "unknown_target",
-                )),
+            if let Some(exit) = exit {
+                exit();
+                return Ok(serde_json::json!({"scheduled": true}));
             }
+            if let Some(cookie) = cookie {
+                return Ok(serde_json::json!({"cookie": cookie()}));
+            }
+            Err(roamgate_sidecar::protocol::RpcError::with_code(
+                format!("unknown target {target}"),
+                "unknown_target",
+            ))
         })
     }
 }

@@ -6979,6 +6979,7 @@ dependencies = [
  "futures-util",
  "http 1.5.0",
  "indexmap",
+ "reqwest 0.12.28",
  "roamgate-activity",
  "roamgate-agents",
  "roamgate-archive",

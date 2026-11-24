@@ -42,6 +42,7 @@ roamgate-sidecar = { path = "../roamgate-sidecar" }
 roamgate-voice-server = { path = "../roamgate-voice-server" }
 roamgate-work = { path = "../roamgate-work" }
 roamgate-workspace = { path = "../roamgate-workspace" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order"] }

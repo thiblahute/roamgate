@@ -6,6 +6,23 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.34
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+A standalone core answers the rest of the reverse targets its families
+call with what Bun did for them (S25 cut-over, WP2b; wire/core-channel.md,
+The standalone core): the review family's (`review.socket`,
+`review.host`, `review.forge`, `review.connection` with the rendered
+pages' tokens and storage, `review.published`, `review.addThread`), the
+mr_reviews family's (the inbox's glab and gh reads through one forge gate,
+the reviews agent's turns on Claude Code), the work family's, the voice
+family's, the notification feed's and `mr_cache.load`. Its `front` family
+serves `/rendered/<token>/...` and a sandboxed frame's stray requests. Its
+`voice.session_cookie` goes on to the Rust front, which answers it with a
+new login. Hybrid modes and the browser surface are unchanged; the
+inventory too.
+
 ## 1.33
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

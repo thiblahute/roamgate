@@ -81,6 +81,8 @@ pub struct StandaloneCore {
     /// The core's `server.scheduleExit`: the front exits (code 0) a
     /// moment later, for its supervisor to start the new install.
     pub schedule_exit: super::ScheduleExit,
+    /// The core's `voice.session_cookie`: a new login of the front's auth.
+    pub session_cookie: super::SessionCookie,
 }
 
 #[derive(Clone)]
@@ -209,6 +211,10 @@ async fn run_once(
             .standalone
             .as_ref()
             .map(|core| core.schedule_exit.clone()),
+        session_cookie: config
+            .standalone
+            .as_ref()
+            .map(|core| core.session_cookie.clone()),
     });
     let peer = Peer::start(stream, handler, PeerOptions::front(config.clock.clone()));
     // A standalone core hears the server's configuration (and starts the

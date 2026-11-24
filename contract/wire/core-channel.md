@@ -272,6 +272,28 @@ Bun core runs never takes it from the front's environment).
   `server.scheduleExit` goes on to the front as the reverse call it is:
   the Rust front answers `{scheduled: true}` and a second later stops as
   on a signal, with code 0.
+  The review family's targets are answered there too: `review.socket`
+  (the agent socket's host: the connections' checkouts and Last steps, the
+  boards' tools, notifications, the agent messenger, conversation mode's
+  holder, prepared launches, the Claude mod hub), `review.host` (git reads
+  of a checkout on its host, a merge request's from its forge when the
+  checkout lacks its commits, agent panes and sessions), `review.forge`,
+  `review.connection` (with the rendered pages' tokens and their sites'
+  storage), `review.published` and `review.addThread`; the mr_reviews
+  family's (`mr_reviews.connections` through `.agent_command`: the inbox's
+  forge reads with this machine's glab and gh through the server's one
+  forge gate, the reviews agent's turns on Claude Code), the work
+  family's (`work.*`), the voice family's (`voice.errand_*`,
+  `voice.work_*`), and the notification feed's (`notifications.feed`,
+  `.clients` and `.current` with no feed socket held, `.clear_pane`);
+  `mr_cache.load` has no reader to answer (the core's own readers read
+  the cache in its process). `voice.session_cookie` goes on to the front,
+  which answers `{cookie}`: a new login of its authentication, null when
+  none is required.
+- The `front` family also serves rendered reviews' pages,
+  `/rendered/<token>/...` (the front sends them before its gate), and a
+  sandboxed frame's request off its token (cross-site: a page saying so
+  to a frame, 404 to anything else from an opaque origin), as Bun did.
 - Pushes go to the `/ws` sockets the core holds, as `ws_send` with
   context `core-push` and the push's key, filtered and enveloped as the Bun
   front delivers them.

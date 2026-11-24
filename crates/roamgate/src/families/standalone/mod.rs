@@ -17,7 +17,14 @@
 //! - [`assistant`]: the `assistant.*` targets.
 //! - [`others`]: `settings.changed`, `settings.limit_resume.get`,
 //!   `history.*`, `activity.dayInput`, `workspace.kept_steps`,
-//!   `server.scheduleExit`.
+//!   `mr_cache.load`, `server.scheduleExit`.
+//! - [`reviews`]: `review.*` (the agent socket's host, the review
+//!   service's git reads and agents, the forge, a browser connection's
+//!   reads); [`rendered`]: the rendered pages, served under `/rendered/`.
+//! - [`mr_reviews`]: `mr_reviews.*` but the agent's turns, which are
+//!   [`reviews_agent`]'s; [`forge`]: the forge CLIs and one gate.
+//! - [`work`]: `work.*`, `voice.errand_*`, `voice.work_*`,
+//!   `voice.session_cookie`, `notifications.*`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -42,11 +49,19 @@ use super::host::HostHandle;
 mod assistant;
 mod connections;
 mod conversation;
+mod forge;
+mod mr_reviews;
 mod others;
 mod profiles;
+mod rendered;
+mod reviews;
+mod reviews_agent;
 pub(crate) mod runtime;
+mod work;
 
+pub(crate) use forge::shared_gate as forge_gate;
 pub(crate) use others::prime_settings;
+pub(crate) use rendered::{http as rendered_http, stray as rendered_stray};
 
 /// The server's configuration, as the front gives it (`internal.front.start`).
 #[derive(Debug, Clone, Default)]
@@ -376,6 +391,10 @@ pub(crate) fn register(standalone: &Standalone, layer: &Arc<Layer>) {
         .chain(profiles::TARGETS)
         .chain(assistant::TARGETS)
         .chain(others::TARGETS)
+        .chain(mr_reviews::TARGETS)
+        .chain(work::TARGETS)
+        .chain(reviews::TARGETS)
+        .chain(reviews_agent::TARGETS)
     {
         add(standalone, layer, target, *run);
     }
@@ -395,6 +414,10 @@ mod tests {
             .chain(profiles::TARGETS)
             .chain(assistant::TARGETS)
             .chain(others::TARGETS)
+            .chain(mr_reviews::TARGETS)
+            .chain(work::TARGETS)
+            .chain(reviews::TARGETS)
+            .chain(reviews_agent::TARGETS)
         {
             assert!(seen.insert(*target), "{target} twice");
         }

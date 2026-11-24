@@ -71,6 +71,12 @@ pub(super) const TARGETS: &[(&str, Target)] = &[
             .await
         })
     }),
+    // The readers are registered by those who ask `internal.mr_cache.get`
+    // with a token: in this process they read the cache themselves, so
+    // none is ever registered here.
+    ("mr_cache.load", |_, _, _| {
+        Box::pin(async move { Err(RpcError::new("unknown MR cache reader")) })
+    }),
     // After an install the supervisor starts the new one: the front exits.
     ("server.scheduleExit", |_, cx, _| {
         Box::pin(async move {

@@ -33,7 +33,6 @@ use futures_util::future::BoxFuture as FutureBox;
 use roamgate_base::env::{ProcessEnv, roamgate_env};
 use roamgate_base::log::{LogLevel, Logger, LoggerOptions, parse_log_level};
 use roamgate_base::settings::Settings;
-use roamgate_forge::gate::ForgeGate;
 use roamgate_forge::mr_cache::MrCache;
 use roamgate_forge::pull_request::{CardCache, PullRequests};
 use roamgate_git::exec::{LocalRunner, RunFuture};
@@ -234,6 +233,22 @@ impl RangerRuntime {
                 .map_err(|error| error.message),
             None => Ok(()),
         }
+    }
+
+    /// `readLastStep(root, workspaceId)`: the workspace's last step in
+    /// `root` as a review target, None without one.
+    pub(crate) async fn last_step(&self, root: &str, workspace_id: &str) -> Option<Value> {
+        files::read_last_step(&self.runtime.files, root, workspace_id).await
+    }
+
+    /// An effort's part worktree (`mr_reviews.create_worktree`).
+    pub(crate) async fn create_part(&self, params: &Value) -> Result<Value, WorkspaceError> {
+        let callbacks = worktree_callbacks(&self.inner, &self.runtime);
+        let guard: Guard = Arc::new(|| true);
+        self.runtime
+            .worktrees
+            .create_part(&self.runtime.conn, params, &guard, &callbacks)
+            .await
     }
 
     /// Ranger's confirmed `worktree.create`: the runtime's own creation,
@@ -663,7 +678,8 @@ impl Inner {
             .lock()
             .unwrap()
             .get_or_insert_with(|| {
-                PullRequests::new(cx.clock.clone(), ForgeGate::new(cx.clock.clone()))
+                // The server's one gate, the reviews' forge reads' too.
+                PullRequests::new(cx.clock.clone(), super::standalone::forge_gate(&cx.clock))
             })
             .clone()
     }

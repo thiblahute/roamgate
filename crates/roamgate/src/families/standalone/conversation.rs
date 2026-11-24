@@ -84,7 +84,7 @@ fn pane_text(args: &Value) -> Result<(String, String), RpcError> {
 }
 
 /// The profiles' models (profiles/models.ts `profileModels`), kept an hour.
-fn discovery() -> &'static ModelDiscovery {
+pub(super) fn discovery() -> &'static ModelDiscovery {
     static DISCOVERY: LazyLock<ModelDiscovery> = LazyLock::new(|| {
         ModelDiscovery::new(ModelDiscoveryOptions {
             fetch: None,

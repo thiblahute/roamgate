@@ -443,6 +443,8 @@ pub async fn run(args: &[String]) -> u8 {
         ))
     });
     let exit_now = Arc::new(tokio::sync::Notify::new());
+    // The front's auth, once the router holds it.
+    let front_cell: Arc<std::sync::OnceLock<std::sync::Weak<Front>>> = Arc::default();
     let standalone_core = standalone.then(|| StandaloneCore {
         test_clock: virtual_clock
             .clone()
@@ -468,6 +470,15 @@ pub async fn run(args: &[String]) -> u8 {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     exit.notify_one();
                 });
+            })
+        },
+        session_cookie: {
+            let front = front_cell.clone();
+            Arc::new(move || {
+                front
+                    .get()
+                    .and_then(std::sync::Weak::upgrade)
+                    .and_then(|front| front.auth.new_session_cookie())
             })
         },
     });
@@ -499,6 +510,7 @@ pub async fn run(args: &[String]) -> u8 {
         )
         .with_rust_core(rust_core),
     );
+    let _ = front_cell.set(Arc::downgrade(&front));
     // A core that never comes: listening all the same, its requests 503.
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;

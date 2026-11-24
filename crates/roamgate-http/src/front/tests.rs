@@ -108,6 +108,7 @@ async fn setup(with_core: bool) -> Setup {
             Arc::new(FrontHandler {
                 sockets: sockets.clone(),
                 schedule_exit: None,
+                session_cookie: None,
             }),
             PeerOptions::core(shared(&clock)),
         );
@@ -359,6 +360,7 @@ async fn a_standalone_core_s_schedule_exit_is_the_front_s_and_nothing_else() {
             schedule_exit: Some(Arc::new(move || {
                 counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             })),
+            session_cookie: None,
         }),
         PeerOptions::front(shared(&clock)),
     );
