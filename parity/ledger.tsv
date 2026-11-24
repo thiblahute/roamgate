@@ -2369,7 +2369,7 @@ server/src/herdr/bootstrap.test.ts	starts an installed binary as a service witho
 server/src/herdr/bootstrap.test.ts	installs the verified release when no binary exists	rust-unit:roamgate-herdr:bootstrap::tests::installs_the_verified_release_when_no_binary_exists	local Herdr release download and service setup
 server/src/herdr/bootstrap.test.ts	fails when the server never becomes reachable	rust-unit:roamgate-herdr:bootstrap::tests::fails_when_the_server_never_becomes_reachable	local Herdr release download and service setup
 server/src/herdr/bootstrap.test.ts	fails fast for SSH or customized setups	rust-unit:roamgate-herdr:bootstrap::tests::fails_fast_for_ssh_or_customized_setups	local Herdr release download and service setup
-server/src/herdr/cli.test.ts	ignores non-herdr commands	rust-unit:roamgate:tests::family_commands_go_to_their_family_and_nothing_else_does	local Herdr release download and service setup
+server/src/herdr/cli.test.ts	ignores non-herdr commands	rust-unit:roamgate:tests::a_flag_first_is_the_server_s_and_a_word_a_command	local Herdr release download and service setup
 server/src/herdr/cli.test.ts	prints help for bare or unknown herdr commands	scenario:parity/scenarios/herdr/cli-status.yaml	
 server/src/herdr/cli.test.ts	status reports a running server	scenario:parity/scenarios/herdr/cli-status.yaml	
 server/src/herdr/cli.test.ts	status points missing installs at setup	rust-unit:roamgate-cli:herdr::tests::status_points_missing_installs_at_setup	local Herdr release download and service setup
