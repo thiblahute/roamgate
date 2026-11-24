@@ -30,6 +30,8 @@ pub trait ClientSink: Send + Sync + 'static {
     fn send(&self, socket_id: u64, payload: String, context: &str, key: Option<&str>);
     /// Closes the socket.
     fn end(&self, socket_id: u64, code: u16, reason: &str);
+    /// Forgets a message held under backpressure with that coalescing key.
+    fn drop_coalesced(&self, _socket_id: u64, _key: &str) {}
 }
 
 /// A browser connected on `/ws`.
@@ -97,6 +99,11 @@ impl BrowserClients {
     /// `safeSend` to one socket.
     pub fn send(&self, socket_id: u64, payload: String, context: &str, key: Option<&str>) {
         self.sink.send(socket_id, payload, context, key);
+    }
+
+    /// `dropCoalescedMessage`: a held message of that key is not sent.
+    pub fn drop_coalesced(&self, socket_id: u64, key: &str) {
+        self.sink.drop_coalesced(socket_id, key);
     }
 
     /// The same line to every socket but `except`.

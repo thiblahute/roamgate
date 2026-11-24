@@ -12,6 +12,7 @@
 //! | [`static_paths`], [`static_files`] | the web app, its manifest and the instance name | http/static-paths, http/static-files |
 //! | [`front`] | the Rust front: listener, gate, web app, `/ws`, the Bun core spawned and reached over the core channel | index.ts's `Bun.serve` |
 //! | [`frame_to_ansi`] | a Herdr cell grid re-encoded as ANSI for xterm.js | bridge/frame-to-ansi |
+//! | [`terminal`] | the terminal bridge: endpoint sessions, the legacy client, warm streams, popups, the clipboard relay | bridge/terminal-bridge, endpoint-terminal-session |
 //! | [`terminal_upload`] | dropped files and pasted images staged privately, copied over SSH | http/terminal-upload, http/image-upload |
 //! | [`rendered_pages`] | pages of rendered reviews under `/rendered/<token>/`, their sites' storage | http/rendered-pages, http/rendered-storage, http/rendered-helper |
 //! | [`list_delta`] | topology lists answered as changes | bridge/list-delta |
@@ -37,6 +38,7 @@ pub mod rpc_reply;
 pub mod settings;
 pub mod static_files;
 pub mod static_paths;
+pub mod terminal;
 pub mod terminal_upload;
 
 #[cfg(test)]

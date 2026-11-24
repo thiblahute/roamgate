@@ -35,6 +35,8 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["fs", "macros", "net", "process", "rt", "sync", "time"] }
 unicode-width = "0.2"
 roamgate-connections = { path = "../roamgate-connections" }
+roamgate-herdr = { path = "../roamgate-herdr" }
+uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 url = "2"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }

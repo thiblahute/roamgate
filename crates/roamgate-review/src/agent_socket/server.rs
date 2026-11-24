@@ -194,7 +194,16 @@ impl AgentSocket {
             linked: Mutex::default(),
         }))
     }
+}
 
+/// Where a key's socket is under the sockets' directory: Unix socket paths
+/// are short (104 bytes on macOS), so the key is hashed.
+pub fn socket_path_in(directory: &Path, key: &str) -> PathBuf {
+    let name = &hex::encode(Sha256::digest(key.as_bytes()))[..16];
+    directory.join(format!("{name}.sock"))
+}
+
+impl AgentSocket {
     /// Where the sockets are.
     pub fn directory(&self) -> &Path {
         &self.0.socket_directory
@@ -203,8 +212,7 @@ impl AgentSocket {
     /// The socket of a key, listening or not. Unix socket paths are short
     /// (104 bytes on macOS): the key is hashed.
     pub fn socket_path_for(&self, key: &str) -> PathBuf {
-        let name = &hex::encode(Sha256::digest(key.as_bytes()))[..16];
-        self.0.socket_directory.join(format!("{name}.sock"))
+        socket_path_in(&self.0.socket_directory, key)
     }
 
     /// The socket a key listens on.

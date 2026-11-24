@@ -156,12 +156,41 @@ impl HostOps {
         wait: &HostWait,
     ) -> Result<HostRunOutput, HostOpError> {
         let ssh = build(&self.sessions, command)?;
+        self.run_ssh(&ssh, stdin, wait).await
+    }
+
+    /// An ssh command line made elsewhere (a master's `-O forward`, a
+    /// review client's setup), inside its destination's session limit,
+    /// whatever it exits with.
+    pub async fn run_command(
+        &self,
+        ssh: &SshCommand,
+        stdin: Option<Vec<u8>>,
+        timeout_ms: Option<u64>,
+    ) -> Result<HostRunOutput, HostOpError> {
+        self.run_ssh(
+            ssh,
+            stdin,
+            &HostWait {
+                timeout_ms,
+                lane: Lane::Interactive,
+            },
+        )
+        .await
+    }
+
+    async fn run_ssh(
+        &self,
+        ssh: &SshCommand,
+        stdin: Option<Vec<u8>>,
+        wait: &HostWait,
+    ) -> Result<HostRunOutput, HostOpError> {
         let session_wait = SshSessionWait {
             timeout_ms: wait.timeout_ms,
             signal: None,
         };
         let run = self.sessions.run(
-            &ssh,
+            ssh,
             |attempt: SshCommand, remaining| {
                 let mut local = Command::new(self.local_argv(&attempt.argv));
                 if let Some(input) = &stdin {

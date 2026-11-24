@@ -8,6 +8,8 @@
 //! - [`crypto`]: VAPID and the aes128gcm encoding, as `web-push` does them.
 //! - [`payload`]: what a notification says.
 //! - [`task_events`]: an agent finishing or blocking, from Herdr's events.
+//! - [`listener`]: Herdr's semantic notifications, on a passive endpoint
+//!   shell kept connected.
 //! - [`service`]: the feed and Web Push together, started and stopped with
 //!   the family's ownership.
 //! - [`cli`]: `roamgate push test`.
@@ -18,6 +20,7 @@
 pub mod cli;
 pub mod crypto;
 pub mod feed;
+pub mod listener;
 pub mod payload;
 pub mod service;
 pub mod task_events;

@@ -16,7 +16,9 @@ pub mod texts;
 pub use form::{Form, form_of, parse_questions, parse_target_flags};
 pub use host::{AgentConnection, AgentSocketHost, HostAsk, HostError, HostFeatures};
 pub use output::{session_output, thread_output};
-pub use server::{AgentExchange, AgentSocket, AgentSocketOptions, ClaudeMods, ExchangeFn};
+pub use server::{
+    AgentExchange, AgentSocket, AgentSocketOptions, ClaudeMods, ExchangeFn, socket_path_in,
+};
 
 /// Where the agent looks for the client and the socket, on every host.
 pub const REVIEW_HOME_DIR: &str = ".cache/roamgate";

@@ -7317,6 +7317,7 @@ dependencies = [
 name = "roamgate-herdr"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
  "futures-util",
  "hex",
  "rand 0.9.5",
@@ -7368,6 +7369,7 @@ dependencies = [
  "roamgate-base",
  "roamgate-connections",
  "roamgate-exec",
+ "roamgate-herdr",
  "roamgate-protocol",
  "roamgate-sidecar",
  "roamgate-ws",
@@ -7383,6 +7385,7 @@ dependencies = [
  "tungstenite 0.28.0",
  "unicode-width 0.2.3",
  "url",
+ "uuid",
  "xxhash-rust",
 ]
 
@@ -7419,6 +7422,7 @@ dependencies = [
  "p256",
  "reqwest 0.12.28",
  "roamgate-base",
+ "roamgate-herdr",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",

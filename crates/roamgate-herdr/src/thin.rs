@@ -757,9 +757,9 @@ fn hello_payload(cols: u64, rows: u64, options: ConnectOptions, protocol: i64) -
 }
 
 #[cfg(unix)]
-type Stream = tokio::net::UnixStream;
+pub(crate) type Stream = tokio::net::UnixStream;
 #[cfg(windows)]
-type Stream = tokio::net::windows::named_pipe::NamedPipeClient;
+pub(crate) type Stream = tokio::net::windows::named_pipe::NamedPipeClient;
 
 pub(crate) async fn connect_stream(path: &str) -> std::io::Result<Stream> {
     #[cfg(unix)]
