@@ -15,6 +15,7 @@ hex = "0.4"
 jiff = "0.2"
 regex = "1"
 roamgate-agents = { path = "../roamgate-agents" }
+roamgate-archive = { path = "../roamgate-archive" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-claude = { path = "../roamgate-claude" }
 roamgate-connections = { path = "../roamgate-connections" }

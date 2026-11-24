@@ -12,7 +12,7 @@
 //! - Reverse calls: `assistant.release` (Bun disposes its own service
 //!   before the core starts its), `assistant.connections`, `assistant.host`
 //!   (what the context reads of the runtimes Bun owns, by `op`),
-//!   `assistant.workspace_tree`, `assistant.archive`,
+//!   `assistant.workspace_tree`,
 //!   `assistant.chat_thread_reply`.
 //! - Pushes: `{assistant: snapshot}` (key `assistant`) and
 //!   `{assistant_notification}`.
@@ -30,6 +30,7 @@ use std::sync::{Arc, Mutex};
 
 use futures_util::FutureExt;
 use futures_util::future::Shared;
+use roamgate_assistant::archive_tools::{ArchiveToolDeps, archive_tool_handler};
 use roamgate_assistant::context::live::{BeforeSend, ContextHost, IsCurrent, Lease, LiveContext};
 use roamgate_assistant::errors::{AssistantError, AssistantResult};
 use roamgate_assistant::ranger_driver::RangerDriver;
@@ -568,7 +569,14 @@ impl AssistantFamily {
                 })
             });
             options.workspace_tree = Some(reverse_tool(&cx, "assistant.workspace_tree"));
-            options.archive = Some(reverse_tool(&cx, "assistant.archive"));
+            // The session archive, read here: the core owns it.
+            options.archive = Some(archive_tool_handler(ArchiveToolDeps {
+                settings: Arc::new(|| super::archive::settings(&ProcessEnv)),
+                archive_dir: Arc::new(|settings| {
+                    super::archive::archive_dir(settings, &super::archive::runtime())
+                }),
+                runtime: Arc::new(super::archive::runtime),
+            }));
             options.chat_threads = Some({
                 let cx = cx.clone();
                 Arc::new(move |session_id, params, _cancel| {

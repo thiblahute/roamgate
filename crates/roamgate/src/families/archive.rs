@@ -43,7 +43,7 @@ fn settings_file(env: &dyn Env) -> std::path::PathBuf {
 }
 
 /// `archive` in settings.json now, read whole at each call.
-fn settings(env: &dyn Env) -> ArchiveSettings {
+pub(crate) fn settings(env: &dyn Env) -> ArchiveSettings {
     let path = settings_file(env);
     let raw = std::fs::read(&path)
         .ok()
@@ -60,7 +60,7 @@ fn hostname() -> String {
 }
 
 /// The server's archive runtime: its home, platform, environment, data.
-fn runtime() -> ArchiveRuntime {
+pub(crate) fn runtime() -> ArchiveRuntime {
     let context = DataContext::from_env(&ProcessEnv);
     ArchiveRuntime {
         home_dir: context.home.clone(),
@@ -73,7 +73,10 @@ fn runtime() -> ArchiveRuntime {
 }
 
 /// `ROAMGATE_ARCHIVE_DIR?.trim() || settings.dir`, else the default.
-fn archive_dir(settings: &ArchiveSettings, runtime: &ArchiveRuntime) -> std::path::PathBuf {
+pub(crate) fn archive_dir(
+    settings: &ArchiveSettings,
+    runtime: &ArchiveRuntime,
+) -> std::path::PathBuf {
     let explicit = std::env::var("ROAMGATE_ARCHIVE_DIR")
         .ok()
         .map(|dir| dir.trim().to_owned())

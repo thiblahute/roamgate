@@ -7086,6 +7086,7 @@ dependencies = [
  "jiff",
  "regex",
  "roamgate-agents",
+ "roamgate-archive",
  "roamgate-base",
  "roamgate-claude",
  "roamgate-connections",

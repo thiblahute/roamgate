@@ -473,11 +473,11 @@ server/src/assistant/actions.test.ts	%s reports unverified completion conservati
 server/src/assistant/actions.test.ts	%s never retries a refused group close	rust-unit:roamgate-assistant:context::actions::tests::never_retries_a_refused_group_close	Ranger service, tasks, tools and context
 server/src/assistant/actions.test.ts	create_worktree refuses Unix resource helpers	rust-unit:roamgate-assistant:context::actions::tests::create_worktree_refuses_unix_resource_helpers	Ranger service, tasks, tools and context
 server/src/assistant/actions.test.ts	native create_tab keeps working	rust-unit:roamgate-assistant:context::actions::tests::native_create_tab_keeps_working	Ranger service, tasks, tools and context
-server/src/assistant/archive-tools.test.ts	search, session and a bounded read	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/archive-tools.test.ts	hidden projects are never shown	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/archive-tools.test.ts	invalid parameters are refused	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/archive-tools.test.ts	search finds what was said since the last pass, and regexes	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/archive-tools.test.ts	without a text repo there is no archive to search yet	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
+server/src/assistant/archive-tools.test.ts	search, session and a bounded read	rust-unit:roamgate-assistant:archive_tools::tests::search_session_and_a_bounded_read	Ranger service, tasks, tools and context
+server/src/assistant/archive-tools.test.ts	hidden projects are never shown	rust-unit:roamgate-assistant:archive_tools::tests::hidden_projects_are_never_shown	Ranger service, tasks, tools and context
+server/src/assistant/archive-tools.test.ts	invalid parameters are refused	rust-unit:roamgate-assistant:archive_tools::tests::invalid_parameters_are_refused	Ranger service, tasks, tools and context
+server/src/assistant/archive-tools.test.ts	search finds what was said since the last pass, and regexes	rust-unit:roamgate-assistant:archive_tools::tests::search_finds_what_was_said_since_the_last_pass_and_regexes	Ranger service, tasks, tools and context
+server/src/assistant/archive-tools.test.ts	without a text repo there is no archive to search yet	rust-unit:roamgate-assistant:archive_tools::tests::without_a_text_repo_there_is_no_archive_to_search_yet	Ranger service, tasks, tools and context
 server/src/assistant/claude-driver.test.ts	lists Claude models, with Claude Code's effort levels	rust-unit:roamgate-claude:driver::tests::lists_claude_models_with_claude_codes_effort_levels	assistant Claude driver and loopback MCP
 server/src/assistant/claude-driver.test.ts	runs a turn in a new session with only Ranger's tools	rust-unit:roamgate-claude:driver::tests::runs_a_turn_in_a_new_session_with_only_rangers_tools	assistant Claude driver and loopback MCP
 server/src/assistant/claude-driver.test.ts	resumes the session the last turn left, at the chosen effort	rust-unit:roamgate-claude:driver::tests::resumes_the_session_the_last_turn_left_at_the_chosen_effort	assistant Claude driver and loopback MCP
