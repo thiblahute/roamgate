@@ -224,6 +224,28 @@ impl Worktrees {
         Ok(result)
     }
 
+    /// An effort's part (index.ts `mrReviewsHost.createWorktree`): never
+    /// an existing checkout (the first free `<branch>-part` path), no
+    /// parent warning, not placed in the arrangement.
+    pub async fn create_part(
+        &self,
+        conn: &WorkspaceConnection,
+        params: &Value,
+        is_current: &Guard,
+        callbacks: &WorktreeCallbacks,
+    ) -> RpcResult {
+        let runtime = ConnectionCreate {
+            conn,
+            worktrees: self,
+            callbacks,
+        };
+        let options = CreateOptions {
+            fresh_path: Some("part".into()),
+            ..CreateOptions::default()
+        };
+        create_workspace_worktree(&runtime, params, is_current, &options).await
+    }
+
     async fn open(
         &self,
         conn: &WorkspaceConnection,
