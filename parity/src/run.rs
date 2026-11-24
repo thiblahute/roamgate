@@ -231,6 +231,66 @@ pub fn rust_only() -> bool {
         && words.next().is_some_and(|word| word == "front")
 }
 
+/// The variable naming the Pi sidecar a server runs Pi in.
+pub const PI_SIDECAR_ENV: &str = "ROAMGATE_PI_SIDECAR";
+
+/// The Pi sidecar `roamgate-pi` compiled from this checkout
+/// (server/package.json's `compile:pi`, unminified), built once per
+/// process into `<target>/parity-pi/`: what `cargo xtask package` ships
+/// beside `roamgate`. None, said once on stderr, when Bun cannot build it.
+pub fn pi_sidecar() -> Option<PathBuf> {
+    static BUILT: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    BUILT
+        .get_or_init(|| match build_pi_sidecar() {
+            Ok(path) => Some(path),
+            Err(error) => {
+                eprintln!("parity: no Pi sidecar: {error:#}");
+                None
+            }
+        })
+        .clone()
+}
+
+fn build_pi_sidecar() -> Result<PathBuf> {
+    let repo = repo_root();
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo.join("target"));
+    let dir = target.join("parity-pi");
+    std::fs::create_dir_all(&dir)?;
+    let name = if cfg!(windows) {
+        "roamgate-pi.exe"
+    } else {
+        "roamgate-pi"
+    };
+    let path = dir.join(name);
+    // Built aside and renamed: another suite's servers may run the last one.
+    let building = dir.join(format!("{name}.{}.tmp", std::process::id()));
+    let output = std::process::Command::new("bun")
+        .args([
+            "build",
+            "--compile",
+            "--no-compile-autoload-dotenv",
+            "--no-compile-autoload-bunfig",
+            "src/assistant/pi-sidecar-main.ts",
+            "--outfile",
+        ])
+        .arg(&building)
+        .current_dir(repo.join("server"))
+        .stdin(Stdio::null())
+        .output()
+        .context("run bun build")?;
+    if !output.status.success() {
+        let _ = std::fs::remove_file(&building);
+        bail!(
+            "bun build --compile failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    std::fs::rename(&building, &path)?;
+    Ok(path)
+}
+
 /// The server command: `ROAMGATE_SERVER_CMD`, or the Bun server.
 pub fn server_command() -> (Vec<String>, PathBuf) {
     let repo = repo_root();
@@ -479,6 +539,16 @@ impl Run {
         // (`unported`) and the reverse targets it lacked, for the report.
         if options.command.is_none() && rust_only() {
             set(CORE_SERVED_LOG_ENV, text(&root.join("core-served.log")));
+        }
+        // Rust only: Ranger's providers but Claude Code run Pi in the
+        // `roamgate-pi` sidecar (contract/wire/pi-sidecar.md), which a
+        // release ships beside `roamgate`; here the one this checkout
+        // builds, unless the scenario names its own.
+        if options.command.is_none()
+            && rust_only()
+            && let Some(sidecar) = pi_sidecar()
+        {
+            set(PI_SIDECAR_ENV, text(&sidecar));
         }
         // Stage 2 (contract/wire/core-channel.md): the Rust front runs
         // the Bun server the suite names as its core.

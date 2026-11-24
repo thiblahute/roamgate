@@ -1,10 +1,14 @@
 name: Ranger runs Pi in the sidecar ROAMGATE_PI_SIDECAR names, and resumes in it after SIGTERM
 family: assistant
+# The wrapper is a POSIX shell script.
+platforms: [linux, macos]
 description: >
   With ROAMGATE_PI_SIDECAR the Bun server runs Ranger's Pi turns in that
   sidecar over stdio (contract/wire/pi-sidecar.md) instead of in-process.
-  The sidecar here is a script that marks each start, then serves Pi as
-  server/src/assistant/pi-sidecar-main.ts does. A turn reads the workspace
+  The sidecar here is a script that marks each start, then runs the
+  `roamgate-pi` the harness compiled from
+  server/src/assistant/pi-sidecar-main.ts (no Bun process in a Rust-only
+  run). A turn reads the workspace
   through a tool handler the server answers, checkpoints its durable
   pointer before admission, and the server's stop closes the sidecar; the
   restarted server resumes the run in a new sidecar from that pointer
@@ -33,7 +37,7 @@ server:
     ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
     ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
     PI_CODING_AGENT_DIR: "${ROOT}/pi"
-    ROAMGATE_PI_SIDECAR: "${ROOT}/pi-sidecar.ts"
+    ROAMGATE_PI_SIDECAR: "${ROOT}/pi-sidecar"
   openai:
     anthropic:
       replies:
@@ -77,10 +81,10 @@ steps:
   # The sidecar: marks each start, then serves Pi as pi-sidecar-main.ts.
   - sh: >-
       printf '%s\n'
-      'import { appendFileSync } from "node:fs";'
-      'appendFileSync("${ROOT}/pi-sidecar.starts", "started\n");'
-      'await import("${REPO}/server/src/assistant/pi-sidecar-main.ts");'
-      > pi-sidecar.ts
+      '#!/bin/sh'
+      'echo started >> "${ROOT}/pi-sidecar.starts"'
+      'exec "${PI_SIDECAR}"'
+      > pi-sidecar && chmod 755 pi-sidecar
   - start: {}
   - login: {}
   - connect: {}

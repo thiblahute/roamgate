@@ -405,6 +405,10 @@ impl Runner {
         self.vars.insert("HOME".into(), text(&self.run.home));
         self.vars.insert("DATA".into(), text(&self.run.data_root()));
         self.vars.insert("REPO".into(), text(&repo_root()));
+        // The Pi sidecar this checkout builds, for a scenario's own wrapper.
+        if let Some(sidecar) = crate::run::pi_sidecar() {
+            self.vars.insert("PI_SIDECAR".into(), text(&sidecar));
+        }
         for (id, herdr) in &self.run.herdrs {
             self.vars
                 .insert(format!("HERDR_{id}_CONTROL"), text(&herdr.control));
