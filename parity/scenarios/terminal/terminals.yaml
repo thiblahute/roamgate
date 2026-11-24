@@ -6,6 +6,8 @@ description: >
   terminal pushes (ANSI); input goes to the pane as semantic input, resizes
   and scrolls go to Herdr, and a detach ends the attachment. Link resolution
   is refused when Herdr does not advertise it.
+ledger:
+  - "server/src/bridge/terminal-bridge.test.ts > notifies viewers to re-attach when Herdr closes the terminal stream"
 server:
   herdr:
     endpoint: true

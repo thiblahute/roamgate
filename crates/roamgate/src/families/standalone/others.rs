@@ -158,11 +158,19 @@ fn settings_changed(
             super::runtime::poke_limit(cx, id, None);
         }
     }
+    if previous.get("auto_rename_agent_tabs") != next.get("auto_rename_agent_tabs") {
+        for composition in layer.runtimes.compositions() {
+            composition.renamer.settings_changed();
+        }
+    }
     // Each runtime follows its own transport setting.
     for (id, generation) in layer.runtimes.generations() {
         let enabled = next.terminal_surface_codecs_enabled(Some(&id));
         if previous.terminal_surface_codecs_enabled(Some(&id)) == enabled {
             continue;
+        }
+        if let Some(composition) = layer.runtimes.composition(&id, generation) {
+            composition.bridge.refresh_surface_codecs();
         }
         let event = json!({
             "event": "settings.terminal_transport.updated",

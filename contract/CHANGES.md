@@ -6,6 +6,20 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.37
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+A standalone core builds each connection generation's composition root
+(S25 cut-over, WP4; wire/core-channel.md, The standalone core): the
+terminal bridge answers `terminal.*` and creation from a browser
+terminal, which no longer fail with `standalone_unported`; the task
+events reach the feed and the pages (`roamgate.task_notification`) from
+Herdr's semantic notifications or the status tracker; tabs are renamed
+after their agents; `host.master_ready` sets an SSH host's review client
+up over the connection's master. Hybrid modes and the browser surface are
+unchanged; the inventory too.
+
 ## 1.35
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

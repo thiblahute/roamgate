@@ -6,8 +6,10 @@
 //! pane, a sweep after each subscription start), the activity log's
 //! signals, the usage limit resumer's pokes, the notifications a pane's
 //! events withdraw, Ranger's connection table and resume, the claude start
-//! hook, and the browsers' events. The terminal bridge, task events, Last
-//! steps' tab renamer, forwards and review agents are not built here yet.
+//! hook, and the browsers' events; the generation's composition
+//! ([`super::composition`]: the terminal bridge, task events, the tab
+//! renamer), its forwards and uploads, and an SSH host's review agent over
+//! the connection's master.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -21,6 +23,7 @@ use roamgate_sidecar::protocol::RpcError;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
+use super::composition::Composition;
 use super::{Layer, Target, call, fields, logger, tell, text};
 
 pub(super) const TARGETS: &[(&str, Target)] = &[
@@ -36,10 +39,8 @@ pub(super) const TARGETS: &[(&str, Target)] = &[
     ("host.status", |layer, cx, args| {
         Box::pin(async move { host_status(&layer, &cx, &args).await })
     }),
-    // The review agents' sockets over the master are the composition
-    // root's (a later package); nothing else hears of a master.
-    ("host.master_ready", |_, _, _| {
-        Box::pin(async { Ok(json!({"ok": true})) })
+    ("host.master_ready", |layer, cx, args| {
+        Box::pin(async move { master_ready(&layer, &cx, &args) })
     }),
 ];
 
@@ -72,8 +73,11 @@ struct Generation {
     generation: u64,
     /// The workspace part's ops, in order.
     workspace: mpsc::UnboundedSender<WorkspaceOp>,
-    /// When each agent status listing started, by its number.
-    lists: HashMap<i64, i64>,
+    /// When each agent status listing started, by its number, with the
+    /// task events' revision it reconciles at.
+    lists: HashMap<i64, (i64, u64)>,
+    /// The terminal bridge, task events and tab renamer.
+    composition: Arc<Composition>,
     /// Its uploads, swept while it runs.
     uploads: Arc<super::uploads::Uploads>,
     /// Its `forward.*` handler.
@@ -81,6 +85,35 @@ struct Generation {
 }
 
 impl Runtimes {
+    /// The current generation of `id`.
+    pub(crate) fn generation(&self, id: &str) -> Option<u64> {
+        self.current
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|each| each.generation)
+    }
+
+    /// The composition of `id`'s generation `generation`, while it runs.
+    pub(crate) fn composition(&self, id: &str, generation: u64) -> Option<Arc<Composition>> {
+        self.current
+            .lock()
+            .unwrap()
+            .get(id)
+            .filter(|each| each.generation == generation)
+            .map(|each| each.composition.clone())
+    }
+
+    /// Every current generation's composition.
+    pub(crate) fn compositions(&self) -> Vec<Arc<Composition>> {
+        self.current
+            .lock()
+            .unwrap()
+            .values()
+            .map(|each| each.composition.clone())
+            .collect()
+    }
+
     /// The uploads of `id`'s generation `generation`, while it runs.
     pub(crate) fn uploads(
         &self,
@@ -245,6 +278,8 @@ fn runtime_start(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result
             .map(str::to_owned),
         config.get("remotePlatform").and_then(Value::as_str) == Some("windows"),
     ));
+    let label = args["identity"]["label"].as_str().unwrap_or(&id).to_owned();
+    let composition = Composition::start(layer, cx, &id, generation, &label, &config);
     let previous = layer.runtimes.current.lock().unwrap().insert(
         id,
         Generation {
@@ -253,9 +288,11 @@ fn runtime_start(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result
             lists: HashMap::new(),
             uploads,
             forwards,
+            composition,
         },
     );
     if let Some(previous) = previous {
+        previous.composition.stop();
         let (done, _) = oneshot::channel();
         let _ = previous.workspace.send(WorkspaceOp::Stop(done));
     }
@@ -283,6 +320,7 @@ async fn runtime_stop(
         super::forwards::lose_connection(layer, &id);
     }
     if let Some(gone) = gone {
+        gone.composition.stop();
         let (done, stopped) = oneshot::channel();
         if gone.workspace.send(WorkspaceOp::Stop(done)).is_ok() {
             let _ = tokio::time::timeout(CORE_STOP * 2, stopped).await;
@@ -415,6 +453,7 @@ fn take_events(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Vec<Va
                     ),
                     None => {}
                 }
+                runtime.composition.herdr_event(event);
                 workspace.push(json!({"kind": "herdr", "event": event}));
                 on_event(event, &mut signals);
             }
@@ -440,11 +479,15 @@ fn take_events(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Vec<Va
                 if runtime.lists.len() > 32 {
                     runtime.lists.clear();
                 }
+                let revision = runtime.composition.pane_list_start();
                 runtime.lists.insert(
                     list,
-                    each.get("started_at")
-                        .and_then(Value::as_i64)
-                        .unwrap_or(now),
+                    (
+                        each.get("started_at")
+                            .and_then(Value::as_i64)
+                            .unwrap_or(now),
+                        revision,
+                    ),
                 );
                 workspace.push(json!({"kind": "pane_list_start", "list": list}));
             }
@@ -452,10 +495,11 @@ fn take_events(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Vec<Va
                 let Some(list) = each.get("list").and_then(Value::as_i64) else {
                     continue;
                 };
-                let Some(started_at) = runtime.lists.remove(&list) else {
+                let Some((started_at, revision)) = runtime.lists.remove(&list) else {
                     continue;
                 };
                 let result = each.get("result").cloned().unwrap_or(Value::Null);
+                runtime.composition.pane_list(&result, revision);
                 workspace.push(json!({"kind": "pane_list", "list": list, "result": result}));
                 signals.push(json!({
                     "op": "pane_list",
@@ -475,18 +519,22 @@ fn take_events(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Vec<Va
 }
 
 /// The review family's agents (index.ts `sendReviewAgents`): which
-/// connections' agents can use the review client, the Claude mods' tools,
-/// and the sockets it listens on. This machine's socket is the core's
-/// (Unix only); an SSH host's, over its master, comes with the
-/// composition root, so its agents have no channel yet. Told when it
-/// changed, after each status change and every second.
+/// connections' agents can use the review client (this machine's once
+/// installed, an SSH host's once its client and socket forward are set up
+/// there), the Claude mods' tools, and the sockets it listens on. Told
+/// when it changed, after each status change and every second.
 pub(crate) fn send_review_agents(layer: &Arc<Layer>, cx: &FamilyContext) {
     let local = !cfg!(windows);
+    let hosts = layer.review_agent_hosts.lock().unwrap().clone();
     let mut channels = serde_json::Map::new();
     if let Some(manager) = layer.host.manager_now() {
         for status in manager.list() {
             let channel = manager.ready_runtime(&status.id).is_some_and(|runtime| {
-                runtime.remote_platform().is_none() && runtime.ssh_host().is_none() && local
+                runtime.remote_platform().is_none()
+                    && match runtime.ssh_host() {
+                        Some(_) => hosts.contains(&status.id),
+                        None => local,
+                    }
             });
             channels.insert(status.id, json!(channel));
         }
@@ -494,11 +542,11 @@ pub(crate) fn send_review_agents(layer: &Arc<Layer>, cx: &FamilyContext) {
     let tools = super::super::claude_mod::current()
         .map(|hub| hub.tools_state())
         .unwrap_or_default();
-    let keys: Vec<&str> = if local {
-        vec![roamgate_review::agent_socket::LOCAL_SOCKET_KEY]
-    } else {
-        Vec::new()
-    };
+    let mut keys: Vec<String> = Vec::new();
+    if local {
+        keys.push(roamgate_review::agent_socket::LOCAL_SOCKET_KEY.to_owned());
+    }
+    keys.extend(layer.review_agent_sockets.lock().unwrap().iter().cloned());
     let agents = json!({"channels": channels, "tools": tools, "socket_keys": keys});
     let state = agents.to_string();
     {
@@ -512,6 +560,99 @@ pub(crate) fn send_review_agents(layer: &Arc<Layer>, cx: &FamilyContext) {
     tokio::spawn(async move {
         if call(&cx, "internal.review.agents", agents).await.is_err() {
             layer.review_agents.lock().unwrap().clear();
+        }
+    });
+}
+
+/// `host.master_ready`: the SSH command master of a generation Bun built
+/// is up (again): its agents get the review client over it.
+fn master_ready(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result<Value, RpcError> {
+    let (id, generation) = ids(args)?;
+    let (Some(host), Some(control_path)) = (text(args, "host"), text(args, "control_path")) else {
+        return Err(RpcError::new(
+            "host.master_ready needs a host and a control_path",
+        ));
+    };
+    if layer.runtimes.generation(&id) == Some(generation) {
+        setup_remote_review_agent(layer, cx, &id, host, control_path);
+    }
+    Ok(json!({"ok": true}))
+}
+
+/// index.ts `setupRemoteReviewAgent`: agents on an SSH host reach reviews
+/// over the master, through this connection's agent socket forwarded
+/// there.
+fn setup_remote_review_agent(
+    layer: &Arc<Layer>,
+    cx: &FamilyContext,
+    id: &str,
+    host: &str,
+    control_path: &str,
+) {
+    // Until it is set up again, comments are not typed for a missing
+    // client.
+    layer.review_agent_hosts.lock().unwrap().remove(id);
+    // The review family listens on the connection's socket once told.
+    layer
+        .review_agent_sockets
+        .lock()
+        .unwrap()
+        .insert(id.to_owned());
+    let local_socket = roamgate_review::agent_socket::socket_path_in(
+        &roamgate_review::storage::review_directory(&roamgate_base::env::ProcessEnv).join("agent"),
+        id,
+    );
+    send_review_agents(layer, cx);
+    let (layer, cx) = (layer.clone(), cx.clone());
+    let (id, host, control_path) = (id.to_owned(), host.to_owned(), control_path.to_owned());
+    tokio::spawn(async move {
+        let ops = layer.host.ops();
+        let run = |command: roamgate_exec::ssh::command::SshCommand, timeout: Duration| {
+            let ops = ops.clone();
+            async move {
+                match ops
+                    .run_command(&command, None, Some(timeout.as_millis() as u64))
+                    .await
+                {
+                    Ok(ran) => roamgate_review::agent_socket::remote::RunOutput {
+                        code: ran.code,
+                        stdout: String::from_utf8_lossy(&ran.stdout).into_owned(),
+                        stderr: ran.stderr,
+                    },
+                    Err(error) => roamgate_review::agent_socket::remote::RunOutput {
+                        code: -1,
+                        stdout: String::new(),
+                        stderr: error.message,
+                    },
+                }
+            }
+        };
+        let outcome = roamgate_review::agent_socket::remote::setup_remote_review_agent(
+            &ops.sessions,
+            &host,
+            &control_path,
+            &local_socket.to_string_lossy(),
+            &id,
+            run,
+        )
+        .await;
+        let log = logger(&cx.clock, "bridge");
+        match outcome {
+            Ok(_) => {
+                layer.review_agent_hosts.lock().unwrap().insert(id.clone());
+                send_review_agents(&layer, &cx);
+                log.debug(
+                    "review client ready",
+                    Some(&fields(json!({"connection": id}))),
+                );
+            }
+            Err(error) => log.warn(
+                "review client unavailable on this host",
+                Some(&fields(json!({
+                    "connection": id,
+                    "error": roamgate_connections::manager::sanitize_connection_error(&error),
+                }))),
+            ),
         }
     });
 }

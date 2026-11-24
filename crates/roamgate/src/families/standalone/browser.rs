@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use roamgate_base::env::{ProcessEnv, roamgate_env};
+use roamgate_base::env::ProcessEnv;
 use roamgate_connections::agent_summaries::{
     SummaryRuntime, TasksRuntime, read_connection_agent_sessions_with, read_connection_agent_tasks,
 };
@@ -66,6 +66,8 @@ pub(crate) struct Request {
     pub connection_id: String,
     pub generation: u64,
     pub is_current: IsCurrent,
+    /// The browser socket asking.
+    pub socket_id: u64,
 }
 
 /// The `connections.agent_sessions` answers each socket was given (two).
@@ -137,15 +139,86 @@ pub(crate) async fn connection(
             object.insert("cwd".into(), checked);
         }
     }
-    // A terminal or workspace made from the browser's own terminal: the
-    // terminal bridge's (not built here yet).
-    if (method == "tab.create" || method == "workspace.create")
-        && request
-            .params
-            .as_object()
-            .is_some_and(|params| params.contains_key("browser_source"))
+    let composition = layer
+        .runtimes
+        .composition(&lease.connection_id, lease.generation);
+    // The generation's terminal bridge: its terminals, and what is made
+    // from the browser's own terminal.
+    if method.starts_with("terminal.")
+        || ((method == "tab.create" || method == "workspace.create")
+            && request
+                .params
+                .as_object()
+                .is_some_and(|params| params.contains_key("browser_source")))
     {
-        return unported(&format!("{method} browser_source"), &method);
+        let Some(composition) = composition else {
+            return Reply::error(
+                RpcError::new(CONNECTION_CHANGED_DURING_REQUEST),
+                format!("{method}-error"),
+            );
+        };
+        let is_current = request.is_current.clone();
+        if method.starts_with("terminal.") {
+            return match composition
+                .bridge
+                .handle_rpc(request.socket_id, &method, &request.params, is_current)
+                .await
+            {
+                Ok(result) => Reply::ok(result, method),
+                Err(error) => Reply::error(RpcError::new(error), format!("{method}-error")),
+            };
+        }
+        // The checked directory is checked again right before Herdr is
+        // asked.
+        let cwd_given = method == "workspace.create"
+            && request
+                .params
+                .get("cwd")
+                .is_some_and(|cwd| !cwd.is_null() && cwd.as_str() != Some(""));
+        let check = Arc::new(Request {
+            method: method.clone(),
+            params: request.params.clone(),
+            connection_id: request.connection_id.clone(),
+            generation: request.generation,
+            is_current: request.is_current.clone(),
+            socket_id: request.socket_id,
+        });
+        let checked_lease = lease.clone();
+        let validate_path: Arc<
+            dyn Fn() -> roamgate_http::terminal::BoxFuture<Result<(), String>> + Send + Sync,
+        > = Arc::new(move || {
+            let (check, lease) = (check.clone(), checked_lease.clone());
+            Box::pin(async move {
+                if cwd_given {
+                    check_path(&lease, "workspace.create", &check)
+                        .await
+                        .map_err(|error| error.message)?;
+                }
+                Ok(())
+            })
+        });
+        return match composition
+            .bridge
+            .create_from_terminal(
+                request.socket_id,
+                &method,
+                super::composition::object(&request.params),
+                is_current,
+                validate_path,
+            )
+            .await
+        {
+            Ok(result) => Reply::ok(result, method),
+            Err(error) => Reply::error(RpcError::new(error), format!("{method}-error")),
+        };
+    }
+    if method == "tab.rename"
+        && let Some(composition) = &composition
+        && let Some(tab) = text(&request.params, "tab_id")
+    {
+        composition
+            .renamer
+            .mark_manual_rename(tab, text(&request.params, "label"));
     }
     if method == "agent.list" {
         return match agent_list(layer, cx, &lease, windows, request.params).await {
@@ -631,53 +704,28 @@ fn note_pane_input(connection_id: &str, pane_id: &str, params: &Value) {
     }
 }
 
-/// The connection's Herdr protocol, read once per generation (the
-/// terminal bridge's `bridgeProtocol`), refused when unsupported.
-async fn herdr_protocol(layer: &Layer, lease: &Lease) -> Result<i64, RpcError> {
-    let key = lease.connection_id.clone();
-    if let Some((generation, protocol)) = layer.protocols.lock().unwrap().get(&key)
-        && *generation == lease.generation
-    {
-        return Ok(*protocol);
-    }
-    let ping = lease
-        .runtime
-        .herdr()
-        .call("ping", json!({}), 5_000, None, false)
-        .await
-        .map_err(RpcError::new)?;
-    let protocol = ping.get("protocol").cloned().unwrap_or(Value::Null);
-    roamgate_herdr::protocol::assert_supported_herdr_protocol(&protocol).map_err(RpcError::new)?;
-    let protocol = protocol.as_i64().unwrap_or_default();
-    layer
-        .protocols
-        .lock()
-        .unwrap()
-        .insert(key, (lease.generation, protocol));
-    Ok(protocol)
-}
-
 /// What a workspace list adds of the connection's terminals: how the
 /// browser navigates (`browser-local` on an endpoint Herdr), whether tabs
-/// move, and the endpoint sessions open (the terminal bridge's).
+/// move, and the endpoint sessions attached (the terminal bridge's).
 async fn terminal_modes(layer: &Layer, lease: &Lease) -> Result<Map<String, Value>, RpcError> {
-    let protocol = herdr_protocol(layer, lease).await?;
-    let local = roamgate_herdr::thin::is_terminal_hello_protocol(protocol)
-        && roamgate_env(&ProcessEnv, "DISABLE_ENDPOINT").as_deref() != Some("1");
+    let bridge = layer
+        .runtimes
+        .composition(&lease.connection_id, lease.generation)
+        .map(|composition| composition.bridge.clone())
+        .ok_or_else(|| RpcError::new(CONNECTION_CHANGED_DURING_REQUEST))?;
     let mut modes = Map::new();
     modes.insert(
         "navigation_mode".into(),
-        json!(if local { "browser-local" } else { "shared" }),
+        json!(bridge.navigation_mode().await.map_err(RpcError::new)?),
     );
     modes.insert(
         "tab_move_supported".into(),
-        json!(
-            roamgate_herdr::protocol::is_supported_herdr_protocol(&json!(protocol))
-                && protocol >= 16
-        ),
+        json!(bridge.tab_move_supported().await.map_err(RpcError::new)?),
     );
-    // The terminal bridge's endpoint sessions: none built here yet.
-    modes.insert("endpoint_availability".into(), json!({}));
+    modes.insert(
+        "endpoint_availability".into(),
+        bridge.endpoint_availability(),
+    );
     Ok(modes)
 }
 
@@ -698,14 +746,32 @@ async fn pass_through(layer: &Arc<Layer>, lease: &Lease, windows: bool, request:
     {
         return Reply::error(RpcError::new(refusal), "pane-input-refused");
     }
+    // The recipient is known before input can make a clipboard write.
+    let input_terminal = match &pane {
+        Some(pane) => lease
+            .runtime
+            .herdr()
+            .call("pane.get", json!({"pane_id": pane}), 2000, None, false)
+            .await
+            .ok()
+            .and_then(|result| result["pane"]["terminal_id"].as_str().map(str::to_owned)),
+        None => None,
+    };
+    let composition = layer
+        .runtimes
+        .composition(&lease.connection_id, lease.generation);
     let before_send: Option<roamgate_herdr::control::BeforeSend> =
         if PANE_INPUT_METHODS.contains(&method) {
             let is_current = request.is_current.clone();
             let connection = id.to_owned();
             let params = request.params.clone();
+            let socket = request.socket_id;
             Some(Box::new(move || {
                 if !is_current() {
                     return Err(CONNECTION_CHANGED_DURING_REQUEST.to_owned());
+                }
+                if let (Some(terminal), Some(composition)) = (&input_terminal, &composition) {
+                    composition.bridge.note_terminal_input(socket, terminal);
                 }
                 if let Some(pane) = &pane {
                     note_pane_input(&connection, pane, &params);

@@ -10,8 +10,9 @@
 //!   ([`super::standalone::browser`]: the other methods of a connection
 //!   pass through to its Herdr with Bun's overlays, topology lists as
 //!   deltas, roamgate-http list_delta). The methods Bun answered with its
-//!   own code that are not served yet are refused as
-//!   `standalone_unported`, named in the served log.
+//!   own code that are not served yet would be refused as
+//!   `standalone_unported`, named in the served log; the terminal RPCs
+//!   are the generation's terminal bridge's.
 //! - `/api/notifications/ws`: the notification feed's sockets
 //!   ([`super::standalone::feed`]).
 //! - HTTP: `/api/health`, and the connection-scoped routes
@@ -24,8 +25,8 @@
 //!   Bun has it let go of its part first: nothing to let go of here), and
 //!   the rest of what the families asked Bun ([`super::standalone`]),
 //!   among them what the host family asks of the front for each
-//!   generation. The generation's terminal bridge, task events and
-//!   forwards are not built yet.
+//!   generation, its composition root included (terminal bridge, task
+//!   events, tab renamer, forwards, uploads, an SSH host's review agent).
 //! - The front's calls: `internal.front.start` (the server's configuration;
 //!   the connections start) and `internal.front.stop` (they stop, at the
 //!   front's shutdown).
@@ -69,7 +70,7 @@ const SETTLE_WAIT: Duration = Duration::from_secs(10);
 /// The methods the Bun server answered with its own code that no family
 /// declares and the standalone core does not serve yet (S25 step 1,
 /// item 2): exact names, or prefixes ending in a dot.
-const UNPORTED: &[&str] = &["terminal."];
+const UNPORTED: &[&str] = &[];
 
 fn unported(method: &str) -> bool {
     UNPORTED.iter().any(|entry| {
@@ -138,6 +139,13 @@ impl ClientSink for PeerSink {
             binary: false,
             context: Some(context.to_owned()),
             key: key.map(str::to_owned),
+        });
+    }
+
+    fn drop_coalesced(&self, socket_id: u64, key: &str) {
+        self.0.send(&Message::WsDrop {
+            socket_id,
+            key: key.to_owned(),
         });
     }
 
@@ -418,6 +426,7 @@ impl Inner {
         fields.insert("client".into(), info.label.clone().into());
         fields.insert("clients".into(), clients.len().into());
         bridge_logger().debug("client connected", Some(&fields));
+        self.client_count_changed(clients.len());
         let default_id = match self.manager().await {
             Some(manager) => manager.default_id(),
             None => LEGACY_DEFAULT_CONNECTION_ID.to_owned(),
@@ -439,6 +448,29 @@ impl Inner {
         };
         clients.send(open.socket_id, forwards.to_string(), "forwards", None);
         json!({"accepted": true, "transport": "ws"})
+    }
+
+    /// The number of browsers changed: with none, the terminal bridges'
+    /// clipboard relays have no consumer left.
+    fn client_count_changed(&self, count: usize) {
+        if let Some(layer) = self.layer.get() {
+            for composition in layer.runtimes.compositions() {
+                composition.bridge.browser_client_count_changed(count);
+            }
+        }
+    }
+
+    /// `bridge.status`'s terminals: the default connection's.
+    fn status_terminals(&self) -> Vec<Value> {
+        let (Some(layer), Some(manager)) = (self.layer.get(), self.host.manager_now()) else {
+            return Vec::new();
+        };
+        let id = manager.default_id();
+        manager
+            .ready_runtime(&id)
+            .and_then(|runtime| layer.runtimes.composition(&id, runtime.generation()))
+            .map(|composition| composition.bridge.status_terminals())
+            .unwrap_or_default()
     }
 
     /// A notification feed socket opened: never from another site nor a
@@ -486,6 +518,10 @@ impl Inner {
         self.deltas.lock().unwrap().remove(&socket_id);
         if let Some(layer) = self.layer.get() {
             layer.session_versions.socket_closed(socket_id);
+            // The socket's terminals go with it.
+            for composition in layer.runtimes.compositions() {
+                composition.bridge.cleanup_socket(socket_id);
+            }
         }
         let Some(clients) = self.clients() else {
             return;
@@ -503,6 +539,7 @@ impl Inner {
             fields.insert("reason".into(), reason.into());
         }
         bridge_logger().debug("client disconnected", Some(&fields));
+        self.client_count_changed(clients.len());
         // The families' state of the socket goes with it.
         if let Some(standalone) = &cx.standalone {
             let closed = standalone.call(
@@ -658,8 +695,7 @@ impl Inner {
                 return send(publisher.result(
                     json!({
                         "clients": clients.len(),
-                        // The terminal bridge is the composition root's: none yet.
-                        "terminals": [],
+                        "terminals": self.status_terminals(),
                         "default_connection_id": list["default_connection_id"],
                         "connections": list["connections"],
                     }),
@@ -708,6 +744,7 @@ impl Inner {
                 connection_id: resolved.lease.connection_id.clone(),
                 generation: resolved.lease.generation,
                 is_current: Arc::new(move || lease.is_current()),
+                socket_id,
             },
         )
         .await;
@@ -1039,7 +1076,7 @@ mod tests {
 
     #[test]
     fn the_methods_bun_answered_itself_are_named() {
-        assert!(unported("terminal.attach"));
+        assert!(!unported("terminal.attach"));
         for method in [
             "agent.list",
             "forward.open",

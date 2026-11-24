@@ -248,10 +248,15 @@ Bun core runs never takes it from the front's environment).
   versions, `connections.agent_sessions` as changes from the version the
   socket holds, the agent profiles' settings, the forge chips and
   sessions, the port forwards with their registry's push and the hello's
-  list). A method Bun answered with
-  its own code that the core does not serve yet (the terminal bridge's
-  `terminal.*`, creation from a browser terminal) fails with code
-  `standalone_unported`.
+  list), and the `terminal.*` RPCs and creation from a browser terminal
+  (`tab.create`, `workspace.create` with `browser_source`, the
+  empty-session bootstrap included) by the generation's terminal bridge
+  (endpoint generation 1 sessions or the legacy direct client, streams
+  shared by their viewers and kept warm, frames cropped to each viewer's
+  size and sent with Bun's coalescing keys, the popup observer, the
+  clipboard relay of Herdr before protocol 22). A method Bun answered
+  with its own code that the core would not serve fails with code
+  `standalone_unported`; none is left.
   A connection's endpoints that a family declares (`agent_sessions`'
   downloads, `workspace`'s file routes) reach the `front` family first
   when their `ctx` names no connection: it resolves the connection and
@@ -279,7 +284,14 @@ Bun core runs never takes it from the front's environment).
   the usage limit resumer's pokes, the notifications a pane's events
   withdraw, Ranger's connection table, the claude start hook, and the
   review family's agents: `internal.review.agents` with this machine's
-  socket key, on each status change and every second when changed).
+  socket key and each SSH connection's, on each status change and every
+  second when changed), and each generation's composition: the terminal
+  bridge, the task events (Herdr's semantic notifications on a passive
+  endpoint shell, or Roamgate's own status tracker, labelled from Herdr
+  and published to the feed, relayed to the pages as
+  `roamgate.task_notification`), the tab auto-renamer; `.master_ready`
+  sets an SSH host's review client up over the connection's master, its
+  socket forwarded to the connection's agent socket.
   `server.scheduleExit` goes on to the front as the reverse call it is:
   the Rust front answers `{scheduled: true}` and a second later stops as
   on a signal, with code 0.

@@ -8,7 +8,8 @@
 //! - [`runtime`]: each connection generation's layer Bun built
 //!   (`host.runtime_start`, `.runtime_stop`, `.events`, `.status`,
 //!   `.master_ready`): what its events and status changes fed the other
-//!   families.
+//!   families; [`composition`]: its terminal bridge, task events and tab
+//!   renamer.
 //! - [`connections`]: `connections.*`, `herdr.*`, `host.run`,
 //!   `workspace.ssh_run`, `activity.hostScript`, `agent_sessions.*`,
 //!   `agent.transcript_tail`, `agents.addresses`.
@@ -55,6 +56,7 @@ use super::host::HostHandle;
 
 mod assistant;
 pub(crate) mod browser;
+pub(crate) mod composition;
 mod connections;
 mod conversation;
 pub(crate) mod feed;
@@ -122,9 +124,12 @@ pub(crate) struct Layer {
     settings: Mutex<(Option<u64>, Option<Value>)>,
     /// The review agents' state the review family was told last.
     review_agents: Mutex<String>,
+    /// The connections whose agent socket the review family listens on
+    /// (an SSH host's, forwarded over its master).
+    review_agent_sockets: Mutex<std::collections::BTreeSet<String>>,
+    /// The SSH connections whose host has the review client set up.
+    review_agent_hosts: Mutex<HashSet<String>>,
     pub(crate) runtimes: runtime::Runtimes,
-    /// Each connection's Herdr protocol, by generation.
-    protocols: Mutex<HashMap<String, (u64, i64)>>,
     /// The `connections.agent_sessions` answers each socket holds.
     pub(crate) session_versions: browser::SessionVersions,
 }
@@ -195,8 +200,9 @@ impl Layer {
             hooked: Mutex::default(),
             settings: Mutex::default(),
             review_agents: Mutex::default(),
+            review_agent_sockets: Mutex::default(),
+            review_agent_hosts: Mutex::default(),
             runtimes: runtime::Runtimes::default(),
-            protocols: Mutex::default(),
             session_versions: browser::SessionVersions::default(),
         }
     }
