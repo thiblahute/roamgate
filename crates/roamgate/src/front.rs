@@ -156,7 +156,8 @@ fn built_public_dir(sidecar_bin: Option<&str>) -> Option<PathBuf> {
     }
 }
 
-async fn shutdown() {
+/// A signal, or the core's `server.scheduleExit` (`exit`).
+async fn shutdown(exit: Arc<tokio::sync::Notify>) {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
@@ -164,10 +165,14 @@ async fn shutdown() {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {}
             _ = term.recv() => {}
+            () = exit.notified() => {}
         }
     }
     #[cfg(not(unix))]
-    let _ = tokio::signal::ctrl_c().await;
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        () = exit.notified() => {}
+    }
 }
 
 pub async fn run(args: &[String]) -> u8 {
@@ -437,6 +442,7 @@ pub async fn run(args: &[String]) -> u8 {
             core_stop.clone(),
         ))
     });
+    let exit_now = Arc::new(tokio::sync::Notify::new());
     let standalone_core = standalone.then(|| StandaloneCore {
         test_clock: virtual_clock
             .clone()
@@ -452,6 +458,18 @@ pub async fn run(args: &[String]) -> u8 {
             "auth_required": config.auth_required,
             "generations": {},
         }),
+        // index.ts `scheduleManagedShutdown`: a second, then the server
+        // stops as on a signal, with code 0.
+        schedule_exit: {
+            let exit = exit_now.clone();
+            Arc::new(move || {
+                let exit = exit.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    exit.notify_one();
+                });
+            })
+        },
     });
     let sidecar = tokio::spawn(run_sidecar(
         SidecarConfig {
@@ -492,7 +510,7 @@ pub async fn run(args: &[String]) -> u8 {
             Ok(listener) => {
                 use axum::serve::ListenerExt;
                 axum::serve(listener.tap_io(|_| {}), service)
-                    .with_graceful_shutdown(shutdown())
+                    .with_graceful_shutdown(shutdown(exit_now.clone()))
                     .await
             }
             Err(error) => Err(error),
@@ -507,7 +525,7 @@ pub async fn run(args: &[String]) -> u8 {
                 }),
                 service,
             )
-            .with_graceful_shutdown(shutdown())
+            .with_graceful_shutdown(shutdown(exit_now.clone()))
             .await
         }
     };

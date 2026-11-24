@@ -164,14 +164,46 @@ impl Sockets {
     }
 }
 
+/// What the front does when its standalone core asks it to exit.
+pub type ScheduleExit = Arc<dyn Fn() + Send + Sync>;
+
 /// The front's handler of the core's messages.
 pub struct FrontHandler {
     pub sockets: Sockets,
+    /// Set for a standalone core: `server.scheduleExit` (after an install
+    /// the supervisor starts the new one) is the front's to do.
+    pub schedule_exit: Option<ScheduleExit>,
 }
 
 impl Handler for FrontHandler {
     fn socket(&self, _peer: &Peer, message: Message) {
         self.sockets.from_core(message);
+    }
+
+    fn reverse_call(
+        &self,
+        _peer: &Peer,
+        target: String,
+        _args: Value,
+        _ctx: Ctx,
+    ) -> roamgate_sidecar::peer::BoxFuture<Result<Value, roamgate_sidecar::protocol::RpcError>>
+    {
+        let exit = self
+            .schedule_exit
+            .clone()
+            .filter(|_| target == "server.scheduleExit");
+        Box::pin(async move {
+            match exit {
+                Some(exit) => {
+                    exit();
+                    Ok(serde_json::json!({"scheduled": true}))
+                }
+                None => Err(roamgate_sidecar::protocol::RpcError::with_code(
+                    format!("unknown target {target}"),
+                    "unknown_target",
+                )),
+            }
+        })
     }
 }
 

@@ -78,6 +78,9 @@ pub struct StandaloneCore {
     pub test_clock: Option<SharedClock>,
     /// `internal.front.start`'s params: the server's configuration.
     pub start: Value,
+    /// The core's `server.scheduleExit`: the front exits (code 0) a
+    /// moment later, for its supervisor to start the new install.
+    pub schedule_exit: super::ScheduleExit,
 }
 
 #[derive(Clone)]
@@ -202,6 +205,10 @@ async fn run_once(
     };
     let handler = Arc::new(FrontHandler {
         sockets: sockets.clone(),
+        schedule_exit: config
+            .standalone
+            .as_ref()
+            .map(|core| core.schedule_exit.clone()),
     });
     let peer = Peer::start(stream, handler, PeerOptions::front(config.clock.clone()));
     // A standalone core hears the server's configuration (and starts the

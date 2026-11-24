@@ -107,6 +107,7 @@ async fn setup(with_core: bool) -> Setup {
             Box::new(front_end),
             Arc::new(FrontHandler {
                 sockets: sockets.clone(),
+                schedule_exit: None,
             }),
             PeerOptions::core(shared(&clock)),
         );
@@ -343,4 +344,38 @@ async fn browser_sockets_are_terminated_here_and_driven_by_the_core() {
             ..
         }
     ));
+}
+
+#[tokio::test]
+async fn a_standalone_core_s_schedule_exit_is_the_front_s_and_nothing_else() {
+    let clock = ManualClock::at(NOW);
+    let exits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (front_end, core_end) = tokio::io::duplex(1 << 16);
+    let counted = exits.clone();
+    let _front = Peer::start(
+        Box::new(front_end),
+        Arc::new(FrontHandler {
+            sockets: Sockets::default(),
+            schedule_exit: Some(Arc::new(move || {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            })),
+        }),
+        PeerOptions::front(shared(&clock)),
+    );
+    let core = Peer::start(
+        Box::new(core_end),
+        Arc::new(FakeCore::default()),
+        PeerOptions::core(shared(&clock)),
+    );
+    let answer = core
+        .reverse_call("server.scheduleExit", json!({}), Ctx::default())
+        .await
+        .unwrap();
+    assert_eq!(answer, json!({"scheduled": true}));
+    assert_eq!(exits.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let other = core
+        .reverse_call("herdr.call", json!({}), Ctx::default())
+        .await
+        .unwrap_err();
+    assert_eq!(other.code.as_deref(), Some("unknown_target"));
 }

@@ -75,6 +75,7 @@ pub async fn run_rust_core_link(
         number += 1;
         let handler = Arc::new(FrontHandler {
             sockets: sockets.clone(),
+            schedule_exit: None,
         });
         let peer = Peer::start(stream, handler, PeerOptions::front(config.clock.clone()));
         if let Some((before, old)) = link.send_replace(Some((number, peer.clone()))) {
