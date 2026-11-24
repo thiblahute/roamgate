@@ -326,6 +326,10 @@ fn windows_tunnel(args: &SshTunnelArgs) -> Result<WindowsTunnel, SshTunnelError>
 // Hard cap on the HOME probe: a stuck probe blocks the whole connection.
 const REMOTE_HOME_PROBE_TIMEOUT_MS: u64 = 20_000;
 
+// How long the HOME probe waits for the command master starting beside
+// the tunnel, so it goes through it instead of logging in again.
+const MASTER_WAIT_MS: u64 = 2_000;
+
 type Task = Shared<BoxFuture<Result<(), TunnelError>>>;
 
 #[derive(Default)]
@@ -334,6 +338,8 @@ struct TunnelState {
     /// tunnels forward Herdr's socket directly from then on.
     relay_unavailable: bool,
     cached_home: Option<(String, String)>,
+    /// The command master's last start: whether it serves, once settled.
+    master_start: Option<Shared<BoxFuture<bool>>>,
     proc: Option<SupervisedSsh>,
     stop_task: Option<Task>,
     paths: Vec<String>,
@@ -454,6 +460,7 @@ impl SshTunnelManager {
         {
             return Ok(home.clone());
         }
+        self.wait_for_master().await;
         let mut command = self
             .inner
             .args
@@ -475,6 +482,20 @@ impl SshTunnelManager {
         }
         self.lock().cached_home = Some((host.to_owned(), home.clone()));
         Ok(home)
+    }
+
+    /// The command master's start settled (ready or not), or
+    /// [`MASTER_WAIT_MS`] passed: a command after it goes through the
+    /// master when it serves, else logs in itself as before.
+    async fn wait_for_master(&self) {
+        let Some(start) = self.lock().master_start.clone() else {
+            return;
+        };
+        let clock = self.inner.args.sessions.clock().clone();
+        tokio::select! {
+            _ = start => {}
+            _ = clock.sleep(Duration::from_millis(MASTER_WAIT_MS)) => {}
+        }
     }
 
     async fn remote_socket(&self, host: &str, control: bool) -> Result<String, TunnelError> {
@@ -589,10 +610,11 @@ impl SshTunnelManager {
             return Ok(());
         };
         assert_ssh_tunnel_platform_supported(self.inner.args.deps.windows)?;
-        // Started beside the tunnel and never awaited: until it is ready,
-        // commands (the HOME probe too) open their own connection.
+        // Started beside the tunnel: until it is ready, commands open their
+        // own connection; the HOME probe waits for it a moment first.
         if let Some(master) = &self.inner.master {
-            drop(master.ensure());
+            let start = master.ensure().shared();
+            self.lock().master_start = Some(start);
         }
         let generation = self.bump();
         self.stop_tunnel_process().await?;

@@ -919,3 +919,102 @@ async fn forwards_directly_when_the_runtime_does_not_ask_for_the_relay() {
     assert!(children.argv.lock().unwrap()[0].contains(&"-N".to_owned()));
     manager.cleanup().await.unwrap();
 }
+
+// The HOME probe and the command master starting beside the tunnel.
+
+/// A master whose start settles after `ready_after` (never when None).
+struct SlowMaster {
+    ready_after: Option<Duration>,
+    clock: roamgate_base::clock::SharedClock,
+}
+
+impl MasterControl for SlowMaster {
+    fn ensure(&self) -> BoxFuture<bool> {
+        let ready_after = self.ready_after;
+        let clock = self.clock.clone();
+        Box::pin(async move {
+            match ready_after {
+                Some(after) => {
+                    clock.sleep(after).await;
+                    true
+                }
+                None => std::future::pending().await,
+            }
+        })
+    }
+
+    fn stop(&self) -> BoxFuture<Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// When the HOME probe ran, after the start.
+async fn probe_delay(ready_after: Option<Duration>) -> Duration {
+    probe_delay_with(Some(ready_after)).await
+}
+
+/// [`probe_delay`], with a master (its start settling after the given
+/// time, or never) or none.
+async fn probe_delay_with(master: Option<Option<Duration>>) -> Duration {
+    let clock: roamgate_base::clock::SharedClock =
+        Arc::new(roamgate_base::clock::TokioClock::starting_at(0));
+    let started = clock.monotonic();
+    let probe_clock = clock.clone();
+    let probed: Arc<Mutex<Option<Duration>>> = Arc::default();
+    let seen = probed.clone();
+    let run: RunProcess = Arc::new(move |_, _, _| {
+        let elapsed = probe_clock.monotonic() - started;
+        *seen.lock().unwrap() = Some(Duration::from_millis(elapsed as u64));
+        Box::pin(async {
+            Ok(ProcessOutput {
+                stdout: "/home/test".into(),
+                stderr: String::new(),
+            })
+        })
+    });
+    let mut config = config();
+    config.owned_runtime_directory = Some("/tmp/private-m".into());
+    config.master_control_path = master.map(|_| "/tmp/private-m/m.ctl".into());
+    let ready_after = master.flatten();
+    let children = Children::default();
+    let manager = manager(
+        config,
+        run,
+        TunnelDeps {
+            spawn: children.spawn(exits_on_kill),
+            create_master: Some(Arc::new(move |_, _| {
+                Arc::new(SlowMaster {
+                    ready_after,
+                    clock: clock.clone(),
+                }) as Arc<dyn MasterControl>
+            })),
+            ..deps()
+        },
+    );
+    manager.start().await.unwrap();
+    manager.cleanup().await.unwrap();
+    probed.lock().unwrap().unwrap()
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_home_probe_waits_for_the_starting_master() {
+    let delay = probe_delay(Some(Duration::from_millis(300))).await;
+    assert!(
+        delay >= Duration::from_millis(300) && delay < Duration::from_millis(2_000),
+        "{delay:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_home_probe_logs_in_itself_when_the_master_is_slow() {
+    let delay = probe_delay(None).await;
+    assert!(
+        delay >= Duration::from_millis(2_000) && delay < Duration::from_millis(2_100),
+        "{delay:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_home_probe_does_not_wait_without_a_master() {
+    assert_eq!(probe_delay_with(None).await, Duration::ZERO);
+}
