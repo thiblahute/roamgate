@@ -15,6 +15,7 @@
 //! | [`terminal_upload`] | dropped files and pasted images staged privately, copied over SSH | http/terminal-upload, http/image-upload |
 //! | [`rendered_pages`] | pages of rendered reviews under `/rendered/<token>/`, their sites' storage | http/rendered-pages, http/rendered-storage, http/rendered-helper |
 //! | [`list_delta`] | topology lists answered as changes | bridge/list-delta |
+//! | [`browser_rpc`] | the `/ws` socket's browsers, hello, request checks and routing, replies, pushes and RPC log lines | index.ts handleRpc, websocket, deliverCorePush |
 //! | [`rpc_reply`] | an RPC's reply in its connection's envelope | connections/protocol `serializeConnectionEnvelope` |
 //! | [`forward_rpc`] | the `forward.*` RPCs over the SSH forwards registry | bridge/forward-rpc |
 //! | [`history`] | `/api/history`: local history's status, settings and passes | http/history |
@@ -22,6 +23,7 @@
 
 pub mod auth;
 pub mod body;
+pub mod browser_rpc;
 pub mod forward_rpc;
 pub mod frame_to_ansi;
 pub mod front;

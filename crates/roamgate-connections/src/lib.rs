@@ -3,7 +3,7 @@
 //! host layer of S16: the profile service, the runtime of a generation the
 //! core owns and the front's SSH commands (the `host` family's channel
 //! adapter is in the `roamgate` binary), then S21's: every connection's
-//! agents, tab titles and agent profiles; routing comes with S18.
+//! agents, tab titles and agent profiles, and S25's routing of browser requests.
 //!
 //! | Module | What |
 //! |---|---|
@@ -23,6 +23,7 @@
 //! | [`agent_summaries`] | every ready connection's agents and their side tasks at once (connections/agent-sessions.ts, agent-tasks.ts) |
 //! | [`agent_tab_title`] | the title of a pane's agent session for its tab (connections/agent-tab-title.ts) |
 //! | [`tab_auto_rename`] | tabs named after their agent's session (connections/tab-auto-rename.ts) |
+//! | [`routing`] | which connection a browser RPC or HTTP route is for, the connection envelope (connections/protocol.ts, rpc-routing.ts, http-routing.ts) |
 //! | [`host_ops`] | the front's SSH commands run or held in the core's session slots (bridge/ssh-sessions.ts) |
 
 pub use roamgate_agents::shared::agent_models;
@@ -37,6 +38,7 @@ pub mod manager;
 pub mod network_watch;
 pub mod profile_service;
 pub mod profiles;
+pub mod routing;
 pub mod ssh_guard;
 pub mod ssh_profile_runtime;
 pub mod subscription_loop;

@@ -23,14 +23,17 @@ async fn main() -> ExitCode {
             println!("{}", version_line());
             ExitCode::SUCCESS
         }
-        Options::Core => ExitCode::from(
-            roamgate_sidecar::core::run_core(
-                &roamgate_base::env::ProcessEnv,
-                roamgate::VERSION,
-                roamgate::core_families(),
+        Options::Core => {
+            let env = roamgate_base::env::ProcessEnv;
+            let families = if roamgate_sidecar::core::standalone_on(&env) {
+                roamgate::standalone_families()
+            } else {
+                roamgate::core_families()
+            };
+            ExitCode::from(
+                roamgate_sidecar::core::run_core(&env, roamgate::VERSION, families).await,
             )
-            .await,
-        ),
+        }
         Options::Front(args) => ExitCode::from(roamgate::front::run(&args).await),
         Options::Owners(args) => {
             let (code, out, err) =

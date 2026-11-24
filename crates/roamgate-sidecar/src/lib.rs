@@ -13,6 +13,7 @@
 //! | [`shadow`] | sampling shadow reads, the gaming pause, shadow.jsonl |
 //! | [`core`] | `roamgate core`, the process the Bun server spawns |
 //! | [`family`] | what a family the core serves implements |
+//! | [`standalone`] | the core with no Bun: reverse targets and pushes in its own process |
 
 pub mod core;
 pub mod family;
@@ -21,4 +22,5 @@ pub mod owners;
 pub mod peer;
 pub mod protocol;
 pub mod shadow;
+pub mod standalone;
 pub mod transport;

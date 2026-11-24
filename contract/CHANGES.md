@@ -6,6 +6,28 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.32
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+The Rust front runs without Bun (S25 cut-over, decision D1;
+wire/core-channel.md, The standalone core): without
+`ROAMGATE_SIDECAR_BIN` it spawns its own executable as `roamgate core` with
+the new `ROAMGATE_CORE_STANDALONE=1` (`0` on a Bun core), welcomes it with
+every family Rust's and sends it every route and socket it does not serve
+itself. The front's new internal calls `internal.front.start` (the server's
+configuration; the connections start) and `internal.front.stop` (at its
+shutdown) go to the core's new `front` family, which terminates `/ws` (the
+hello, RPC routing to connections and families, replies, pushes,
+`bridge.ping`, `bridge.status`, `bridge.pause_others`, Herdr pass-through
+with list deltas), answers `/api/health` and the connection-scoped routes,
+and refuses what Bun answered with its own code and no family serves yet
+(`standalone_unported`). A standalone core answers reverse targets in its
+own process (`unknown_target` for one nobody registered) and delivers its
+pushes to its own `/ws` sockets. The hybrid modes and the browser surface
+are unchanged; the inventory too. `roamgate.bun` next to the front's
+executable is no longer looked for.
+
 ## 1.31
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

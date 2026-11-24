@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use crate::owners::Owners;
 use crate::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall, Peer, WsOpen};
 use crate::protocol::{Ctx, Message, Push, RpcError};
+use crate::standalone::Standalone;
 
 /// The prefix of the front's own calls to a family (`internal.<family>.<op>`):
 /// no family of contract/owners/families.json declares it, so a browser
@@ -25,17 +26,38 @@ pub struct FamilyContext {
     /// The families' clock: the real one, or the front's test clock
     /// followed (`welcome.clock` and `internal.clock.advance`).
     pub clock: SharedClock,
+    /// Set in a standalone core (no Bun anywhere): reverse targets are
+    /// answered in this process, pushes go to the browser sockets it
+    /// holds, and a family may call another one.
+    pub standalone: Option<Arc<Standalone>>,
 }
 
 impl FamilyContext {
-    /// A call into what the front owns.
+    /// A call into what the front owns: in a standalone core, the target
+    /// the binary registered in this process.
     pub async fn reverse(&self, target: &str, args: Value) -> Result<Value, RpcError> {
-        self.peer.reverse_call(target, args, Ctx::default()).await
+        self.reverse_with(target, args, Ctx::default()).await
     }
 
-    /// A push to browsers.
+    /// A reverse call with the request's context.
+    pub async fn reverse_with(
+        &self,
+        target: &str,
+        args: Value,
+        ctx: Ctx,
+    ) -> Result<Value, RpcError> {
+        match &self.standalone {
+            Some(standalone) => standalone.reverse(self, target, args, ctx).await,
+            None => self.peer.reverse_call(target, args, ctx).await,
+        }
+    }
+
+    /// A push to browsers: in a standalone core, to the sockets it holds.
     pub fn push(&self, push: Push) {
-        self.peer.push(push);
+        match &self.standalone {
+            Some(standalone) => standalone.push(push),
+            None => self.peer.push(push),
+        }
     }
 }
 

@@ -126,3 +126,12 @@ an explicitly empty value; flags of the server override both.
 | `ROAMGATE_CORE_TOKEN`                  | set by a Rust front: the token the Bun core's `hello` gives on `ROAMGATE_CORE_CHANNEL`                                                              | `core-channel/sidecar.ts`                                                                                                                                                                                                          |
 | `ROAMGATE_TEST_VOICE_HARDWARE`         | from source only: a JSON file with the hardware `GET /api/voice/setup` reports instead of the host's                                                | `voice/voice-test-env.ts`                                                                                                                                                                                                          |
 | `ROAMGATE_TEST_VOICE_MODELS_URL`       | from source only: base URL of voice model downloads (`https://host/path` becomes `<base>/host/path`)                                                | `voice/voice-test-env.ts`                                                                                                                                                                                                          |
+
+Variables only the Rust binary reads are documented with what reads them,
+not in the table above (the check compares it with what the Bun server
+reads): `ROAMGATE_SIDECAR_BIN`, `ROAMGATE_FRONT_CHANNEL`,
+`ROAMGATE_FRONT_TOKEN`, `ROAMGATE_CORE_SERVED_LOG` and:
+
+- `ROAMGATE_CORE_STANDALONE`: set by a Rust front on the core it runs:
+  `1` for its own executable as the standalone core (no Bun anywhere),
+  `0` for a Bun core (wire/core-channel.md, The standalone core).

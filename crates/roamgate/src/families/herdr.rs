@@ -38,12 +38,12 @@ impl HerdrFamily {
             .get_or_init(|| {
                 let env: Arc<dyn Env> = Arc::new(ProcessEnv);
                 let cli = Arc::new(herdr_cli(env.clone(), cx.clock.clone()));
-                let guard_peer = cx.peer.clone();
-                let ping_peer = cx.peer.clone();
+                let guard_cx = cx.clone();
+                let ping_cx = cx.clone();
                 let ping: Ping = Arc::new(move || {
-                    let peer = ping_peer.clone();
+                    let cx = ping_cx.clone();
                     Box::pin(async move {
-                        peer.reverse_call("herdr.ping", json!({}), Default::default())
+                        cx.reverse("herdr.ping", json!({}))
                             .await
                             .map_err(|error| error.message)
                     })
@@ -51,9 +51,9 @@ impl HerdrFamily {
                 let make = cli.clone();
                 Arc::new(SetupHandlers::new(
                     Arc::new(move || {
-                        let peer = guard_peer.clone();
+                        let cx = guard_cx.clone();
                         Box::pin(async move {
-                            peer.reverse_call("herdr.setupGuard", json!({}), Default::default())
+                            cx.reverse("herdr.setupGuard", json!({}))
                                 .await
                                 .map(|guard| SetupGuard::from_json(&guard))
                                 .map_err(|error| error.message)

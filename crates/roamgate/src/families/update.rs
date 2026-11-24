@@ -87,7 +87,7 @@ impl UpdateFamily {
         self.handlers
             .get_or_init(|| {
                 let front = front_executable(&ProcessEnv);
-                let peer = cx.peer.clone();
+                let reverse_cx = cx.clone();
                 Arc::new(UpdateHandlers::new(
                     front.version,
                     system_run_process(ProcessRunner::new(cx.clock.clone())),
@@ -100,12 +100,9 @@ impl UpdateFamily {
                     Arc::new(ProcessEnv),
                     cx.clock.clone(),
                     Arc::new(move || {
-                        let peer = peer.clone();
+                        let cx = reverse_cx.clone();
                         tokio::spawn(async move {
-                            if let Err(error) = peer
-                                .reverse_call("server.scheduleExit", json!({}), Default::default())
-                                .await
-                            {
+                            if let Err(error) = cx.reverse("server.scheduleExit", json!({})).await {
                                 tracing::warn!(
                                     scope = "core.update",
                                     "the front did not schedule its restart after an update: {}",

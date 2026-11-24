@@ -73,6 +73,7 @@ async fn a_shadow_read_answers_within_its_wait_and_the_next_one_sees_the_slow_lo
         // Bun owns every family: the observer answers.
         owners: Owners::new(Side::Rust, false),
         clock,
+        standalone: None,
     };
     let family = roamgate::families::limit_resume::family().unwrap();
     let list = || {

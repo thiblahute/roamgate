@@ -61,12 +61,41 @@ pub const FAMILY: &str = "host";
 
 /// The family, once this build implements it.
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
-    Some(Arc::new(HostFamily(Arc::new(Inner {
+    Some(family_with_handle().0)
+}
+
+/// The family, and what the standalone core's front family reads of it.
+pub fn family_with_handle() -> (Arc<dyn CoreFamily>, HostHandle) {
+    let inner = Arc::new(Inner {
         state: Mutex::default(),
         holds: HoldRegistry::default(),
         ops: Mutex::new(None),
         running_now: tokio::sync::watch::channel(false).0,
-    }))))
+    });
+    (Arc::new(HostFamily(inner.clone())), HostHandle(inner))
+}
+
+/// The connections as the standalone core's front family routes browser
+/// requests to them.
+#[derive(Clone)]
+pub struct HostHandle(Arc<Inner>);
+
+impl HostHandle {
+    /// The connection manager once the connections run, waiting at most
+    /// `wait` for their start.
+    pub async fn manager(&self, wait: Duration) -> Option<ConnectionManager<HostRuntime>> {
+        if let Some(running) = self.0.running() {
+            return Some(running.manager);
+        }
+        let mut watch = self.0.running_now.subscribe();
+        let _ = tokio::time::timeout(wait, watch.wait_for(|running| *running)).await;
+        self.0.running().map(|running| running.manager)
+    }
+
+    /// `connections.list`'s answer, while the connections run.
+    pub fn list(&self) -> Option<Value> {
+        self.0.running().map(|running| Inner::list(&running))
+    }
 }
 
 /// The legacy connection as the front was started with it.

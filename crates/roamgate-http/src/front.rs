@@ -1,7 +1,8 @@
 //! The Rust front (contract/wire/core-channel.md, Stage 2): Rust holds the
 //! port, the auth gate and its logins, the web app's files and the `/ws`
-//! transport; every other route, and every browser socket, is the Bun
-//! core's, reached over the core channel. The core runs its own routing on
+//! transport; every other route, and every browser socket, is the core's
+//! (the Bun server, or the standalone `roamgate core`), reached over the
+//! core channel. The core runs its own routing on
 //! what it gets, gate included, so a route keeps its checks whichever side
 //! answers it.
 //!
@@ -33,7 +34,7 @@ mod rust_core;
 mod sidecar;
 
 pub use rust_core::{RustCoreLinkConfig, link_token, run_rust_core_link};
-pub use sidecar::{SidecarCommand, SidecarConfig, run_sidecar};
+pub use sidecar::{SidecarCommand, SidecarConfig, StandaloneCore, run_sidecar};
 
 /// The prefix of a rendered page's frame (shared/renderedPage.ts).
 const RENDERED_PREFIX: &str = "/rendered/";

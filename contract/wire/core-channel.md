@@ -135,7 +135,7 @@ says `hello` with `side: "bun"`, every message above keeps its meaning.
 
 | Variable                | Read by    | Meaning                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ROAMGATE_SIDECAR_BIN`  | Rust front | The Bun server to run as the core: an executable (the Bun `roamgate`), or a `.ts` file run with `bun`. Its arguments are the front's server flags. Unset: the front looks for `roamgate.bun` next to its own executable.                                                                                                                                                          |
+| `ROAMGATE_SIDECAR_BIN`  | Rust front | The Bun server to run as the core: an executable (the Bun `roamgate`), or a `.ts` file run with `bun`. Its arguments are the front's server flags. Unset or empty: no Bun, the front runs its own executable as the standalone core (The standalone core below).                                                                                                                  |
 | `ROAMGATE_CORE_CHANNEL` | Bun core   | As above. Set: the Bun server opens no port; it connects, says `hello` and serves what the front forwards. Its CLI is unchanged. With `ROAMGATE_CORE_BIN` (passed on by the front) it runs the Rust core as in stage 1: the owners table gives it its families, handed over as above; the front sets `ROAMGATE_CLI_EXEC` to its own executable, which the update family replaces. |
 
 What the Rust front serves itself: `/health` and `/healthz`, the URL-token
@@ -199,6 +199,56 @@ signalling that is not the call owner's, or from another site: 403
 Bun core as for every other socket. The socket's `ws_message` and
 `ws_close` then go on the link, and the core's `ws_send` and `ws_end` come
 back on it; the messages and their meaning are the table's above.
+
+### The standalone core
+
+Without `ROAMGATE_SIDECAR_BIN` the Rust front runs no Bun: it spawns its
+own executable as `roamgate core`, on this channel, as the spawner it is
+for a Bun core (supervision, `bye`, the test clock relay), and sets
+`ROAMGATE_CORE_STANDALONE=1` on it (`0` on a Bun core, so a Rust core the
+Bun core runs never takes it from the front's environment).
+
+| Variable                   | Read by   | Meaning                                                                                                                                                       |
+| -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ROAMGATE_CORE_STANDALONE` | Rust core | `1`: the core is a Rust front's own, with no Bun anywhere; anything else: a core beside or behind the Bun server, as above. Set by the Rust front on its core. |
+
+- The front's `welcome` gives the core every family of
+  `owners/families.json` (no owners table is read or written), with
+  `clock` when the front runs on a test clock; each `advance` of the
+  front's clock is then relayed as `internal.clock.advance` (no
+  `ROAMGATE_TEST_CLOCK` of its own: the front sets it empty). There is no
+  link (`ROAMGATE_FRONT_CHANNEL` is not set): every browser socket and
+  every route the front does not serve itself go to the core on the
+  channel, `ws_open` included.
+- Before any browser request reaches it, the front calls
+  `internal.front.start` with the server's configuration (`socket_path`,
+  `client_socket_path`, `ssh_host`, `session`, `has_explicit_socket_path`,
+  `has_explicit_client_socket_path`, `task_notification_source`,
+  `auth_required`, `generations`); the core starts its connections from it
+  (the host family's `internal.host.start`) and answers at once. At its
+  shutdown the front calls `internal.front.stop` (the connections stop,
+  at most 10 s) before `bye`.
+- The core's `front` family takes what no family declares: the `/ws`
+  socket (Bun's routing: the hello and the forwards registry on open, each
+  RPC checked, routed to its connection and then to the family that
+  declares its method, replies in the connection's envelope,
+  `bridge.ping`, `bridge.status`, `bridge.pause_others`, and a
+  connection's other methods passed through to its Herdr, topology lists
+  as deltas), `/api/health`, and the connection-scoped routes
+  (`/api/connections/<id>/...` and their legacy paths: `herdr-info` from
+  the connection's Herdr, the file and agent-session routes from their
+  families at their legacy paths, the connection in `ctx`). A method Bun
+  answered with its own code that no family declares yet fails with code
+  `standalone_unported`; `/api/notifications/ws` is refused with 503 until
+  the notification feed is ported.
+- Reverse targets are answered in the core's own process, from a registry
+  the binary fills; a target nobody registered fails with code
+  `unknown_target`, its message naming it. A debug core notes each such
+  failure in `ROAMGATE_CORE_SERVED_LOG` as `reverse-missing <target>`, and
+  each refused method or route as `unported <what>`.
+- Pushes go to the `/ws` sockets the core holds, as `ws_send` with
+  context `core-push` and the push's key, filtered and enveloped as the Bun
+  front delivers them.
 
 ### Reverse targets
 

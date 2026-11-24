@@ -1,7 +1,9 @@
 //! `roamgate front [server flags]` (hidden): the Rust front of stage 2
-//! (contract/wire/core-channel.md), with the Bun server as its portless
-//! core. Reads the server's configuration as the Bun server does, holds
-//! the port and serves until SIGTERM or Ctrl-C.
+//! (contract/wire/core-channel.md), with the Bun server
+//! `ROAMGATE_SIDECAR_BIN` names as its portless core, or without it its own
+//! executable as the standalone `roamgate core` (no Bun). Reads the
+//! server's configuration as the Bun server does, holds the port and
+//! serves until SIGTERM or Ctrl-C.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -20,9 +22,11 @@ use roamgate_cli::herdr::HerdrCli;
 use roamgate_cli::server_config::load_server_config;
 use roamgate_http::auth::{Auth, AuthConfig};
 use roamgate_http::front::{
-    Front, RustCoreLinkConfig, SidecarCommand, SidecarConfig, Sockets, app, link_token,
-    run_rust_core_link, run_sidecar, static_dirs,
+    Front, RustCoreLinkConfig, SidecarCommand, SidecarConfig, Sockets, StandaloneCore, app,
+    link_token, run_rust_core_link, run_sidecar, static_dirs,
 };
+use roamgate_sidecar::peer::Peer;
+use serde_json::json;
 use tokio::sync::watch;
 
 /// `--public-dir`, `PUBLIC_DIR`, `public` next to the executable, or in
@@ -51,16 +55,26 @@ fn public_dir(args: &[String], env: &dyn Env) -> PathBuf {
     }
 }
 
+/// Where the front's test clock moves the core's.
+#[derive(Clone)]
+enum CoreClock {
+    /// The Bun core's own test clock, on a private socket started at the
+    /// front's time.
+    Socket(PathBuf),
+    /// A standalone core, which follows the front's clock from its
+    /// `welcome` on: `internal.clock.advance` on the channel.
+    Channel(watch::Receiver<Option<Peer>>),
+}
+
 /// The front's test clock (contract/wire/test-clock.md): served on the
-/// harness's socket, and relayed to the core, which runs its own test clock
-/// on a private socket started at the front's time. Each `advance` moves
-/// the front's clock, then the core's, and replies once both ran their
-/// due timers.
+/// harness's socket, and relayed to the core. Each `advance` moves the
+/// front's clock, then the core's, and replies once both ran their due
+/// timers.
 #[cfg(unix)]
 fn serve_front_clock(
     clock: roamgate_base::clock::TestClock,
     path: &std::path::Path,
-    core: PathBuf,
+    core: CoreClock,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let _ = std::fs::remove_file(path);
@@ -78,7 +92,23 @@ fn serve_front_clock(
                     }
                     let reply = roamgate_base::clock::answer(&clock, &line).await;
                     if line.trim().starts_with("advance") && !reply.starts_with("error") {
-                        relay_to_core(&core, line.trim()).await;
+                        match &core {
+                            CoreClock::Socket(path) => relay_to_core(path, line.trim()).await,
+                            CoreClock::Channel(link) => {
+                                let peer = link.borrow().clone();
+                                if let Some(peer) = peer.filter(|peer| !peer.is_closed()) {
+                                    let to = roamgate_base::clock::Clock::now(&clock);
+                                    let _ = peer
+                                        .call(
+                                            "internal.clock.advance",
+                                            json!({ "to": to }),
+                                            Default::default(),
+                                            false,
+                                        )
+                                        .await;
+                                }
+                            }
+                        }
                     }
                     if write
                         .write_all(format!("{reply}\n").as_bytes())
@@ -112,11 +142,18 @@ async fn relay_to_core(core: &std::path::Path, request: &str) {
     let _ = BufReader::new(stream).read_line(&mut reply).await;
 }
 
-/// The web build the Bun server serves after the public directory: run
-/// from source (`server/src/index.ts`), its `server/public`.
+/// The web build served after the public directory: the Bun server's run
+/// from source (`server/src/index.ts`), its `server/public`; with no Bun,
+/// the one this binary was built with, when it is on this machine (the
+/// embedded copy is not served from memory yet).
 fn built_public_dir(sidecar_bin: Option<&str>) -> Option<PathBuf> {
-    let entry = PathBuf::from(sidecar_bin.filter(|bin| bin.ends_with(".ts"))?);
-    Some(entry.parent()?.parent()?.join("public"))
+    match sidecar_bin.filter(|bin| !bin.is_empty()) {
+        Some(bin) => {
+            let entry = PathBuf::from(Some(bin).filter(|bin| bin.ends_with(".ts"))?);
+            Some(entry.parent()?.parent()?.join("public"))
+        }
+        None => Some(PathBuf::from(env!("ROAMGATE_WEB_DIST"))).filter(|dir| dir.is_dir()),
+    }
 }
 
 async fn shutdown() {
@@ -261,18 +298,26 @@ pub async fn run(args: &[String]) -> u8 {
     let own_exe = std::env::current_exe().unwrap_or_default();
     let command =
         SidecarCommand::resolve(env.var("ROAMGATE_SIDECAR_BIN").as_deref(), &own_exe, args);
+    let standalone = command.standalone;
+    let (link, core) = watch::channel(None);
     let mut clock_server = None;
     let mut core_env: Vec<(String, String)> = Vec::new();
     // The Bun core runs the Rust core ROAMGATE_CORE_BIN names, as it does
     // behind the Bun front (stage 1): its owners table and handovers are
-    // unchanged. The update family replaces this front's executable.
+    // unchanged. The update family replaces this front's executable, in
+    // the Bun core's Rust core as in a standalone one.
     core_env.push((
         "ROAMGATE_CLI_EXEC".into(),
         own_exe.to_string_lossy().into_owned(),
     ));
-    let from_source = env
-        .var("ROAMGATE_SIDECAR_BIN")
-        .is_some_and(|bin| bin.ends_with(".ts"));
+    // With no Bun, a debug build is a checkout's, not an installed binary
+    // (an update must not replace it), as the Bun server run from source.
+    let from_source = if standalone {
+        cfg!(debug_assertions)
+    } else {
+        env.var("ROAMGATE_SIDECAR_BIN")
+            .is_some_and(|bin| bin.ends_with(".ts"))
+    };
     core_env.push((
         "ROAMGATE_CLI_STANDALONE".into(),
         if from_source { "0" } else { "1" }.into(),
@@ -281,18 +326,25 @@ pub async fn run(args: &[String]) -> u8 {
     // sockets of the families it owns (the voice family's).
     let link_path = runtime_dir.join(format!("front-{}.sock", std::process::id()));
     let link_token = link_token();
-    core_env.push((
-        roamgate_sidecar::core::FRONT_CHANNEL_ENV.into(),
-        link_path.to_string_lossy().into_owned(),
-    ));
-    core_env.push((
-        roamgate_sidecar::core::FRONT_TOKEN_ENV.into(),
-        link_token.clone(),
-    ));
+    if !standalone {
+        core_env.push((
+            roamgate_sidecar::core::FRONT_CHANNEL_ENV.into(),
+            link_path.to_string_lossy().into_owned(),
+        ));
+        core_env.push((
+            roamgate_sidecar::core::FRONT_TOKEN_ENV.into(),
+            link_token.clone(),
+        ));
+    }
     let core_clock_path = runtime_dir.join(format!("core-clock-{}.sock", std::process::id()));
     if let (Some(found), Some(test)) = (&test_clock, &virtual_clock) {
+        let relay = if standalone {
+            CoreClock::Channel(core.clone())
+        } else {
+            CoreClock::Socket(core_clock_path.clone())
+        };
         #[cfg(unix)]
-        match serve_front_clock(test.clone(), &found.socket, core_clock_path.clone()) {
+        match serve_front_clock(test.clone(), &found.socket, relay) {
             Ok(task) => clock_server = Some(task),
             Err(error) => {
                 eprintln!(
@@ -302,13 +354,21 @@ pub async fn run(args: &[String]) -> u8 {
                 return 1;
             }
         }
+        #[cfg(not(unix))]
+        let _ = relay;
+        // A standalone core follows this clock over the channel instead
+        // (empty: no test clock of its own).
         core_env.push((
             roamgate_base::clock::TEST_CLOCK_ENV.into(),
-            core_clock_path.to_string_lossy().into_owned(),
+            if standalone {
+                String::new()
+            } else {
+                core_clock_path.to_string_lossy().into_owned()
+            },
         ));
     }
     let start_clock = clock.clone();
-    let has_test_clock = virtual_clock.is_some();
+    let has_test_clock = virtual_clock.is_some() && !standalone;
     let core_env = Arc::new(move || {
         let mut env = core_env.clone();
         if has_test_clock {
@@ -347,20 +407,52 @@ pub async fn run(args: &[String]) -> u8 {
             }
         })
     };
+    // The Bun core says how logins work; with no Bun, the front does.
+    if standalone && config.auth_required {
+        let mut fields = roamgate_base::log::LogFields::new();
+        match &config.generated_auth_token_path {
+            Some(path) => {
+                fields.insert("mode".into(), "generated token".into());
+                fields.insert("path".into(), path.to_string_lossy().into_owned().into());
+            }
+            None => {
+                fields.insert("mode".into(), "password".into());
+            }
+        }
+        logger.info("authentication required", Some(&fields));
+    }
     let sockets = Sockets::default();
-    let (link, core) = watch::channel(None);
     let (stop_core, core_stop) = watch::channel(false);
     let (rust_link, rust_core) = watch::channel(None);
-    let rust_link_task = tokio::spawn(run_rust_core_link(
-        RustCoreLinkConfig {
-            channel: link_path.to_string_lossy().into_owned(),
-            token: link_token,
-            clock: Arc::new(SystemClock),
-        },
-        sockets.clone(),
-        rust_link,
-        core_stop.clone(),
-    ));
+    // A standalone core is the Rust core: no link besides the channel.
+    let rust_link_task = (!standalone).then(|| {
+        tokio::spawn(run_rust_core_link(
+            RustCoreLinkConfig {
+                channel: link_path.to_string_lossy().into_owned(),
+                token: link_token,
+                clock: Arc::new(SystemClock),
+            },
+            sockets.clone(),
+            rust_link,
+            core_stop.clone(),
+        ))
+    });
+    let standalone_core = standalone.then(|| StandaloneCore {
+        test_clock: virtual_clock
+            .clone()
+            .map(|test| Arc::new(test) as roamgate_base::clock::SharedClock),
+        start: json!({
+            "socket_path": config.socket_path,
+            "client_socket_path": config.client_socket_path,
+            "ssh_host": config.ssh_host,
+            "session": config.session,
+            "has_explicit_socket_path": config.has_explicit_socket_path,
+            "has_explicit_client_socket_path": config.has_explicit_client_socket_path,
+            "task_notification_source": config.task_notification_source,
+            "auth_required": config.auth_required,
+            "generations": {},
+        }),
+    });
     let sidecar = tokio::spawn(run_sidecar(
         SidecarConfig {
             command,
@@ -370,6 +462,7 @@ pub async fn run(args: &[String]) -> u8 {
             clock: Arc::new(SystemClock),
             env: core_env,
             on_welcome: listening.clone(),
+            standalone: standalone_core,
         },
         sockets.clone(),
         link,
@@ -420,7 +513,9 @@ pub async fn run(args: &[String]) -> u8 {
     };
     let _ = stop_core.send(true);
     let _ = sidecar.await;
-    let _ = rust_link_task.await;
+    if let Some(task) = rust_link_task {
+        let _ = task.await;
+    }
     if let Some(task) = clock_server {
         task.abort();
     }

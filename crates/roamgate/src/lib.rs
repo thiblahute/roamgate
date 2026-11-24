@@ -16,7 +16,7 @@ pub mod front_tls;
 pub mod owners_cmd;
 pub mod reviews_cmd;
 
-pub use families::core_families;
+pub use families::{core_families, standalone_families};
 
 /// The version: `ROAMGATE_BUILD_VERSION` at build time (`cargo xtask
 /// package --version`), else the workspace's.

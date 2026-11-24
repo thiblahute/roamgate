@@ -14,6 +14,7 @@ pub mod archive;
 pub mod assistant;
 pub mod claude_mod;
 pub mod conversation;
+pub mod front;
 pub mod herdr;
 pub mod history;
 pub mod host;
@@ -33,6 +34,20 @@ pub mod workspace;
 
 /// Every family this build implements.
 pub fn core_families() -> Families {
+    families(host::family())
+}
+
+/// The families of a standalone core (a Rust front's own, no Bun): every
+/// family, and first the `front` family, which terminates `/ws` and
+/// answers in the process what the families asked the Bun side for.
+pub fn standalone_families() -> Families {
+    let (host, handle) = host::family_with_handle();
+    let mut all = vec![front::family(handle)];
+    all.extend(families(Some(host)));
+    all
+}
+
+fn families(host: Option<std::sync::Arc<dyn roamgate_sidecar::family::CoreFamily>>) -> Families {
     [
         limit_resume::family(),
         time_report::family(),
@@ -45,7 +60,7 @@ pub fn core_families() -> Families {
         archive::family(),
         assistant::family(),
         work::family(),
-        host::family(),
+        host,
         mr_reviews::family(),
         voice::family(),
         agent_sessions::family(),
