@@ -6,6 +6,21 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.30
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+Behind the Rust front the Rust core serves the voice socket while it owns
+the voice family (Phase 10, S22; wire/core-channel.md, The Rust core's link
+to the Rust front): the Rust core links to the front
+(`ROAMGATE_FRONT_CHANNEL`, `ROAMGATE_FRONT_TOKEN`, set by the front on its
+Bun core and inherited by the Rust core), which sends it the `ws_open` of
+`/api/voice/ws` and `/api/voice/call/signalling` first; a core that does not
+own voice answers `{accepted: false, pass: true}` and the socket is the Bun
+core's as before. The Bun core forwards `POST /api/voice/call/handoff` to
+the core while it owns voice behind a Rust front. The browser surface and
+the inventory are unchanged.
+
 ## 1.29
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

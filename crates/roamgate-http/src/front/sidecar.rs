@@ -74,7 +74,7 @@ fn token() -> String {
     hex::encode(rand::random::<[u8; 32]>())
 }
 
-fn welcome(_hello: &Message) -> Message {
+pub(super) fn welcome(_hello: &Message) -> Message {
     Message::Welcome {
         protocol: PROTOCOL,
         side: Side::Rust,

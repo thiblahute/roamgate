@@ -6,11 +6,11 @@
 use std::sync::Arc;
 
 use roamgate_base::clock::SharedClock;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::owners::Owners;
-use crate::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall, Peer};
-use crate::protocol::{Ctx, Push, RpcError};
+use crate::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall, Peer, WsOpen};
+use crate::protocol::{Ctx, Message, Push, RpcError};
 
 /// The prefix of the front's own calls to a family (`internal.<family>.<op>`):
 /// no family of contract/owners/families.json declares it, so a browser
@@ -66,9 +66,33 @@ pub trait CoreFamily: Send + Sync + 'static {
         Box::pin(async { Ok(HttpResponse::status(404)) })
     }
 
+    /// Stage 2, on the Rust front's link (contract/wire/core-channel.md,
+    /// The Rust core's link to the Rust front): a browser asks to upgrade
+    /// a socket on one of the family's paths while the core owns it. The
+    /// answer is `ws_open`'s: accepted (`{accepted: true, transport}`),
+    /// refused with the response the browser gets, or [`pass_to_bun`].
+    /// What the family sends the socket goes on `link`.
+    fn ws_open(
+        &self,
+        _cx: &FamilyContext,
+        _link: &Peer,
+        _open: WsOpen,
+    ) -> BoxFuture<Result<Value, RpcError>> {
+        Box::pin(async { Ok(pass_to_bun()) })
+    }
+
+    /// A `ws_message` or `ws_close` of a socket the family accepted.
+    fn ws_socket(&self, _cx: &FamilyContext, _link: &Peer, _message: Message) {}
+
     /// The core started (`true`) or stopped (`false`) owning the family:
     /// its background work and its writers run only while it is owned.
     fn owned(&self, _cx: &FamilyContext, _owned: bool) {}
 }
 
 pub type Families = Vec<Arc<dyn CoreFamily>>;
+
+/// `ws_open`'s answer on the Rust front's link for a socket the core does
+/// not serve: the front asks the Bun core instead.
+pub fn pass_to_bun() -> Value {
+    json!({"accepted": false, "pass": true})
+}

@@ -1299,6 +1299,8 @@ const clientSessions = new WeakMap<ServerWebSocket<unknown>, string | null>();
 
 // The Rust core (core-channel/): null unless ROAMGATE_CORE_BIN names one.
 let coreFront: CoreFront | null = null;
+/** This server is a Rust front's core (stage 2): the front holds the port. */
+const behindRustFront = coreChannelOf(process.env) !== null;
 
 /** A push of the core's, to the browsers it names. */
 function deliverCorePush(push: PushMessage): void {
@@ -8268,9 +8270,15 @@ async function handleFetch(
     await hostSettling;
 
   // A call handed to the Android app: its single-use token is the
-  // credential, exchanged for the call's and a login.
-  if (url.pathname === CALL_HANDOFF_PATH)
+  // credential, exchanged for the call's and a login. Behind a Rust front
+  // the calls are the Rust core's while it owns voice (the front gives it
+  // the voice sockets): it redeems them, the login minted here
+  // (`voice.session_cookie`).
+  if (url.pathname === CALL_HANDOFF_PATH) {
+    if (behindRustFront && coreFront?.routesHttp(url.pathname))
+      return coreFront.forwardHttp(req, { client_ip: clientIp });
     return redeemCallHandoff(req, clientIp);
+  }
 
   // A rendered review's page: its frame is sandboxed with an opaque
   // origin and sends no cookie; the token in the path is the

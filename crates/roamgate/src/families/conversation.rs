@@ -676,6 +676,11 @@ async fn build_connection(
             let cx = cx.clone();
             let id = id.clone();
             Box::pin(async move {
+                // A call the core serves (the Rust front gives it the voice
+                // sockets while it owns voice); Bun's own otherwise.
+                if let Some(reason) = super::voice_socket::keep_awake(&format!("{id}/{pane}")) {
+                    return Some(reason);
+                }
                 cx.reverse(
                     "conversation.host",
                     json!({"op": "keep_awake", "connection_id": id, "pane_id": pane}),

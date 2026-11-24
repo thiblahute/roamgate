@@ -1,0 +1,81 @@
+name: behind the Rust front the Rust core serves the voice socket, a call's signalling and its handoff while it owns voice
+family: voice
+description: >
+  The Rust core the Bun core runs links to the Rust front
+  (ROAMGATE_FRONT_CHANNEL, ROAMGATE_FRONT_TOKEN; wire/core-channel.md, The
+  Rust core's link to the Rust front). While the owners table gives it the
+  voice family, the front gives it /api/voice/ws and
+  /api/voice/call/signalling: a call starts on the core's helper, its
+  signalling is relayed to the helper's signalling server, a microphone's
+  audio reaches it, and the handoff (forwarded by the Bun core) is
+  redeemed against the core's call.
+fronts: [rust]
+server:
+  env:
+    ROAMGATE_CORE_BIN: "${CORE}"
+    ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log"
+    HTTPS_PROXY: "http://127.0.0.1:9"
+    https_proxy: "http://127.0.0.1:9"
+  files:
+    ".config/roamgate/runtime/owners.json":
+      mode: "0600"
+      json:
+        version: 1
+        owners: { voice: rust }
+        shadow: { enabled: false, rate: 0 }
+    .config/roamgate/voice.json:
+      json:
+        {
+          helper: "${BIN}/roamgate-voice",
+          whisper_model: "${BIN}/roamgate-voice",
+          kokoro_model: "${BIN}/roamgate-voice",
+          kokoro_voices: "${BIN}/roamgate-voice",
+        }
+  fakes:
+    roamgate-voice:
+      replies:
+        call_start: { rate: 48000, channels: 2, music: false }
+steps:
+  - login: {}
+  - expect_log: { contains: "serving the voice family", within_ms: 30000 }
+  - connect: { name: page, path: /api/voice/ws }
+  - send: { op: call_audio, on: true }
+    socket: page
+  - expect_push: "event:call_audio"
+    socket: page
+    message: { event: call_audio, webrtc: true }
+    save: { call: /call, resume: /resume }
+  - connect:
+      {
+        name: signalling,
+        path: "/api/voice/call/signalling?call=${call}&call_token=${resume}",
+      }
+  - expect_push: "type:welcome"
+    socket: signalling
+    message: { type: welcome, peerId: "fake-peer-${call}" }
+  # Another token is refused by the core, as Bun refuses it.
+  - http: GET /api/voice/call/signalling?call=${call}&call_token=wrong
+    headers:
+      {
+        connection: Upgrade,
+        upgrade: websocket,
+        sec-websocket-version: "13",
+        sec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==,
+      }
+    expect: { status: 403 }
+  - send: { op: call_handoff, call: "${call}" }
+    socket: page
+  - expect_push: "event:call_handoff"
+    socket: page
+    message: { event: call_handoff, handoff: "{{string}}" }
+    save: { handoff: /handoff }
+  - http: POST /api/voice/call/handoff
+    cookie: false
+    body: { handoff: "${handoff}" }
+    expect: { status: 200, json: { call: "${call}", carrier: "{{string}}" } }
+  - assert_file:
+      path: "${ROOT}/core-served.log"
+      text_contains:
+        - "voice ws /api/voice/ws"
+        - "voice ws /api/voice/call/signalling"
+        - "voice POST /api/voice/call/handoff"

@@ -15,11 +15,11 @@ use roamgate_base::log::{LogLayer, LogLevel, Logger, LoggerOptions, parse_log_le
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
 
-use crate::family::{CoreFamily, Families, FamilyContext, INTERNAL_PREFIX};
+use crate::family::{CoreFamily, Families, FamilyContext, INTERNAL_PREFIX, pass_to_bun};
 use crate::owners::{Owners, families as declared_families, implemented};
 use crate::peer::{
     BodyReceiver, BoxFuture, Handler, HttpRequest, HttpResponse, IncomingCall, Peer, PeerOptions,
-    say_hello,
+    WsOpen, say_hello,
 };
 use crate::protocol::{
     Message, PROTOCOL, Push, RpcError, ShadowSettings, Side, family_of, http_family_of,
@@ -29,6 +29,11 @@ use crate::transport;
 pub const CHANNEL_ENV: &str = "ROAMGATE_CORE_CHANNEL";
 pub const TOKEN_ENV: &str = "ROAMGATE_CORE_TOKEN";
 pub const TEST_ENV: &str = "ROAMGATE_CORE_TEST";
+/// The Rust front's link for the core (contract/wire/core-channel.md, The
+/// Rust core's link to the Rust front): set by the Rust front on its Bun
+/// core, whose Rust core inherits them.
+pub const FRONT_CHANNEL_ENV: &str = "ROAMGATE_FRONT_CHANNEL";
+pub const FRONT_TOKEN_ENV: &str = "ROAMGATE_FRONT_TOKEN";
 
 /// Exit codes of `roamgate core`.
 pub mod exit {
@@ -123,6 +128,27 @@ pub async fn run_core(env: &dyn Env, version: &str, families: Families) -> u8 {
         families: hello_families.clone(),
         test,
     };
+    // Linked to the Rust front before the Bun core knows this core: by the
+    // time the Bun core routes it a family, the front can give it that
+    // family's sockets.
+    let link = match (
+        env.var(FRONT_CHANNEL_ENV).filter(|value| !value.is_empty()),
+        env.var(FRONT_TOKEN_ENV).filter(|value| !value.is_empty()),
+    ) {
+        (Some(address), Some(token)) => {
+            let hello = Message::Hello {
+                protocol: PROTOCOL,
+                token,
+                side: Side::Rust,
+                version: version.to_owned(),
+                pid: std::process::id(),
+                families: hello_families.clone(),
+                test,
+            };
+            link_front(&address, &hello).await
+        }
+        _ => None,
+    };
     let owners = Owners::new(Side::Rust, test);
     let followed = match say_hello(&mut stream, &hello).await {
         Ok(Message::Welcome {
@@ -170,7 +196,7 @@ pub async fn run_core(env: &dyn Env, version: &str, families: Families) -> u8 {
         me: OnceLock::new(),
     });
     let _ = handler.me.set(Arc::downgrade(&handler));
-    let peer = Peer::start(stream, handler.clone(), PeerOptions::core(clock));
+    let peer = Peer::start(stream, handler.clone(), PeerOptions::core(clock.clone()));
     let _ = handler.context.set(FamilyContext {
         peer: peer.clone(),
         owners,
@@ -178,7 +204,18 @@ pub async fn run_core(env: &dyn Env, version: &str, families: Families) -> u8 {
     });
     handler.ownership_changed();
     handler.ready.send_replace(true);
+    // What the front sent on the link meanwhile waits in the stream.
+    let link = link.map(|stream| {
+        let handler = Arc::new(FrontLink {
+            core: handler.clone(),
+            sockets: Arc::default(),
+        });
+        Peer::start(stream, handler, PeerOptions::core(clock))
+    });
     peer.closed().await;
+    if let Some(link) = link {
+        link.bye();
+    }
     handler.stop_all();
     tracing::debug!("core channel closed: exiting");
     exit::CLOSED
@@ -346,6 +383,76 @@ impl Handler for CoreHandler {
     fn owner(&self, owners: BTreeMap<String, Side>, shadow: ShadowSettings) {
         self.owners.set(owners, shadow);
         self.ownership_changed();
+    }
+}
+
+/// Connects to the Rust front's link and says hello; None when it cannot
+/// (the front then gives every socket to the Bun core).
+async fn link_front(address: &str, hello: &Message) -> Option<transport::BoxStream> {
+    let mut stream = match transport::connect(address).await {
+        Ok(stream) => stream,
+        Err(error) => {
+            tracing::warn!(address, %error, "cannot reach the Rust front's link");
+            return None;
+        }
+    };
+    if let Err(error) = say_hello(&mut stream, hello).await {
+        tracing::warn!(%error, "the Rust front's link refused this core");
+        return None;
+    }
+    tracing::debug!("linked to the Rust front");
+    Some(stream)
+}
+
+/// The core's side of the Rust front's link: the browser sockets of the
+/// families the core owns, by the front's number.
+struct FrontLink {
+    core: Arc<CoreHandler>,
+    sockets: Arc<Mutex<std::collections::HashMap<u64, Arc<dyn CoreFamily>>>>,
+}
+
+impl Handler for FrontLink {
+    fn ws_open(&self, peer: &Peer, open: WsOpen) -> BoxFuture<Result<Value, RpcError>> {
+        let (core, sockets, link) = (self.core.clone(), self.sockets.clone(), peer.clone());
+        Box::pin(async move {
+            let _ = core.ready.subscribe().wait_for(|ready| *ready).await;
+            let path = path_of(&open.url).to_owned();
+            let family = http_family_of(&path, declared_families())
+                .and_then(|name| core.family(&name).cloned())
+                .filter(|family| core.owned.lock().unwrap().contains(family.name()));
+            let (Some(family), Some(cx)) = (family, core.context.get()) else {
+                return Ok(pass_to_bun());
+            };
+            let socket_id = open.socket_id;
+            // Known before the answer: its first messages follow it at once.
+            sockets.lock().unwrap().insert(socket_id, family.clone());
+            let answer = family.ws_open(cx, &link, open).await;
+            match &answer {
+                Ok(result) if result["accepted"] == Value::Bool(true) => {
+                    core.served(family.name(), &format!("ws {path}"));
+                }
+                _ => {
+                    sockets.lock().unwrap().remove(&socket_id);
+                }
+            }
+            answer
+        })
+    }
+
+    fn socket(&self, peer: &Peer, message: Message) {
+        let (socket_id, closed) = match &message {
+            Message::WsMessage { socket_id, .. } => (*socket_id, false),
+            Message::WsClose { socket_id, .. } => (*socket_id, true),
+            _ => return,
+        };
+        let family = if closed {
+            self.sockets.lock().unwrap().remove(&socket_id)
+        } else {
+            self.sockets.lock().unwrap().get(&socket_id).cloned()
+        };
+        if let (Some(family), Some(cx)) = (family, self.core.context.get()) {
+            family.ws_socket(cx, peer, message);
+        }
     }
 }
 

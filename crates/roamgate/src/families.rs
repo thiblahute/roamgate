@@ -26,6 +26,7 @@ pub mod settings;
 pub mod time_report;
 pub mod update;
 pub mod voice;
+pub mod voice_socket;
 pub mod work;
 pub mod workspace;
 

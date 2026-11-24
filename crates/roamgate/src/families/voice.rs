@@ -6,10 +6,11 @@
 //! layer, and `roamgate voice` and `roamgate setup voice` passed through by
 //! the Bun CLI.
 //!
-//! Landed Bun-owned: the front terminates every browser WebSocket in stage
-//! 1 (contract/wire/core-channel.md), so the voice socket and its call stay
-//! Bun's until Rust is the front (Phase 7), and the family flips with
-//! Phase 10. What the companion needs of what Bun owns comes by reverse
+//! Behind the Rust front the core serves the voice socket and a call's
+//! signalling while it owns the family ([`super::voice_socket`], on the
+//! Rust core's link to the front); behind the Bun front every browser
+//! WebSocket is Bun's (contract/wire/core-channel.md), so the family flips
+//! only behind the Rust front. What the companion needs of what Bun owns comes by reverse
 //! call: the sessions its errands go to (`voice.errand_read`,
 //! `voice.errand_prompt`, `voice.errand_status`), the Work board's user
 //! tools and states (`voice.work_tool`, `voice.work_states`, Bun's board or
@@ -74,6 +75,7 @@ use roamgate_voice_server::socket::{VoiceSocket, VoiceSocketOptions};
 use serde_json::{Value, json};
 
 use super::update::{cli_runtime, emit, path_of};
+use super::voice_socket::VoiceSockets;
 
 /// The largest request body a voice route reads (a recording, 12 MB).
 const MAX_BODY: usize = roamgate_voice_server::http::routes::MAX_RECORDING_BYTES + 1024 * 1024;
@@ -275,6 +277,8 @@ struct VoiceServer {
     waiting: Arc<WaitingAnswers>,
     taste: VoiceTaste,
     watch: Mutex<Option<LowGpuWatch>>,
+    /// The browser sockets the Rust front gives the core.
+    sockets: Arc<VoiceSockets>,
 }
 
 impl VoiceServer {
@@ -478,7 +482,7 @@ impl VoiceServer {
                             .map(|r| Arc::new(r) as Arc<dyn Router>)
                     })
                 },
-                errands: Some(Arc::new(errands) as Arc<dyn Errands>),
+                errands: Some(Arc::new(errands.clone()) as Arc<dyn Errands>),
                 errand_folder: {
                     let read = read.clone();
                     Arc::new(move || read().ok()?.str("errand_folder").map(str::to_owned))
@@ -546,6 +550,7 @@ impl VoiceServer {
             setup_deps(&runtime, clock.clone()),
             Some(reload_after_setup(helper.clone())),
         ));
+        let sockets = VoiceSockets::new((*socket).clone(), errands, clock.clone());
         let cookie: Arc<Mutex<Option<String>>> = Arc::default();
         let handoff = {
             let (socket, cookie) = (socket.clone(), cookie.clone());
@@ -573,6 +578,7 @@ impl VoiceServer {
             waiting,
             taste,
             watch: Mutex::new(None),
+            sockets,
         }
     }
 
@@ -612,6 +618,7 @@ impl VoiceServer {
     }
 
     fn stop(&self) {
+        self.sockets.close_all();
         self.watch.lock().unwrap().take();
         self.helper.stop();
         self.tools.tools().stop();
@@ -829,6 +836,31 @@ impl CoreFamily for VoiceFamily {
                 "unknown_method",
             ))
         })
+    }
+
+    fn ws_open(
+        &self,
+        cx: &FamilyContext,
+        link: &roamgate_sidecar::peer::Peer,
+        open: roamgate_sidecar::peer::WsOpen,
+    ) -> BoxFuture<Result<Value, RpcError>> {
+        let server = self.server(cx);
+        let link = link.clone();
+        // Bun's helper released first, as for the routes.
+        let ready = self.ready();
+        Box::pin(async move {
+            ready.await;
+            Ok(server.sockets.open(&link, &open))
+        })
+    }
+
+    fn ws_socket(
+        &self,
+        cx: &FamilyContext,
+        _link: &roamgate_sidecar::peer::Peer,
+        message: roamgate_sidecar::protocol::Message,
+    ) {
+        self.server(cx).sockets.message(message);
     }
 
     fn owned(&self, cx: &FamilyContext, owned: bool) {

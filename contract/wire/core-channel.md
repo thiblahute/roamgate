@@ -122,7 +122,9 @@ In stage 2 the front (Rust) still terminates every browser WebSocket, and a
 socket whose route the core serves (the Bun core: `/ws`,
 `/api/notifications/ws`, `/api/voice/ws`, `/api/voice/call/signalling`, the
 terminal sockets) becomes a **virtual socket** in the core, driven by the
-messages of "Stage 2: the Rust front" below.
+messages of "Stage 2: the Rust front" below. The voice family's two sockets
+go to the Rust core instead while it owns the family, on its own link to the
+front ("The Rust core's link to the Rust front" below).
 
 ## Stage 2: the Rust front
 
@@ -161,6 +163,42 @@ route keeps its checks whichever side answers.
 handshake is done. The core's virtual socket reports `readyState` 1 until
 `ws_close` or its own `ws_end`, and a buffered amount of 0: back pressure,
 the 8 and 64 MiB limits and the 30 s stall rule are the front's.
+
+### The Rust core's link to the Rust front
+
+The Rust core the Bun core runs also links to the Rust front, for the
+browser sockets of the families it owns: the front listens on a second
+channel and gives its Bun core the link's address and token, which the Bun
+core's environment passes on to the Rust core it spawns.
+
+| Variable                 | Read by   | Meaning                                                                                                    |
+| ------------------------ | --------- | ---------------------------------------------------------------------------------------------------------- |
+| `ROAMGATE_FRONT_CHANNEL` | Rust core | The link: `<data>/runtime/front-<pid>.sock` (the front's pid), set by the Rust front on its Bun core.      |
+| `ROAMGATE_FRONT_TOKEN`   | Rust core | 64 hex digits the Rust core proves itself with in the link's `hello`, made once by the front at its start. |
+
+Before its `hello` to the Bun core, the Rust core connects to the link and
+says `hello` (`side: "rust"`, its families) with that token, so the link is
+up by the time the Bun core routes it a family; the front's `ws_open` waits
+on the link until the core heard the Bun core's `welcome`. The front answers
+`welcome` (its owners table is the Bun core's, never the link's) or
+`refused`, as on the channel. The front keeps the newest link: one that goes
+closes the sockets it served with 1012 `Service Restart`, as the Bun core's
+going closes all of them. Pings and liveness are the channel's (the Rust
+core pings after 10 s of silence, the front drops a link silent 30 s). No
+link (a Bun front, no `ROAMGATE_CORE_BIN`, a core that cannot reach it):
+every socket is the Bun core's, as before.
+
+For `/api/voice/ws` and `/api/voice/call/signalling`, the voice family's
+paths, the front sends `ws_open` on the link first, the auth gate passed as
+for any socket. The Rust core answers it while it owns the family (as told
+by the Bun core's `owner`), with the family's own routing: accepted
+(`transport: "raw"`), or refused with the response the browser gets (a
+signalling that is not the call owner's, or from another site: 403
+`forbidden`, as Bun's). While it does not own the family it answers
+`{accepted: false, pass: true}`, and the front sends the `ws_open` to the
+Bun core as for every other socket. The socket's `ws_message` and
+`ws_close` then go on the link, and the core's `ws_send` and `ws_end` come
+back on it; the messages and their meaning are the table's above.
 
 ### Reverse targets
 
@@ -390,10 +428,19 @@ Phase 7), or its files read, never written (work: the voice companion's
 state line counts the items of `<data>/work/work.json`).
 
 The voice family (Phase 10) is served by the core only with the voice
-socket: in stage 1 the front terminates every WebSocket, so the voice
-socket, its call and the helper it drives stay Bun's, and the family flips
-once Rust is the front (Phase 7). Its adapter reaches what Bun owns through
-the `voice.*` reverse targets.
+socket. Behind the Rust front, while the core owns the family, the front
+gives it `/api/voice/ws` and `/api/voice/call/signalling` on the Rust core's
+link (above): the core serves them with the same socket its routes read the
+running call from, and the Bun core forwards `POST /api/voice/call/handoff`
+(answered before its gate) to the core, which redeems the handoff against
+its call and gets the new login from `voice.session_cookie`. A call open on
+the core's voice socket, or used in the last 10 minutes, and a companion
+job on a pane keep the conversation family's sessions up in the core, as
+Bun's own calls do through `conversation.host`'s `keep_awake`. Behind the
+Bun front (stage 1) the front terminates every WebSocket, so the voice
+socket, its call and the helper it drives stay Bun's: the family flips only
+behind the Rust front. Its adapter reaches what Bun owns through the
+`voice.*` reverse targets.
 
 One helper runs at a time: when the core takes the family it asks
 `voice.release` before it serves anything that may start its helper (Bun

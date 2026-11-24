@@ -29,8 +29,10 @@ use crate::auth::{Auth, unauthenticated_login_redirect};
 use crate::response::{self, header};
 use crate::static_files::{StaticFiles, StaticRequest};
 
+mod rust_core;
 mod sidecar;
 
+pub use rust_core::{RustCoreLinkConfig, link_token, run_rust_core_link};
 pub use sidecar::{SidecarCommand, SidecarConfig, run_sidecar};
 
 /// The prefix of a rendered page's frame (shared/renderedPage.ts).
@@ -38,6 +40,15 @@ const RENDERED_PREFIX: &str = "/rendered/";
 
 /// Where the core is: the peer while one is connected.
 pub type CoreLink = watch::Receiver<Option<Peer>>;
+
+/// The Rust core's link (contract/wire/core-channel.md, The Rust core's
+/// link to the Rust front): its peer and the number of its connection.
+pub type RustCoreLink = watch::Receiver<Option<(u64, Peer)>>;
+
+/// The browser sockets the Rust core is asked for first: the voice
+/// family's. It serves them while it owns the family, else they are the
+/// Bun core's.
+const RUST_CORE_SOCKETS: [&str; 2] = ["/api/voice/ws", "/api/voice/call/signalling"];
 
 /// A browser socket the core serves, by the front's number.
 enum Socket {
@@ -52,6 +63,8 @@ struct SocketEntry {
     session: Option<String>,
     /// `ws`: through the flow; `raw`: as it is.
     flow: bool,
+    /// Served by the Rust core's link of this number; None: the Bun core.
+    rust: Option<u64>,
 }
 
 /// The browser sockets, shared with the core's handler.
@@ -127,6 +140,17 @@ impl Sockets {
         }
     }
 
+    /// Closes the sockets the Rust core's link `link` served: it went.
+    fn drop_rust(&self, link: u64) {
+        for entry in self.0.lock().unwrap().values() {
+            if entry.rust == Some(link)
+                && let Socket::Open(handle) = &entry.socket
+            {
+                handle.close(Some((1012, "Service Restart")));
+            }
+        }
+    }
+
     /// Closes the sockets of a login that logged out.
     fn close_session(&self, token: &str) {
         for entry in self.0.lock().unwrap().values() {
@@ -157,6 +181,8 @@ pub struct Front {
     /// The instance's title suffix, read on each request as Bun does.
     pub title_suffix: Box<dyn Fn() -> String + Send + Sync>,
     pub core: CoreLink,
+    /// The Rust core's link, while one is connected.
+    pub rust_core: RustCoreLink,
     pub sockets: Sockets,
     /// How long a request waits for the core to connect (its start, a
     /// restart) before a 503.
@@ -234,10 +260,18 @@ impl Front {
             static_files,
             title_suffix,
             core,
+            rust_core: watch::channel(None).1,
             sockets,
             core_wait: std::time::Duration::from_secs(30),
             next_socket: AtomicU64::new(1),
         }
+    }
+
+    /// Serves the voice family's sockets from the Rust core's link while
+    /// it owns the family.
+    pub fn with_rust_core(mut self, link: RustCoreLink) -> Self {
+        self.rust_core = link;
+        self
     }
 
     async fn peer(&self) -> Option<Peer> {
@@ -388,7 +422,7 @@ impl Front {
         body: Body,
         client_ip: String,
     ) -> http::Response<Body> {
-        let Some(peer) = self.peer().await else {
+        let Some(bun) = self.peer().await else {
             return plain(503, "the server is starting");
         };
         let mut request = http::Request::from_parts(parts, body);
@@ -405,6 +439,7 @@ impl Front {
                 socket: Socket::Pending(Vec::new()),
                 session,
                 flow: parts.uri.path() == "/ws",
+                rust: None,
             },
         );
         let open = WsOpen {
@@ -414,7 +449,7 @@ impl Front {
             headers: channel_headers(&parts),
             ctx: self.ctx(&parts, client_ip, Some(socket_id)),
         };
-        let answer = peer.ws_open(open).await;
+        let (peer, answer) = self.open_socket(bun, parts.uri.path(), open).await;
         let accepted_by_core = match &answer {
             Ok(result) => result["accepted"] == Value::Bool(true),
             Err(_) => false,
@@ -475,6 +510,43 @@ impl Front {
             front.socket_closed(&peer, socket_id, Some(1006), String::new());
         });
         accepted.response
+    }
+
+    /// Asks the Rust core first for a socket it may serve, then the Bun
+    /// core: the peer that answered, and its answer.
+    async fn open_socket(
+        &self,
+        bun: Peer,
+        path: &str,
+        open: WsOpen,
+    ) -> (Peer, Result<Value, roamgate_sidecar::protocol::RpcError>) {
+        let rust = RUST_CORE_SOCKETS
+            .contains(&path)
+            .then(|| self.rust_core.borrow().clone())
+            .flatten()
+            .filter(|(_, peer)| !peer.is_closed());
+        if let Some((link, peer)) = rust {
+            let socket_id = open.socket_id;
+            if let Some(entry) = self.sockets.0.lock().unwrap().get_mut(&socket_id) {
+                entry.rust = Some(link);
+            }
+            let answer = peer.ws_open(open.clone()).await;
+            let passed = match &answer {
+                Ok(result) => result["pass"] == Value::Bool(true),
+                Err(error) => {
+                    tracing::warn!(target: "bridge.front", "the Rust core did not answer a socket: {}", error.message);
+                    true
+                }
+            };
+            if !passed {
+                return (peer, answer);
+            }
+            if let Some(entry) = self.sockets.0.lock().unwrap().get_mut(&socket_id) {
+                entry.rust = None;
+            }
+        }
+        let answer = bun.ws_open(open).await;
+        (bun, answer)
     }
 
     fn socket_closed(&self, peer: &Peer, socket_id: u64, code: Option<u16>, reason: String) {

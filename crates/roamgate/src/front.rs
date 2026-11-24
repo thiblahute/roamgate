@@ -20,7 +20,8 @@ use roamgate_cli::herdr::HerdrCli;
 use roamgate_cli::server_config::load_server_config;
 use roamgate_http::auth::{Auth, AuthConfig};
 use roamgate_http::front::{
-    Front, SidecarCommand, SidecarConfig, Sockets, app, run_sidecar, static_dirs,
+    Front, RustCoreLinkConfig, SidecarCommand, SidecarConfig, Sockets, app, link_token,
+    run_rust_core_link, run_sidecar, static_dirs,
 };
 use tokio::sync::watch;
 
@@ -276,6 +277,18 @@ pub async fn run(args: &[String]) -> u8 {
         "ROAMGATE_CLI_STANDALONE".into(),
         if from_source { "0" } else { "1" }.into(),
     ));
+    // The Rust core the Bun core runs links to this front for the
+    // sockets of the families it owns (the voice family's).
+    let link_path = runtime_dir.join(format!("front-{}.sock", std::process::id()));
+    let link_token = link_token();
+    core_env.push((
+        roamgate_sidecar::core::FRONT_CHANNEL_ENV.into(),
+        link_path.to_string_lossy().into_owned(),
+    ));
+    core_env.push((
+        roamgate_sidecar::core::FRONT_TOKEN_ENV.into(),
+        link_token.clone(),
+    ));
     let core_clock_path = runtime_dir.join(format!("core-clock-{}.sock", std::process::id()));
     if let (Some(found), Some(test)) = (&test_clock, &virtual_clock) {
         #[cfg(unix)]
@@ -337,6 +350,17 @@ pub async fn run(args: &[String]) -> u8 {
     let sockets = Sockets::default();
     let (link, core) = watch::channel(None);
     let (stop_core, core_stop) = watch::channel(false);
+    let (rust_link, rust_core) = watch::channel(None);
+    let rust_link_task = tokio::spawn(run_rust_core_link(
+        RustCoreLinkConfig {
+            channel: link_path.to_string_lossy().into_owned(),
+            token: link_token,
+            clock: Arc::new(SystemClock),
+        },
+        sockets.clone(),
+        rust_link,
+        core_stop.clone(),
+    ));
     let sidecar = tokio::spawn(run_sidecar(
         SidecarConfig {
             command,
@@ -351,16 +375,19 @@ pub async fn run(args: &[String]) -> u8 {
         link,
         core_stop,
     ));
-    let front = Arc::new(Front::new(
-        auth,
-        static_dirs(
-            public_dir(args, env.as_ref()),
-            built_public_dir(env.var("ROAMGATE_SIDECAR_BIN").as_deref()),
-        ),
-        title_suffix,
-        core,
-        sockets,
-    ));
+    let front = Arc::new(
+        Front::new(
+            auth,
+            static_dirs(
+                public_dir(args, env.as_ref()),
+                built_public_dir(env.var("ROAMGATE_SIDECAR_BIN").as_deref()),
+            ),
+            title_suffix,
+            core,
+            sockets,
+        )
+        .with_rust_core(rust_core),
+    );
     // A core that never comes: listening all the same, its requests 503.
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
@@ -393,6 +420,7 @@ pub async fn run(args: &[String]) -> u8 {
     };
     let _ = stop_core.send(true);
     let _ = sidecar.await;
+    let _ = rust_link_task.await;
     if let Some(task) = clock_server {
         task.abort();
     }
