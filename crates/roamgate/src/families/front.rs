@@ -750,6 +750,23 @@ impl Inner {
             Ok(resolved) => resolved,
             Err(error) => return Ok(routing_error_response(&error)),
         };
+        // A Windows host has no file transfers nor agent history.
+        if route.endpoint != HttpEndpoint::HerdrInfo
+            && self
+                .layer
+                .get()
+                .and_then(|layer| layer.ready(&resolved.lease.connection_id).ok().flatten())
+                .is_some_and(|lease| lease.runtime.remote_platform().is_some())
+        {
+            return Ok(publish(
+                &resolved,
+                json_response(
+                    501,
+                    &json!({"error": "Remote file transfers and agent history require a Unix SSH host."}),
+                    Vec::new(),
+                ),
+            ));
+        }
         let response = match route.endpoint {
             HttpEndpoint::HerdrInfo => self.herdr_info(cx, &resolved).await?,
             HttpEndpoint::FileDownload
@@ -774,16 +791,28 @@ impl Inner {
                 }
             }
             HttpEndpoint::UploadImage | HttpEndpoint::TerminalUpload => {
-                note_served(
-                    &ProcessEnv,
-                    "unported",
-                    &format!("{} {path}", request.method),
-                );
-                json_response(
-                    501,
-                    &json!({"error": format!("{path} is not served by the standalone core")}),
-                    Vec::new(),
-                )
+                let uploads = self.layer.get().and_then(|layer| {
+                    layer
+                        .runtimes
+                        .uploads(&resolved.lease.connection_id, resolved.lease.generation)
+                });
+                match uploads {
+                    Some(uploads) => {
+                        super::standalone::uploads::handle(
+                            &uploads,
+                            route.endpoint == HttpEndpoint::UploadImage,
+                            body,
+                            query_param(&request.url, "filename").as_deref(),
+                            header(&request.headers, "x-image-ext"),
+                        )
+                        .await
+                    }
+                    None => json_response(
+                        500,
+                        &json!({"error": "connection runtime is disposed"}),
+                        Vec::new(),
+                    ),
+                }
             }
         };
         Ok(publish(&resolved, response))

@@ -61,6 +61,7 @@ mod rendered;
 mod reviews;
 mod reviews_agent;
 pub(crate) mod runtime;
+pub(crate) mod uploads;
 mod work;
 
 pub(crate) use forge::shared_gate as forge_gate;
@@ -201,7 +202,7 @@ impl Layer {
 
     /// The ready runtime of `id` (Bun's `readyRuntimeLease`): None while
     /// it is not ready; an unknown connection is an error.
-    fn ready(&self, id: &str) -> Result<Option<Lease>, RpcError> {
+    pub(crate) fn ready(&self, id: &str) -> Result<Option<Lease>, RpcError> {
         let Some(manager) = self.host.manager_now() else {
             return Ok(None);
         };

@@ -74,6 +74,24 @@ struct Generation {
     workspace: mpsc::UnboundedSender<WorkspaceOp>,
     /// When each agent status listing started, by its number.
     lists: HashMap<i64, i64>,
+    /// Its uploads, swept while it runs.
+    uploads: Arc<super::uploads::Uploads>,
+}
+
+impl Runtimes {
+    /// The uploads of `id`'s generation `generation`, while it runs.
+    pub(crate) fn uploads(
+        &self,
+        id: &str,
+        generation: u64,
+    ) -> Option<Arc<super::uploads::Uploads>> {
+        self.current
+            .lock()
+            .unwrap()
+            .get(id)
+            .filter(|each| each.generation == generation)
+            .map(|each| each.uploads.clone())
+    }
 }
 
 enum WorkspaceOp {
@@ -193,12 +211,22 @@ fn runtime_start(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Valu
         start,
         ops,
     ));
+    let uploads = Arc::new(super::uploads::start(
+        cx,
+        &id,
+        config
+            .get("sshHost")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        config.get("remotePlatform").and_then(Value::as_str) == Some("windows"),
+    ));
     let previous = layer.runtimes.current.lock().unwrap().insert(
         id,
         Generation {
             generation,
             workspace: sender,
             lists: HashMap::new(),
+            uploads,
         },
     );
     if let Some(previous) = previous {
