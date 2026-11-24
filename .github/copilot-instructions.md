@@ -3,22 +3,24 @@
 ## Project overview
 
 Roamgate is an independent community Web and PWA client for Herdr. It has two parts:
-- `server/src`: Bun-powered local bridge server (HTTP + WebSocket) that talks
-  to the local Herdr socket.
+- `crates/`: the Rust server (HTTP + WebSocket), a front holding the port and
+  a core serving every family, that talks to Herdr; `parity/` drives it from
+  outside against `contract/`.
 - `web/src`: React + Vite frontend. Reusable UI lives in `web/src/components`,
   assets in `web/src/assets`, and styles in `web/src/styles` plus co-located
   `web/src/components/*.css` files.
-- `scripts/`: release and packaging helpers.
+- `server/claude-mod` and the Pi sidecar under `server/src`: the TypeScript
+  that stays beside the server.
+- `scripts/`: release and repository helpers; `xtask/`: build and packaging.
 
-Generated build output lives in `server/public`,
-`server/src/public-files.gen.ts`, `server/roamgate*`, legacy `server/herdr-gui*`,
-and `dist/`. These are
+Generated build output lives in `server/public`, `server/roamgate*`,
+`target/` and `dist/`. These are
 build artifacts; they must not be edited or committed.
 
 ## Review priorities
 
 When reviewing pull requests, focus on:
-- Correctness of the Bun bridge: HTTP/WebSocket message handling, socket
+- Correctness of the server: HTTP/WebSocket message handling, socket
   lifecycle, reconnection and error paths, and cleanup of listeners, timers,
   and subprocesses.
 - React state management: prefer the existing store and bridge helpers in
@@ -52,6 +54,8 @@ Changes are expected to pass, from the repo root:
 - `bun run lint`
 - `bun run test`
 - `bun run typecheck`
+- `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test`
 - For frontend-facing changes: `bun run build:web`
 
 Call out missing verification when a PR touches these areas without it.

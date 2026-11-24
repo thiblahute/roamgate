@@ -391,12 +391,11 @@ The contract is in [Notification feed](./ARCHITECTURE.md#notification-feed).
 `http://localhost` and `http://127.0.0.1` are secure contexts, so notifications
 work without TLS. Use an isolated data directory and browser profile. To test
 end to end, enable **Task notifications**, ask Ranger for a monitoring task with
-**Let Ranger decide**, confirm it, and use **Run now**. The automated
-integration test covers scheduling and deduplication, but not real browser
-delivery:
+**Let Ranger decide**, confirm it, and use **Run now**. The parity suite's
+scenario covers scheduling and deduplication, but not real browser delivery:
 
 ```sh
-bun test server/src/assistant-recovery.integration.test.ts --test-name-pattern 'confirmed Ranger proposals schedule custom notifications'
+cargo test -p roamgate-parity --test scenarios -- assistant/proposal-notifications
 ```
 
 ## Logging
@@ -436,11 +435,13 @@ roamgate --host 127.0.0.1 --port 8788 --profile --profile-duration 30 --open
 
 The capture stops automatically and writes a private directory under
 `--profile-dir` containing `summary.txt` (CPU, memory, event-loop delay, hottest
-functions) and `cpu.json` (raw Bun/JSC samples, **not** Chrome's `.cpuprofile`
-format). Files may contain source paths; review before sharing and delete when
-done. For readable function names, run from source with
-`bun server/src/index.ts --profile`. For services, set `ROAMGATE_PROFILE=1` in
-the environment file, restart, and remove it afterwards.
+functions) and `cpu.json` (the server's samples, **not** Chrome's
+`.cpuprofile` format). Files may contain source paths; review before sharing
+and delete when done. Release binaries are stripped: for readable function
+names, profile a build with symbols
+(`CARGO_PROFILE_RELEASE_STRIP=false cargo build --release -p roamgate`). For
+services, set `ROAMGATE_PROFILE=1` in the environment file, restart, and remove
+it afterwards.
 
 ### Contract recording
 
@@ -1163,8 +1164,7 @@ A `systemd-run` unit can hold the GPU through a unit of its own that
 conflicts with another GPU service, which starts again when the helper
 stops (an `ExecStopPost=` of the GPU unit). The helper then starts right
 after a stop more often than it looks: a restart of a stuck helper, a
-change of the low-GPU set, voice moving between the Bun server and the
-Rust core. systemd-run queues its start in `fail` mode by default, which
+change of the low-GPU set, a restart of the server's core. systemd-run queues its start in `fail` mode by default, which
 refuses it while that service's start is still queued ("Transaction ... is
 destructive"); `--job-mode=replace` (systemd 258 or newer) cancels that
 start instead:
@@ -1378,7 +1378,7 @@ blocked one), and the answer is read from its history.
 
 A front also answers general questions itself, and looks up on the web what
 needs fresh or checked information: its `"web"` route starts a search in the
-background (`server/src/voice/voice-research.ts`) and says at once that it
+background (`crates/roamgate-voice-server/src/companion/research.rs`) and says at once that it
 looks. Each search is its own headless Claude Code (`claude -p`) with only
 `WebSearch` and `WebFetch`, allowed without asking, and nothing else
 (`--restricted`, `--safe-mode`, no MCP servers, no session kept, no Herdr
@@ -1436,7 +1436,7 @@ tools, or a name where `*` stands for any text
 starts so; Claude Code turns a claude.ai connector's name into
 `claude_ai_` and the name with anything but letters, digits, `_` and `-`
 made `_`). The front's `"tool"` route starts a job in
-the background (`server/src/voice/voice-tools.ts`) and says at once, in a
+the background (`crates/roamgate-voice-server/src/companion/tools.rs`) and says at once, in a
 few words, that it does it; the result is told as a search's is, and shows
 in the companion's conversation. Each job is a headless Claude Code with
 only `ToolSearch` built in, no hooks, in the `default` permission mode, and
@@ -1689,10 +1689,9 @@ Connect); tracks are chosen there.
 
 macOS asks for **System Audio Recording Only** (Privacy & Security >
 Screen & System Audio Recording) for the process responsible for the
-helper: the program the launchd service starts (`bun`, by its Homebrew
-path, `/opt/homebrew/Cellar/bun/<version>/bin/bun`). Without it, the tap
-gives only silence; after a Homebrew upgrade of Bun, allow the new path
-again. On Linux, `pulsesrc` (in the helper, through the host's libpulse, which
+helper: the program the launchd service starts (`roamgate`, by its
+installed path). Without it, the tap gives only silence; after an update
+that replaced the binary, allow it again if macOS asks. On Linux, `pulsesrc` (in the helper, through the host's libpulse, which
 PipeWire's `pipewire-pulse` serves) records a sound server's device. To
 play the Spotify app under calls without hearing it in the room, give it a
 null sink of its own and record that sink's monitor:
@@ -1727,7 +1726,7 @@ months and all time, a few top tracks, the user's own playlists (those of
 the owner of most of them) and followed ones, the latest liked songs, the
 playlists and albums played lately, the last days' plays and the hours
 most played at. Only names and URIs, a few hundred tokens. A background
-job, the companion's tool job (`server/src/voice/voice-taste.ts`) allowed
+job, the companion's tool job (`crates/roamgate-voice-server/src/companion/taste.rs`) allowed
 only those four tools, makes the calls, and Roamgate folds what they
 return. It is refreshed when older than a day, as a call starts or the
 companion goes idle, never while a tool job runs; a stale one is still
@@ -1922,7 +1921,7 @@ that sleeps (a laptop) pushes. Each machine runs its own OS timer:
 
 For a push, set `archive.push.target` to the ssh destination of the archive
 home. The home needs the `roamgate` binary (`archive.push.binary` when it is
-not `~/.local/bin/roamgate`, for example a `toolbox run ... bun .../index.ts`
+not `~/.local/bin/roamgate`, for example a `toolbox run ... roamgate`
 command line) and rsync on both ends. `roamgate archive health --check`
 exits 1 when a host's last sync is older than `stale_hours`, a sync failed or
 the disk under the archive is low; run it from a status check.
@@ -2224,15 +2223,15 @@ all of them, and publishes the same archive names, `.sha256` files and
 `.update.json` manifests, so existing installs update in place. Releases
 follow [AGENTS.md](../AGENTS.md#release-notes).
 
-The Bun build is still available: `bun scripts/studio-plugin.ts build-source`
-builds `server/roamgate`, `bun run build` rebuilds it, and `bun run
-package:<target>` packages it. `bun run clean` removes builds.
+`bun scripts/studio-plugin.ts build-source` builds the plugin's
+`server/roamgate` and `server/roamgate-pi` from a checkout. `bun run clean`
+removes the web and Pi builds; `cargo clean` the Rust ones.
 
 Release binaries are stripped: a panic's backtrace shows addresses, not
 function names. For a readable one, build the release's tag with
 `CARGO_PROFILE_RELEASE_STRIP=false cargo build --release -p roamgate` and run
 it with `RUST_BACKTRACE=1`. `roamgate-pi` is a minified Bun executable without
-a source map; `bun run --cwd server compile:pi` builds it from a checkout.
+a source map; `bun run build:pi` builds it from a checkout.
 
 ## Troubleshooting
 

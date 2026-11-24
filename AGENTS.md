@@ -2,49 +2,62 @@
 
 ## Project Structure & Module Organization
 
-This repo contains a Bun-powered bridge and a React/Vite frontend for Herdr.
+This repo contains a Rust server (a Cargo workspace) and a React/Vite
+frontend for Herdr.
 Frontend code lives in `web/src`, with reusable UI under `web/src/components`,
 assets under `web/src/assets`, and styling split between `web/src/styles`
 (theme tokens, base primitives, vendor overrides, app-shell layout) and
 co-located `web/src/components/*.css` files (see the style organization
 guidelines in `CONTRIBUTING.md`).
-Server and bridge code lives in `server/src`. Release helpers live in `scripts/`.
-Generated build output belongs in `web/dist`, `server/public`,
-`server/src/public-files.gen.ts`, `server/roamgate*`, legacy `server/herdr-gui*`,
-and `dist/`; these paths
-are ignored and should not be committed.
+The server lives in `crates/` (the `roamgate` binary is `crates/roamgate`;
+`docs/ARCHITECTURE.md` maps the crates), its parity suite in `parity/` and
+the build and release tooling in `xtask/`. What stays TypeScript under
+`server/`: the Claude Code mod (`server/claude-mod`) and the Pi sidecar
+(`server/src/assistant/pi-sidecar-main.ts` and what it imports, compiled
+to `roamgate-pi`). Code shared by the web app is in `shared/`; release and
+repository helpers live in `scripts/`. Generated build output belongs in
+`web/dist`, `server/public`, `server/roamgate*`, `target/` and `dist/`;
+these paths are ignored and should not be committed.
 
 ## Build, Test, and Development Commands
 
 Install all Bun workspace dependencies from the repository root with
-`bun install --frozen-lockfile` (Bun 1.4.4 or newer). The root `bun.lock` is the
-only lockfile; shared TypeScript, Bun types, and lint/format tooling belong in
+`bun install --frozen-lockfile` (Bun 1.4.4 or newer), and a stable Rust
+toolchain with `rustfmt` and `clippy`. The root `bun.lock` is the only
+lockfile of the TypeScript workspaces and `Cargo.lock` the Cargo
+workspace's; shared TypeScript, Bun types, and lint/format tooling belong in
 the root manifest. Keep runtime dependencies in their owning workspace.
 - `bun run dev:web`: start the Vite frontend on port 5173.
-- `bun run dev:server`: start the Bun bridge with hot reload.
-- `bun run build`: build frontend assets and the default standalone server binary.
-- `bun run build:linux-x64`: build the Linux x86-64 standalone binary.
-- `bun run build:darwin-arm64`: build the macOS Apple Silicon binary.
-- `bun run package:linux-x64`: build and emit both versioned and latest `tar.xz`
-  archives and checksums in `dist/`.
-- `bun run package:linux-arm64`, `package:darwin-x64`,
-  `package:darwin-arm64`, `package:windows-x64`, and
-  `package:windows-arm64`: package the other supported release targets.
+- `bun run dev:server`: run the server (`cargo run -p roamgate`) on port 8788,
+  the one Vite proxies to.
+- `bun run build`: build the web app, then the release server
+  (`cargo build --release -p roamgate`), which embeds it.
+- `bun run build:pi`: compile the Pi sidecar `server/roamgate-pi`.
+- `cargo xtask package <platform>`: build, package and verify a release
+  target of `targets.toml` (`roamgate`, `roamgate-pi` and `VERSION` in
+  versioned and latest `tar.xz` archives with checksums and the update
+  manifest, in `target/dist/`); `cargo xtask targets` lists the platforms.
+  Build the web app first.
 - `bun run build:assets`: rebuild `contract/assets/js/rendered-helper.js`,
-  the tool catalog and `contract/assets/index.json` after changing an
-  embedded asset, a tool or the rendered helper (see `contract/assets`).
+  the Claude mod's tool table and `contract/assets/index.json` after changing
+  an embedded asset, a tool or the rendered helper (see `contract/assets`).
 - `bun run format [paths...]`: format the given paths with the pinned root
   Biome config, or all supported files when no paths are given.
 - `bun run format:check [paths...]`: check formatting with the same path scope.
 - `bun run lint`: lint JavaScript, TypeScript, and React code with Oxlint.
-- `bun run test`: run all unit and server integration tests serially.
-- `bun run test:quick`: run the same complete suite with four workers.
-- `bun run typecheck`: build/embed web assets and run all TypeScript checks.
+- `bun run test`: run the TypeScript tests (web, shared, the Pi sidecar, the
+  scripts and the contract checks) serially.
+- `bun run test:quick`: run the same suite with four workers.
+- `bun run typecheck`: run all TypeScript checks.
 - `bun run typecheck:bun`: run Bun's native `bun check` against all three
-  TypeScript projects without rebuilding web assets (CI).
-- `bun run typecheck:quick`: check types without rebuilding existing web assets.
-  See [local validation](CONTRIBUTING.md#validation) for prerequisites and caching.
+  TypeScript projects (CI).
+- `bun run typecheck:quick`: the same checks with `tsc` and no dependency
+  rebuild. See [local validation](CONTRIBUTING.md#validation).
 - `bun run precommit`: run formatting, lint, full type checks, and `test:quick`.
+- `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings` and
+  `cargo test` (or `cargo nextest run`): the Rust checks; `cargo test -p
+  roamgate-parity --test scenarios` runs the parity suite against this
+  checkout's debug `roamgate` (`ROAMGATE_SERVER_CMD` names another server).
 
 ## Coding Style & Naming Conventions
 
@@ -70,14 +83,19 @@ work, consolidate or delete stale status documents and repair their links.
 
 ## Testing Guidelines
 
-Tests live beside their modules as `*.test.ts` and use `bun:test`. The cases of
-`shared/` logic and of the server's parsers and builders are JSON vectors in
-`contract/vectors` (format in its README), shared with the Rust side: change or
-add a vector there, not a test body. During local iteration, run a related
-file with `bun test <path>` or use `bun run test:quick`.
-Process-level tests need generated web assets; on a fresh checkout, run
-`bun run typecheck` once after installing dependencies to generate them.
-Automated tests do not launch browsers; validate affected UI and browser security
+TypeScript tests live beside their modules as `*.test.ts` and use `bun:test`;
+Rust tests are each crate's (unit tests in its modules, integration tests in
+its `tests/`). The cases of `shared/` logic and of the server's parsers and
+builders are JSON vectors in `contract/vectors` (format in its README),
+replayed by the crates and by `bun test` for `shared/`: change or add a
+vector there, not a test body. The server's observable behaviour is held by
+the parity suite's scenarios (`parity/scenarios`, run against the server
+from outside); a behaviour change ships its scenario and its contract entry
+(`contract/README.md`). During local iteration, run a related file with
+`bun test <path>`, a crate's tests with `cargo test -p <crate>`, or one
+scenario with `cargo test -p roamgate-parity --test scenarios -- <name>`.
+The server and the parity suite need the web build: run `bun run build:web`
+once on a fresh checkout. Automated tests do not launch browsers; validate affected UI and browser security
 behavior manually against a real backend using the checklist in `CONTRIBUTING.md`.
 Use Bun's fake timers for timer deadlines and events for socket readiness rather
 than waiting out production timeouts; restore real timers in `finally`.
@@ -88,7 +106,8 @@ run the hook's checks manually immediately before committing an unchanged
 revision. See the iteration workflow
 in [local validation](CONTRIBUTING.md#validation).
 For frontend-facing work, also run `bun run build:web`. Release work must package
-and inspect every supported platform archive and checksum.
+(`cargo xtask package`) and inspect every supported platform archive and
+checksum.
 
 ## Commit & Pull Request Guidelines
 

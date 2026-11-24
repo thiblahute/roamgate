@@ -10,8 +10,19 @@ for the trust model.
 Browser (React + Vite)
    | same-origin HTTP / WebSocket
    v
-Bridge (Bun + TypeScript) -- node:net --> Herdr sockets
+Bridge front (roamgate: port, TLS, auth, web app, socket framing)
+   | internal channel (Unix socket or named pipe)
+   v
+Bridge core (roamgate core: every family) --> Herdr sockets
 ```
+
+The bridge is one Rust binary (`crates/roamgate`) run as two processes: the
+front holds the port and spawns its core, which serves every RPC, route and
+socket message and talks to Herdr; the core is restarted with a growing
+delay if it exits, its browser sockets closed. The channel and the
+families it routes to are specified in `contract/wire/core-channel.md`.
+The Pi agent runtime runs in a sidecar, `roamgate-pi`, started on Ranger's
+first non-Claude call (`contract/wire/pi-sidecar.md`).
 
 Browsers cannot open Unix sockets or named pipes, so the bridge connects to
 `herdr.sock` (NDJSON control) and `herdr-client.sock` (binary terminal traffic).
@@ -31,7 +42,7 @@ whatever the background queue holds. The bridge runs a background request's SSH
 commands in the background lane (see [SSH transport](#ssh-transport)).
 
 Every network call to a forge (`glab`, `gh`) goes through one gate per
-checkout host and forge host (`server/src/workspace/forge-calls.ts`): at most
+checkout host and forge host (`crates/roamgate-forge/src/gate.rs`): at most
 60 calls a minute and four at once, queued in order and given up past the
 caller's deadline; a 429, `Retry-After` or `RateLimit-Remaining: 0` pauses the
 host until the forge allows; identical calls share one answer in flight and
@@ -56,8 +67,7 @@ reconnect lifecycle. Disconnecting stops the runtime and SSH tunnel, never Herdr
 - When a runtime is replaced, old leases are retired first. Effects already
   sent may finish, but their results are discarded.
 - A browser still holding an older runtime (a page in the background when a
-  connection reconnected, or when the connections moved between Bun and the
-  Rust core) drops the new runtime's pushes, but a push of a newer generation
+  connection reconnected) drops the new runtime's pushes, but a push of a newer generation
   or a call refused with `connection generation changed` makes it read the
   catalog again at once, so it follows the new runtime without waiting for
   its status poll.
@@ -265,7 +275,7 @@ anchor on that numbering. The tree keeps the status entries
 review (`review.list`, `review.get`, `review.open`) the server moves threads
 still anchored on a staged, unstaged or untracked entry's own diff
 (`anchor.feedback` kind) onto the combined diff by their line's text, in the
-background and once (`server/src/review/changes-anchors.ts`); one it cannot
+background and once (`crates/roamgate-review/src/anchors`); one it cannot
 place keeps its anchor. A draft's anchor diff (`anchorDiff`) reads only the
 anchor's file, whole, and the worktree review's state fingerprint hashes
 every untracked file: the whole patch's 4 MiB and 200-untracked-file caps no
@@ -299,7 +309,7 @@ An agent's `review_open` of a range whose two ends name the same commits as
 a kept range of the checkout (`review.equivalentTarget`, with `loadHeads`)
 opens that review. Reading a range's commits (`review.commits`, an agent's
 `review.get`) moves the checkout's threads written on a commit the branch
-no longer has (`server/src/review/commit-anchors.ts`): onto the commit with
+no longer has (`crates/roamgate-review/src/anchors`): onto the commit with
 the same patch id, else subject (another branch's review only by patch id),
 at the line reading the same text (and quote), else onto that line in the
 whole change, else `anchor.outdated`, kept where it was. Automatic's base
@@ -321,7 +331,7 @@ commit, a range, a compare, a step, a merge request) is read file by file
 `commit` for a commit's view) lists every file with its status and line
 counts and resolves the two commits it is between (a range's merge base and
 head, a commit's first parent or git's empty tree for a root commit, a
-step's snapshots: `server/src/workspace/review-files.ts`); then
+step's snapshots: `crates/roamgate-git/src/review_files.rs`); then
 `review.diff` with those `base` and `head` and up to 32 `files` reads their
 patches, each cut at 512 KB. The files near the reader are read, a block
 ahead of them, two requests at a time; large and generated files wait to be
@@ -545,7 +555,7 @@ or stylesheet, 5 MiB per image/font, 64 resources and 10 MiB per preview
 
 ## Activity log
 
-With `activity.enabled`, `server/src/activity` records attention, agent states
+With `activity.enabled`, `crates/roamgate-activity` records attention, agent states
 and recording gaps into `activity.sqlite` in the data directory; behavior and
 event shapes are in [the activity log](./activity.md).
 
@@ -578,7 +588,7 @@ event shapes are in [the activity log](./activity.md).
 
 ## Time-report provider
 
-`server/src/time-report` runs the [time-report provider](./time-report.md)
+`crates/roamgate-activity/src/time_report.rs` runs the [time-report provider](./time-report.md)
 for `bridge.time_report`: the configured command plus the operation, a JSON
 body on stdin, from a fresh empty directory, in its own process group killed
 at `timeout_seconds`. Day operations are serialized per day. `day` and
@@ -589,7 +599,7 @@ excluded connections and subjects turned into anonymous excluded gaps.
 
 ## Merge and pull request cache
 
-`server/src/mr-cache` is the one cache of what the UI shows of merge and pull
+`crates/roamgate-forge/src/mr_cache.rs` is the one cache of what the UI shows of merge and pull
 requests. Keys name the surface and the subject: `chip` (checkout host, forge
 host, project, number), `card` (checkout and the branch lookup's parameters)
 and `session` (checkout and agent path). Values are what the UI shows, with
@@ -621,8 +631,8 @@ and `session` (checkout and agent path). Values are what the UI shows, with
 
 Local history keeps what was authored in Roamgate as plain files in a git
 repository the user owns, committed as it changes. Code:
-`server/src/history/`, CLI `server/src/cli/history.ts`, HTTP
-`server/src/http/history.ts`, Settings `web/src/components/HistorySettings.tsx`.
+`crates/roamgate-history/`, CLI `crates/roamgate-cli/src/history.rs`, HTTP
+`crates/roamgate-http/src/history.rs`, Settings `web/src/components/HistorySettings.tsx`.
 Nothing leaves the machine: a remote and a backup target are separate
 layers on top.
 
@@ -716,9 +726,10 @@ Plus `FORMAT` (the layout's version, `1`; a newer one is refused) and a
      subject per area (`work: 2 items; reviews: 3 threads in 2 reviews`),
      the changed paths in the body;
   4. `git gc --auto` after a commit.
-     Every commit ends with a `Roamgate-Host: <host>` trailer. Git runs through
-     `Bun.spawn` with the user's identity, hooks, signing and system config
-     ignored (`git.ts`), at nice 19 in the server; never on a request path.
+     Every commit ends with a `Roamgate-Host: <host>` trailer. Git runs with
+     the user's identity, hooks, signing and system config ignored
+     (roamgate-history's git runner), at nice 19 in the server; never on a
+     request path.
      The status of the last pass (time, duration, commits, blocked files,
      area errors) is kept in `.git/roamgate-status.json`.
 - An area that fails to render is reported (status `errors`) and the
@@ -750,8 +761,8 @@ what and when.
 `roamgate archive` keeps the session files of Claude Code, Codex and Pi in
 one central, searchable, compressed archive, so the agents' own cleanup can
 run without losing history. It runs without the server (the standalone
-binary works from a timer). Code: `server/src/archive/`, CLI
-`server/src/cli/archive.ts`.
+binary works from a timer). Code: `crates/roamgate-archive/`, CLI
+`crates/roamgate-cli/src/archive.rs`.
 
 ### Layout
 
@@ -816,7 +827,7 @@ session, and how to read its records:
 
 | Agent                   | Root                                                                    | Indexed                                                                                       | Resume                               |
 | ----------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------ |
-| claude                  | `~/.claude/projects/<project>/<uuid>.jsonl`, `<uuid>/subagents/*.jsonl` | yes (as the Rust `carchive` crate)                                                            | restore, then `claude --resume <id>` |
+| claude                  | `~/.claude/projects/<project>/<uuid>.jsonl`, `<uuid>/subagents/*.jsonl` | yes                                                                                           | restore, then `claude --resume <id>` |
 | codex                   | `${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/rollout-*-<uuid>.jsonl`    | yes                                                                                           | not restored                         |
 | pi                      | `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/--<cwd>--/*.jsonl`        | yes                                                                                           | restore, then `pi --session <id>`    |
 | grok, muse, antigravity | their session directories                                               | archived raw only (stubs); sqlite files are snapshotted with `VACUUM INTO`, never copied live | no                                   |
@@ -920,7 +931,7 @@ to the original. Command output is documented in `roamgate archive --help`.
 
 - Ranger and the voice companion get read-only tools `archive_search`,
   `archive_session` and `archive_read`
-  (`server/src/assistant/archive-tools.ts`): short bounded results,
+  (`crates/roamgate-assistant`): short bounded results,
   `archive_search` on the text repo (`regex`, `tool_output` for the slow raw/
   search), `archive_read` by record range (at most 40 records and about 20000
   characters per call, with `next_line`). They run in any approval mode, are
@@ -938,7 +949,7 @@ to the original. Command output is documented in `roamgate archive --help`.
 - A transcript missing from its agent's directory is read from the archive:
   `localAgentSessionFiles` (the `AgentSessionFileAccess` seam) falls back on
   ENOENT to the archived copy for `statFile`, `readText`, `readPrefix`,
-  `readRange` and `readTail` (`server/src/archive/file-access.ts`, installed
+  `readRange` and `readTail` (`crates/roamgate-archive`, installed
   at server start). Sessions matching `archive.hide` are not served.
 - `roamgate doctor` has an Archive check that warns when a host's last sync
   is older than `archive.stale_hours`, a sync failed or the disk is low.
@@ -956,8 +967,8 @@ failures leave versions unknown without failing the list.
 
 Roamgate ships a Claude Code mod (`server/claude-mod/`, Claude Code 2.1.304
 or newer): JavaScript hooks that run inside Claude sessions, in Herdr panes
-and in conversation mode. The bridge embeds its files at build time (a Bun macro,
-`agent/claude-mod-files.ts`) and writes them, with the review client, to
+and in conversation mode. The bridge embeds its files at build time
+(roamgate-claude's plugin module) and writes them, with the review client, to
 `~/.cache/roamgate/claude-plugins` on this machine and on each SSH host: a
 directory marketplace `roamgate` listing the plugin `roamgate` by relative
 path, so Claude Code reads it in place and an update needs no reinstall
@@ -1132,7 +1143,7 @@ state; sends are never replayed.
   unchanged. A new chat, a cleared or trimmed context gets them whole.
   A chat that changes driver starts
   afresh, and input sent during a Claude Code turn waits as a follow-up.
-- **Tools** are defined in `server/src/assistant/tools.ts` and run through
+- **Tools** are defined in `crates/roamgate-assistant` and run through
   `callWorkspaceTool` against the turn's approved scope. Pi's built-in tools,
   extensions, skills, and project instructions are disabled, and workspace
   evidence is treated as untrusted.
@@ -1500,7 +1511,7 @@ the server has it (ids derived from the note, so a retry writes once); held
 threads stay held until Send, whatever wrote them.
 
 HTML files and site pages are served under `/rendered/<token>/...`
-(`server/src/http/rendered-pages.ts`), before the authentication gate: the
+(`crates/roamgate-http/src/rendered_pages.rs`), before the authentication gate: the
 128-bit token, minted by `review.rendered.page` for a rendered review, is the
 only credential. Every response carries a CSP `sandbox` without
 `allow-same-origin` and `frame-ancestors 'self'`, so pages run in an opaque
@@ -1535,7 +1546,7 @@ accepts messages only from that frame's window and checks them
 
 ### Agent messages
 
-`roamgate-review sessions` and `message` (server/src/agent/agent-messenger.ts)
+`roamgate-review sessions` and `message` (crates/roamgate-agents/src/messenger.rs)
 let agent sessions message each other. The list reads every ready connection
 (not a Windows server): Herdr's agents, with the panes conversation mode holds,
 named by their tab's title else their workspace's, addressed
@@ -1567,7 +1578,7 @@ Bash call as **To NAME** beside it.
 
 ### Reviews inbox
 
-`server/src/mr-reviews/` serves `bridge.mr_reviews.*` to every browser,
+`crates/roamgate-mr-reviews/` serves `bridge.mr_reviews.*` to every browser,
 machine-wide. Hosts are the settings' `mr_reviews.hosts`, or when empty
 those glab (`config.yml` hosts with a token, a keyring token, or glab's
 default host) and gh (`hosts.yml`) are signed in to; only host names are
@@ -2102,7 +2113,7 @@ $0.002).
 
 ## Work board
 
-The Work board (`server/src/work/`, `web/src/components/WorkBoard.tsx`) is
+The Work board (`crates/roamgate-work/`, `web/src/components/WorkBoard.tsx`) is
 the user's list of work items on a kanban by state, one project at a time,
 built on the effort model: a project is an effort with no git source, its
 items its parts, their threads a review delivered to the item's owner as an
@@ -2347,11 +2358,11 @@ is delivered again) and leaves its review; the thread's review is linked
 from the item. Lists of a checkout's reviews leave work reviews out, as
 they do efforts'.
 
-Voice companion: the companion's tool jobs (`server/src/voice/voice-tools.ts`)
+Voice companion: the companion's tool jobs (`crates/roamgate-voice-server/src/companion/tools.rs`)
 get the board from Roamgate itself, the `roamgate_work` MCP server
 (`createRangerMcp`, leased per job beside `roamgate_youtube`, their
 configs merged into one `--mcp-config`), serving `WORK_USER_TOOLS`
-(`server/src/work/tools.ts`): `work_list`, `work_update`, `work_done` and
+(`crates/roamgate-work, contract/tools/catalog.json`): `work_list`, `work_update`, `work_done` and
 `work_reopen` are the agents' tools run with `by: "user"`; `work_add`
 takes the user's words as `text` and no title (so the item is untitled
 and, with the coordinator as owner, `needsTriage`), `source` defaulting to
@@ -2388,7 +2399,7 @@ out there (`readFile` over the same shell as git); a decision is decided
 by its ticked box (`- [x] **Dn**`) or by its heading (`### Dn.`, `## Dn:`)
 followed, before the next heading of its level, by a `**Answered ...**` or
 `**Decided ...**` line (RFC-0053's form; `decisionDecided`,
-`server/src/work/service.ts`). A hit moves the item to `done` with a
+`crates/roamgate-work`). A hit moves the item to `done` with a
 `deploy` link (`{sha: "decision", branch: "ticked"}`, or `"ticked,
 uncommitted"` when a tick came from the working tree only) and a push
 saying so; only a `doing` or `open` item moves (`workLandingMakesDone`):
@@ -2434,7 +2445,7 @@ an existing item), `work_update`, `work_done`, `work_reopen`,
 {comment}` (an agent's own comments on an item, by their ids, from any
 connection; `review_edit` works on the same ids when the item's review is
 on the agent's connection), `work_project`, with the RPCs' parameters
-checked against their schemas (`server/src/work/tools.ts`; `help` lists
+checked against their schemas (`crates/roamgate-work, contract/tools/catalog.json`; `help` lists
 them). Answers are JSON after a line saying what in them other people
 wrote. The caller is named in what the user is told ("Claude in roamgate
 added ..."). The mod's descriptions do not name the client (the session
@@ -2502,7 +2513,7 @@ Code's own lock (`<config>.lock`), rewriting the config atomically and
 leaving the rest of it as it was, then keeps or drops the key. An answer
 given in a terminal meanwhile shows in the holder's next poll and settles
 the question. `ANTHROPIC_AUTH_TOKEN` is kept: Claude Code uses it without
-asking in both modes. A session's agent profile (server/src/profiles,
+asking in both modes. A session's agent profile (crates/roamgate-connections/src/agent_profiles,
 [Agent profiles](DEPLOYMENT.md#agent-profiles)) changes the `start`
 command: its program replaces `claude`, its variables join `set` and its
 removals come as `unset`, applied after the API key policy (a profile with
@@ -2706,7 +2717,7 @@ a later `--resume`, in a new child or the terminal, goes on from there, and
 the history projection drops the cut message and all that came of it. The
 history shows only the current branch: the user's own messages among what
 was cut stay as one `injected` notice of kind `rewound` where they were,
-with their texts in `rewound` (`server/src/agent/session-rewind.ts`
+with their texts in `rewound` (`crates/roamgate-agents/src/rewind.rs`
 `keptRecords`), and a cut prompt still answers its queue dequeue, so no
 message of the abandoned branch shows as queued (a rewind record also
 empties the projection's queue: Claude Code rewinds with nothing queued).
@@ -2750,7 +2761,7 @@ context and plan usage too, refreshed with the profile chip and at once on
 a `model_notice`.
 
 `/mcp` goes over the same control protocol, behind `capabilities.mcp`
-(`server/src/conversation/drivers/claude-mcp.ts`), and starts the child if
+(`crates/roamgate-claude/src/conversation/mcp.rs`), and starts the child if
 none runs, since only it knows its servers; looking at them counts as
 activity for the idle stop, so a sign-in under way is not cut short.
 `agent_chat.mcp` asks `mcp_status`, and the row carries the server's name,
@@ -2770,7 +2781,7 @@ each action, and by itself while a server connects or a sign-in is under
 way, for at most five minutes after the last action.
 
 What the code of a rewind comes to is read from the transcript
-(`server/src/conversation/rewind-scan.ts`): the files edited after the
+(`crates/roamgate-conversation`): the files edited after the
 message with Claude's file tools (Edit, Write, MultiEdit, NotebookEdit),
 and whether Claude Code took a checkpoint for it (a `file-history-snapshot`
 record naming it). Commands' side effects are not known. `rewind.check`
@@ -2827,9 +2838,9 @@ delta with `agent_history.get`, and polls every 30 seconds in case a push
 is lost (every 4 seconds from a bridge that cannot push). Local files are
 watched; an SSH connection runs one stat loop for all its watched files.
 
-Conversation mode's core (`server/src/conversation`: session, service,
+Conversation mode's core (`crates/roamgate-conversation`: session, service,
 handover, holder) is the same for every agent; it reaches the agent only
-through a driver pair in `server/src/conversation/drivers` (`types.ts`). The
+through a driver pair in `crates/roamgate-claude/src/conversation` (`types.ts`). The
 protocol driver says what the holder runs (`startCommand`), turns each line
 of the process into normalized events and encodes messages, interrupts,
 prompt answers and the agent's own requests (`createCodec`, its state saved
@@ -2852,7 +2863,7 @@ holder from before drivers, which always runs `claude`.
 ### Idle stop
 
 `conversation.idle_stop_minutes` (default 30, 0 off) stops idle headless
-processes (server/src/conversation/idle-stop.ts). The service checks its
+processes (crates/roamgate-conversation). The service checks its
 sessions once a minute against the rules in `idleStopRefusal`: a process
 runs, the lease is in the conversation phase with no handover, the status
 is idle with nothing busy (no turn, prompt, rewind or delivery), no queue,
@@ -2889,7 +2900,7 @@ that got such a message in the last 10 minutes are left running instead.
 
 ## Usage limit resume
 
-server/src/limit-resume resumes the Claude sessions a usage limit stopped,
+crates/roamgate-connections/src/limit_resume.rs resumes the Claude sessions a usage limit stopped,
 once it resets ([settings](DEPLOYMENT.md#resuming-after-a-usage-limit)).
 
 - **Detection** (`usageLimitStop` in shared/limitResume.ts): the session's
@@ -2947,7 +2958,7 @@ once it resets ([settings](DEPLOYMENT.md#resuming-after-a-usage-limit)).
 
 The bridge runs the voice helper (`voice/helper`) as a child process and
 talks to it in frames (`crates/roamgate-protocol/src/frames.rs`, the
-helper's codec, and `server/src/voice/voice-helper.ts`): a little-endian
+helper's codec, and `crates/roamgate-voice-server/src/helper.rs`): a little-endian
 u32 length, a kind
 byte (0 for JSON, 1 for a listening session's audio), then the payload,
 16 MiB at most. The helper keeps its stdout for frames alone; whatever it
@@ -3036,8 +3047,8 @@ buttons (`web/src/dictation.ts`, one `useDictation` in
 `web/src/components/Dictation.tsx`: the message box's, every comment
 editor's, and `FieldDictation`'s on any other focused text box without a
 `data-dictation` attribute around it) use it. It is a mode of the voice
-socket (`/api/voice/ws`, `server/src/http/voice-socket.ts`); the cleaner
-is `server/src/voice/voice-dictation.ts`.
+socket (`/api/voice/ws`, `crates/roamgate-voice-server/src/socket.rs`); the cleaner
+is `crates/roamgate-voice-server/src/companion/dictation.rs`.
 
 Client to server, JSON unless binary:
 
@@ -3113,7 +3124,7 @@ for a corpus of dictations.
 ## Voice calls
 
 A voice chat is a WebRTC call between the page and the voice helper
-(`voice/helper/src/call.rs`, `server/src/http/voice-socket.ts`,
+(`voice/helper/src/call.rs`, `crates/roamgate-voice-server/src/socket.rs`,
 `web/src/webrtcCall.ts`). The voice socket (`/api/voice/ws`) controls it:
 `{"op": "call_audio", "on": true}` makes the helper start the call, one at
 a time, answered `{"event": "call_audio", "call": <id>, "resume":
@@ -3230,8 +3241,8 @@ Chrome on Android gives a page silence from its microphone once the
 screen is off; the Roamgate Android app (`net.ts.roamgate`) keeps it in a
 microphone foreground service. A call started in the web UI on a phone
 that has the app is carried by the app (`web/src/androidApp.ts`,
-`web/src/webrtcCall.ts`'s `handOff`, `server/src/http/voice-socket.ts`,
-`server/src/http/call-handoff.ts`):
+`web/src/webrtcCall.ts`'s `handOff`, `crates/roamgate-voice-server/src/socket.rs`,
+`crates/roamgate-voice-server/src/socket.rs`):
 
 1. **Knowing the app.** The app's Trusted Web Activity opens the server at
    `/?roamgate_app=<versionCode>`; Chrome also gives such a page the
@@ -3367,7 +3378,7 @@ push providers with a 10-second deadline, 4 concurrent requests, and a
 ### Notification feed
 
 Every notification goes through one source
-(`server/src/notifications/notification-feed.ts`): it builds the message once
+(`crates/roamgate-notify/src/feed.rs`): it builds the message once
 (`taskPushPayload`) and hands it to two sinks, Web Push and the notification
 socket. The sources are the task notifications above, Ranger task runs, an
 agent's own `roamgate-review notify`, and agents' permission prompts and
@@ -3457,7 +3468,7 @@ Unix SSH runtimes run one OpenSSH process forwarding both sockets into a private
 temporary directory. Readiness needs a control `ping` and render handshake.
 
 The control socket is reached through a relay the tunnel runs as its remote
-command (`python3`, inline, see `server/src/bridge/herdr-relay.ts`). Herdr
+command (`python3`, inline, see `crates/roamgate-exec/src/ssh/herdr_relay.rs`). Herdr
 reads a new control connection without blocking and sleeps 100 ms when the
 request is not there yet; through a plain `-L` forward it never is, since sshd
 connects when the channel opens and the request follows a round trip later.
@@ -3572,26 +3583,13 @@ At startup, orphaned command masters are stopped only in private, user-owned
 runtime directories whose recorded Roamgate owner process is gone. A failed
 exit request retains the directory and socket for a later cleanup attempt.
 
-## Rust core
-
-With `ROAMGATE_CORE_BIN` naming a build of the Rust `roamgate` binary, the
-Bun server runs it beside itself as a portless core process and talks to it
-over an internal channel: a Unix socket in `<data>/runtime` (a named pipe on
-Windows). The channel, the owners table `<data>/runtime/owners.json` that
-gives families of methods and routes to one side or the other, the rule of
-one writer per file, and the sampled shadow reads that compare both sides'
-answers are specified in `contract/wire/core-channel.md`, with the families
-in `contract/owners/families.json`. Bun keeps the port, auth and every
-WebSocket; a family goes to the core only while the core runs and says it
-has it, so a missing or crashed core leaves Bun serving everything. Without
-the variable nothing of this runs.
-
 ## Distribution model
 
-Production builds embed the frontend and Bun into one executable. Release
-binaries, archives, checksums, and update manifests all use the `roamgate` name;
-missing or legacy manifests fail closed. Publishing needs all six platform
-asset sets. Old clients need [manual migration](./DEPLOYMENT.md#transition-from-herdr-studio--herdr-gui).
+Production builds embed the frontend into one Rust executable, shipped with
+the Pi sidecar `roamgate-pi` (`cargo xtask package`). Release binaries,
+archives, checksums, and update manifests all use the `roamgate` name;
+missing or legacy manifests fail closed. Publishing needs every target of
+`targets.toml`. Old clients need [manual migration](./DEPLOYMENT.md#transition-from-herdr-studio--herdr-gui).
 
 ## Trust boundary
 

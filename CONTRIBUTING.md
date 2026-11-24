@@ -2,39 +2,43 @@
 
 ## Development Setup
 
-Use Bun 1.4.4+, Node ^20.19.0 or >=22.12.0 (for Vite 8), and a running local
-Herdr server:
+Use Bun 1.4.4+, Node ^20.19.0 or >=22.12.0 (for Vite 8), a stable Rust
+toolchain with `rustfmt` and `clippy`, and a running local Herdr server:
 
 ```bash
 bun install --frozen-lockfile
 bun run install-hooks
+bun run build:web
 # Run in separate terminals:
 bun run dev:server
 bun run dev:web
 ```
 
 Open <http://localhost:5173>. Vite proxies `/api`, `/ws`, and `/login` to the dev
-bridge on `127.0.0.1:8788` (services and `start:server` use 8787). `dev:server`
-runs in development mode, so loopback needs no login. To test authentication,
-run `NODE_ENV=production bun run start:server`. Never forward a development
-listener; see [Security](./SECURITY.md#trust-model).
+bridge on `127.0.0.1:8788` (services use 8787). `dev:server` runs the server
+(`cargo run -p roamgate`) in development mode, so loopback needs no login. To
+test authentication, run `cargo run -p roamgate -- --port 8788` without
+`NODE_ENV=development`. Never forward a development listener; see
+[Security](./SECURITY.md#trust-model).
 
-`bun.lock` is the only lockfile. Shared tooling belongs in the root manifest and
-runtime dependencies in the `web` or `server` workspace. Commit manifest and
-lockfile changes together.
+`bun.lock` is the only lockfile of the TypeScript workspaces and `Cargo.lock`
+the Cargo workspace's. Shared tooling belongs in the root manifest and runtime
+dependencies in the `web` or `server` workspace (the Pi sidecar's). Commit
+manifest and lockfile changes together.
 
 ## Validation
 
-On a fresh checkout, run `bun run typecheck` once to generate the web assets that
-process-level tests need. Then iterate with focused checks:
+On a fresh checkout, run `bun run build:web` once: the server embeds the web
+app, and the parity suite serves it. Then iterate with focused checks:
 
-| Check          | Command                                                                            |
-| -------------- | ---------------------------------------------------------------------------------- |
-| Format         | `bun run format <paths...>` or `bun run format:check`                              |
-| Types          | `bun run typecheck:quick` (no asset rebuild)                                       |
-| Lint           | `bun run lint` (Oxlint; rules in `.oxlintrc.json`)                                 |
-| Tests          | `bun test <path>`, `bun run test` (serial), or `bun run test:quick` (four workers) |
-| Frontend build | `bun run build:web` (required for frontend changes)                                |
+| Check          | Command                                                                              |
+| -------------- | ------------------------------------------------------------------------------------ |
+| Format         | `bun run format <paths...>` or `bun run format:check`                                |
+| Types          | `bun run typecheck:quick` (no asset rebuild)                                         |
+| Lint           | `bun run lint` (Oxlint; rules in `.oxlintrc.json`)                                   |
+| Tests          | `bun test <path>`, `bun run test` (serial), or `bun run test:quick` (four workers)   |
+| Frontend build | `bun run build:web` (required for frontend changes)                                  |
+| Rust           | `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` |
 
 The pre-commit hook runs lint and `bun run typecheck:bun` (Bun's native
 `bun check` across the root, web, and server projects). Let it run instead of
@@ -47,17 +51,19 @@ store a test did not point elsewhere, or work a timed-out test left running
 after its file restored the environment, never reaches your own Roamgate
 data. Run tests from the repository root, where `bunfig.toml` is.
 
-PR CI runs format, lint, types, the site build, and the full `test:quick` suite.
-Releases run `bun run precommit` and must package and inspect every platform
-archive and checksum; see [builds](docs/DEPLOYMENT.md#build-a-standalone-executable)
+PR CI runs format, lint, types, the site build, and the full `test:quick` suite,
+and the Rust workflow the Rust checks, the parity suite and every release
+target's package. Releases run `bun run precommit` and must package and
+inspect every platform archive and checksum; see [builds](docs/DEPLOYMENT.md#build-a-standalone-executable)
 and the [release policy](AGENTS.md#release-notes).
 
 ### Test clock
 
 Scenarios about deadlines (idle stop, cooldowns, cache lifetimes, retries)
-start the server from source with `ROAMGATE_TEST_CLOCK=<socket>`: its time and
-timers become virtual and move only when the test sends `advance <ms>` on that
-socket. The standalone binary refuses the variable. The protocol and its
+start a debug server with `ROAMGATE_TEST_CLOCK=<socket>`: its time and timers
+become virtual and move only when the test sends `advance <ms>` on that
+socket. A release binary refuses the variable (unless built with the
+`roamgate-base/test-clock` feature). The protocol and its
 semantics are in [contract/wire/test-clock.md](contract/wire/test-clock.md).
 
 A test server stays in its own world with two more variables:
@@ -74,43 +80,33 @@ instead of Hugging Face and GitHub (`https://host/path` becomes
 
 ### Parity suite
 
-`parity/` drives a server from outside only, so the same cases hold the Bun
-server and the Rust one: `cargo test -p roamgate-parity` runs every scenario
-of `parity/scenarios/` against `ROAMGATE_SERVER_CMD` (the Bun server from this
-checkout by default), each in a run of its own (HOME, data root, fake Herdr,
-fakes of ssh, glab, gh, claude and the rest on its PATH, test clock), and
-checks the recorded traffic against `contract/`. The scenario format is in
-`parity/src/scenario.rs`. `cargo run -p roamgate-parity --bin parity-ledger`
-refreshes `parity/ledger.tsv`, which maps every TS test to what replaces it;
-`PARITY_GATE_STRICT=1` makes the ledger and the contract coverage gates fail
-on gaps. `PARITY_KEEP=1` keeps a run's directory, `PARITY_JOBS` bounds the
-servers run at once. To run the suite on the Rust front, set
-`ROAMGATE_SERVER_CMD` to `<checkout>/target/debug/roamgate front`,
-`ROAMGATE_SIDECAR_BIN` to `<checkout>/server/src/index.ts` and
-`ROAMGATE_CLI_CMD` to `bun <checkout>/server/src/index.ts`: the front's CLI
-is still the Bun one. A family that flips only behind the Rust front
-(voice) is skipped by a hybrid run on the Bun front that gives it to Rust
-(`RUST_FRONT_ONLY` in `parity/src/run.rs`). To run it with no Bun at all,
-set `ROAMGATE_SERVER_CMD` to `<target>/debug/roamgate front` and
-`ROAMGATE_CLI_CMD` to `<target>/debug/roamgate`, and leave
-`ROAMGATE_SIDECAR_BIN` unset: the front runs its own `roamgate core`
-(contract/wire/core-channel.md, The standalone core), the front is
-`rust-only` (scenarios that name other `fronts:` are skipped, the Bun and
-Rust handovers among them), a scenario fails when a `bun` process runs
-under the server, and a failure lists what the standalone core lacked
-(`reverse-missing <target>`, `unported <what>`). Ranger's providers but
-Claude Code run Pi in the `roamgate-pi` sidecar: the harness compiles it
-from this checkout once per run into `<target>/parity-pi/` (Bun builds it;
-it runs as `roamgate-pi`, no `bun` process) and names it in
-`ROAMGATE_PI_SIDECAR`, and as `${PI_SIDECAR}` in scenarios.
-A run names its front, server and CLI commands on stderr, in each
-failure and in `run.json` of each run's directory.
+`parity/` drives the server from outside only: `cargo test -p roamgate-parity
+--test scenarios` runs every scenario of `parity/scenarios/` against
+`ROAMGATE_SERVER_CMD` (by default this checkout's debug `roamgate`, built
+once per run), each in a run of its own (HOME, data root, fake Herdr, fakes
+of ssh, glab, gh, claude and the rest on its PATH, test clock), and checks
+the recorded traffic against `contract/`; `ROAMGATE_CLI_CMD` names the CLI
+the `cli` steps run (the server command by default). The scenario format is
+in `parity/src/scenario.rs`. A scenario that runs the release binary
+(`server.command: standalone`) builds it (`PARITY_STANDALONE` names a
+prebuilt one). Ranger's providers but Claude Code run Pi in the
+`roamgate-pi` sidecar: the harness compiles it from this checkout once per
+run into `<target>/parity-pi/` and names it in `ROAMGATE_PI_SIDECAR`, and as
+`${PI_SIDECAR}` in scenarios. A failure lists what the core lacked
+(`reverse-missing <target>`, `unported <what>`, from its served log).
+`cargo run -p roamgate-parity --bin parity-ledger` refreshes
+`parity/ledger.tsv`, which maps every TypeScript test to what covers it on
+the Rust side; `PARITY_GATE_STRICT=1 cargo test -p roamgate-parity --test
+gate` makes the ledger and the contract coverage gates fail on gaps, and
+checks `contract/env.md` against what the crates read. `PARITY_KEEP=1` keeps
+a run's directory, `PARITY_JOBS` bounds the servers run at once. A run names
+its server and CLI commands on stderr, in each failure and in `run.json` of
+each run's directory.
 
 ### Rust workspace
 
 The repository root is a Cargo workspace: `crates/roamgate` (the server
-binary: `roamgate [server flags]` runs the front with its standalone core
-and serves the web build it carries, read from `server/public` in a debug
+binary: `roamgate [server flags]` runs the front with its core and serves the web build it carries, read from `server/public` in a debug
 build and embedded in a release one; the management commands), `parity/`,
 `xtask/`, and the voice helper, which builds only when
 asked (`-p roamgate-voice`, or from `voice/helper`). Check it with
@@ -125,7 +121,7 @@ The parity suite finds its checkout at run time, so its binaries may be
 shared, but run them from the checkout they should read and write.
 
 `targets.toml` lists the seven release targets; `scripts/targets.test.ts` keeps
-the Bun build's platform lists in line with it. `cargo xtask` reads it:
+the release workflow and the installers in line with it. `cargo xtask` reads it:
 
 - `cargo xtask package <platform...|all> [--version X.Y.Z]` builds `roamgate`
   for each target with the web app in `server/public` embedded
@@ -136,8 +132,7 @@ the Bun build's platform lists in line with it. `cargo xtask` reads it:
   macOS targets build with cargo-zigbuild off their OS, Windows targets with
   cargo-xwin.
 - `cargo xtask update-proof <platform> --from <earlier roamgate>` installs
-  an earlier build (a Bun build of this checkout, or the last release's
-  binary) in a sandbox (its own HOME, XDG directories and TMPDIR), lets its
+  an earlier build (the last release's binary) in a sandbox (its own HOME, XDG directories and TMPDIR), lets its
   `roamgate update` install the package from a loopback mirror, and checks
   the new binary, `roamgate.previous`, the package's `roamgate-pi` beside it
   (added by a second `roamgate update` when the earlier updater left it
@@ -164,62 +159,6 @@ socket in `~/.cache/roamgate`. Such a server does not connect SSH profiles:
 on the host it would take the Roamgate socket from the running bridge, whose
 conversation-mode holders poll there. Use local connections, or set
 `ROAMGATE_ALLOW_SSH=1` against a host no other Roamgate serves.
-
-The tests that start a server process (`server/src/connections/*process.test.ts`)
-rehearse families on the Rust core with `ROAMGATE_CORE_BIN` naming the core and
-`ROAMGATE_TEST_RUST_FAMILIES` the families (comma separated) their test
-server's owners table gives it, such as `host`.
-
-### Windows SSH end-to-end test
-
-This opt-in test needs a disposable bridge (allowing unauthenticated loopback
-WebSockets, such as a dev server) and two Windows profiles connected to dedicated
-Herdr 0.9.1+ sessions named `roamgate-ssh-*`, each with a PowerShell pane. Close
-browser viewers first. It sends commands, resizes, and reconnects, so **never
-point it at real sessions**:
-
-```bash
-ROAMGATE_LIVE_WINDOWS_SSH_URL=http://127.0.0.1:8788 \
-ROAMGATE_LIVE_WINDOWS_SSH_SESSION=roamgate-ssh-e2e \
-ROAMGATE_LIVE_WINDOWS_SSH_OTHER_SESSION=roamgate-ssh-other \
-bun test server/src/connections/windows-ssh-live.test.ts
-```
-
-### Live voice test
-
-`bun run test:voice-live` checks that what is said into a voice chat comes
-out as said, through the real path: an isolated bridge (its own `$HOME`,
-port 0) runs the voice helper and models of your `voice.json`, headless
-Chrome's fake microphone plays English and French speech (made with
-macOS's `say`, Chrome's echo cancellation, noise suppression and auto gain
-on it), and the page's voice link listens on the voice socket and in a
-WebRTC call: as is; with sung music under the call that the microphone
-hears too; with someone else speaking first; and with one voice going
-from English to French (Parakeet drifts to English on some French, and
-Whisper reads it again). The runs with music, someone else or two
-languages take the speaker's voice from recordings of it
-(`speaker_reference`), and the same runs without are printed beside them.
-Without recordings, music asked for at the call's start must stay silent
-on the replies leg until the speaker has spoken, then play, while the
-microphone hears everything the call plays; the voice taken must be the
-speaker's first sentence, and no sung word may be heard.
-Each run's word error rate is printed and must stay under its bound. The
-page also reads replies in the call, which must be heard on its replies
-leg (their decoded level is printed); and the test bridge's own helper is
-killed in the middle of a call, which must be made again with its
-signalling opened once more, both legs back within ten seconds, what is
-said next heard as said and a reply heard. `ROAMGATE_LIVE_VOICE_SOAK=1`
-adds a call of three minutes, which must keep its one signalling socket
-and both legs, each carrying RTP every ten seconds. It needs macOS and
-Chrome (or `CHROME_BIN`), takes about twelve minutes (three more with the
-soak), and is skipped by `bun run test`. Run it on the Mac before deploying a voice or
-helper change. `ROAMGATE_LIVE_VOICE_HELPER` tests another helper binary,
-`ROAMGATE_LIVE_VOICE_CONFIG` another `voice.json`,
-`ROAMGATE_LIVE_VOICE_MUSIC` plays a WAV of your music under the call and
-the speech, `ROAMGATE_LIVE_VOICE_CLIPS` adds a directory of your own
-recordings (`<name>.wav` with its words in `<name>.txt`), with
-`ROAMGATE_LIVE_VOICE_REFERENCE` (comma-separated files) as their speaker's
-voice, and `ROAMGATE_LIVE_VOICE_KEEP=1` keeps each run's `server.log`.
 
 ## Security Checks and Dependency Updates
 

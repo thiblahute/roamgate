@@ -204,12 +204,13 @@ the address bar. Log in to Roamgate, then install:
 
 ## Development
 
-Use Bun 1.4.4 or newer and a running Herdr server:
+Use Bun 1.4.4 or newer, a stable Rust toolchain and a running Herdr server:
 
 ```bash
 bun install --frozen-lockfile
+bun run build:web
 # Run in separate terminals:
-bun run dev:server
+bun run dev:server   # the Rust server, cargo run -p roamgate
 bun run dev:web
 ```
 
