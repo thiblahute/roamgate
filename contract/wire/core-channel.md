@@ -228,7 +228,19 @@ Bun core runs never takes it from the front's environment).
   URLs it was reached on, `port`: the port it listens on, `generations`); the core starts its connections from it
   (the host family's `internal.host.start`) and answers at once. At its
   shutdown the front calls `internal.front.stop` (the connections stop,
-  at most 10 s) before `bye`.
+  at most 10 s) before `bye`. On a test clock the front then sends one
+  `internal.clock.advance` to its own time: an `advance` while the core
+  was being welcomed and started had no core to reach.
+- The front sets on its core what the server's configuration asks of the
+  core's process: `ROAMGATE_PROFILE` `1` on its first start, with
+  `ROAMGATE_PROFILE_DURATION` (seconds) and `ROAMGATE_PROFILE_DIR` (the
+  directory the front resolved), when `--profile` or the environment ask
+  for a CPU profile (the core samples itself and ends the capture on its
+  families' clock), else `0`; and `ROAMGATE_CONTRACT_RECORD`, the record
+  directory the front resolved (`0` when record mode is off): the front
+  records the requests and browser sockets, the core the processes its
+  runners start, in that directory. Variables of `roamgate service run`'s
+  environment file reach the core as the front's own.
 - The core's `front` family takes what no family declares: the `/ws`
   socket (Bun's routing: the hello and the forwards registry on open, each
   RPC checked, routed to its connection and then to the family that

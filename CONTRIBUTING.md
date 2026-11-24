@@ -95,17 +95,24 @@ set `ROAMGATE_SERVER_CMD` to `<target>/debug/roamgate front` and
 `ROAMGATE_CLI_CMD` to `<target>/debug/roamgate`, and leave
 `ROAMGATE_SIDECAR_BIN` unset: the front runs its own `roamgate core`
 (contract/wire/core-channel.md, The standalone core), the front is
-`rust-only` (scenarios that name other `fronts:` are skipped), a scenario
-fails when a `bun` process runs under the server, and a failure lists what
-the standalone core lacked (`reverse-missing <target>`, `unported <what>`).
+`rust-only` (scenarios that name other `fronts:` are skipped, the Bun and
+Rust handovers among them), a scenario fails when a `bun` process runs
+under the server, and a failure lists what the standalone core lacked
+(`reverse-missing <target>`, `unported <what>`). Ranger's providers but
+Claude Code run Pi in the `roamgate-pi` sidecar: the harness compiles it
+from this checkout once per run into `<target>/parity-pi/` (Bun builds it;
+it runs as `roamgate-pi`, no `bun` process) and names it in
+`ROAMGATE_PI_SIDECAR`, and as `${PI_SIDECAR}` in scenarios.
 A run names its front, server and CLI commands on stderr, in each
 failure and in `run.json` of each run's directory.
 
 ### Rust workspace
 
 The repository root is a Cargo workspace: `crates/roamgate` (the server
-binary, for now a skeleton that answers `--version` and serves the embedded
-web app), `parity/`, `xtask/`, and the voice helper, which builds only when
+binary: `roamgate [server flags]` runs the front with its standalone core
+and serves the web build it carries, read from `server/public` in a debug
+build and embedded in a release one; the management commands), `parity/`,
+`xtask/`, and the voice helper, which builds only when
 asked (`-p roamgate-voice`, or from `voice/helper`). Check it with
 `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D warnings`
 and `cargo nextest run --locked` (the Rust workflow runs them).

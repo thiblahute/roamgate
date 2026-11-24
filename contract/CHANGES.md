@@ -20,6 +20,24 @@ after their agents; `host.master_ready` sets an SSH host's review client
 up over the connection's master. Hybrid modes and the browser surface are
 unchanged; the inventory too.
 
+## 1.36
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+The Rust binary's default server path (S25 cut-over, WP5):
+`roamgate [server flags]` and `roamgate service run <file>` run the Rust
+front with its standalone core (`roamgate front` stays a hidden alias),
+`--help` prints the top-level help as the Bun server did, and a release
+binary serves the web build it carries. On the standalone core
+(wire/core-channel.md, The standalone core): the front sets
+`ROAMGATE_PROFILE`, `ROAMGATE_PROFILE_DURATION` and `ROAMGATE_PROFILE_DIR`
+(the CPU profile is the core's, ended on its clock) and
+`ROAMGATE_CONTRACT_RECORD` (the front records requests and sockets, the
+core its processes, in Bun's file format), passes `service run`'s
+variables on, and sends one `internal.clock.advance` once the core is
+started on a test clock. Hybrid modes and the browser surface are
+unchanged; the inventory too.
+
 ## 1.35
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
