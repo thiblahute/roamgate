@@ -7093,6 +7093,7 @@ dependencies = [
  "roamgate-pi",
  "roamgate-protocol",
  "roamgate-review",
+ "roamgate-workspace",
  "rusqlite",
  "serde",
  "serde_json",

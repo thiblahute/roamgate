@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::driver::{AssistantDriver, LoginInteraction, RunEvent, RunInput};
 use crate::errors::{AssistantError, AssistantResult};
-use crate::tools::{BoxFuture, ranger_system_prompt, ranger_tools};
+use crate::tools::{BoxFuture, RangerTool, ranger_system_prompt, ranger_tools};
 
 /// `sharedMcp`: one loopback server for every Ranger directory.
 fn shared_mcp() -> ClaudeMcp {
@@ -37,6 +37,28 @@ fn to_claude(error: AssistantError) -> ClaudeError {
         ClaudeError::User(error.message().to_owned())
     } else {
         ClaudeError::Internal(error.message().to_owned())
+    }
+}
+
+/// A Ranger tool as the loopback MCP server lists and runs it.
+pub(crate) fn mcp_tool(tool: RangerTool) -> McpTool {
+    let ranger = tool.clone();
+    McpTool {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        call: Arc::new(move |params, cancel| {
+            let called = ranger.call(params, Some(cancel));
+            Box::pin(async move {
+                called
+                    .await
+                    .map(|result| McpToolResult {
+                        text: result.text,
+                        sources: result.sources,
+                    })
+                    .map_err(to_claude)
+            })
+        }),
     }
 }
 
@@ -142,26 +164,7 @@ impl AssistantDriver for RangerClaude {
             tools: Box::new(move |automatic| {
                 ranger_tools(&handlers, automatic)
                     .into_iter()
-                    .map(|tool| {
-                        let ranger = tool.clone();
-                        McpTool {
-                            name: tool.name,
-                            description: tool.description,
-                            parameters: tool.parameters,
-                            call: Arc::new(move |params, cancel| {
-                                let called = ranger.call(params, Some(cancel));
-                                Box::pin(async move {
-                                    called
-                                        .await
-                                        .map(|result| McpToolResult {
-                                            text: result.text,
-                                            sources: result.sources,
-                                        })
-                                        .map_err(to_claude)
-                                })
-                            }),
-                        }
-                    })
+                    .map(mcp_tool)
                     .collect()
             }),
             checkpoint,
