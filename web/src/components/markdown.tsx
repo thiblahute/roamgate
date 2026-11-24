@@ -724,6 +724,7 @@ export function MarkdownPreview({
   threadsFor,
   htmlBlock,
   htmlDocument = false,
+  lead,
 }: {
   text: string;
   className?: string;
@@ -749,6 +750,12 @@ export function MarkdownPreview({
   htmlBlock?: (html: string) => ReactNode;
   /** A project's markdown file: its raw HTML is meant as HTML. */
   htmlDocument?: boolean;
+  /**
+   * Drawn first in the document, in its scroll (the Files preview's
+   * threads on no line): out of the way once read, as a thread under a
+   * block is, rather than a box of its own above it.
+   */
+  lead?: ReactNode;
 }) {
   // SVG markup alone is drawn as an ```svg block.
   const source = useMemo(() => diagramMarkdown(text), [text]);
@@ -786,6 +793,22 @@ export function MarkdownPreview({
     stops: SourceStop[];
   }>({ list: [], stops: [] });
   const articleRef = useRef<HTMLElement | null>(null);
+  // One element for the lead, kept across renders (its state, a fold, with
+  // it) and put back first whenever the document's HTML replaces it. A
+  // thread slot to the document's rules (none of them), not to threadsFor.
+  const [leadHost] = useState(() => {
+    if (typeof document === "undefined") return null;
+    const host = document.createElement("div");
+    host.className = "md-thread-slot md-lead-slot";
+    return host;
+  });
+  const hasLead = lead !== undefined && lead !== null && lead !== false;
+  useLayoutEffect(() => {
+    const root = articleRef.current;
+    if (!hasLead || !root || !leadHost) return;
+    if (root.firstChild !== leadHost) root.prepend(leadHost);
+    return () => leadHost.remove();
+  }, [html, hasLead, leadHost]);
   useEffect(() => {
     if (fragment) scrollToMarkdownHeading(articleRef.current, fragment);
   }, [html, fragment]);
@@ -795,7 +818,9 @@ export function MarkdownPreview({
       sourceBlocks && root
         ? {
             list: [
-              ...root.querySelectorAll<HTMLElement>(".md-thread-slot"),
+              ...root.querySelectorAll<HTMLElement>(
+                ".md-thread-slot:not(.md-lead-slot)",
+              ),
             ].map((element) => ({
               element,
               stops: (element.dataset.stops ?? "").split(" ").filter(Boolean),
@@ -952,6 +977,7 @@ export function MarkdownPreview({
         }}
         dangerouslySetInnerHTML={{ __html: html }}
       />
+      {hasLead && leadHost ? createPortal(lead, leadHost, "lead") : null}
       {diagrams}
       {forgeChips}
       {htmlBlock

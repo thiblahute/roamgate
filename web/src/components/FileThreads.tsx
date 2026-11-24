@@ -908,12 +908,18 @@ export function SlotThreads({
   );
 }
 
+/** Up to this many threads on no line, their list starts open. */
+const DETACHED_OPEN_UP_TO = 2;
+
 /**
  * The threads of the Files preview drawn on no line: written on the whole
  * file, or whose lines are gone from it (deleted, or reworded past
  * finding), each with the words it was written on, listed above the file
  * as the review in Changes lists its general comments, rather than drawn
- * on whatever is on their old lines now.
+ * on whatever is on their old lines now. A section folded under its count
+ * once there are more than a couple, so the page under it stays in reach
+ * (on a phone above all); opened by hand, or when j / k or the thread list
+ * goes to one of them.
  */
 export function DetachedFileThreads({
   threads,
@@ -935,14 +941,42 @@ export function DetachedFileThreads({
       thread.kind !== "merge-request" &&
       !(view.openOnly && thread.resolved),
   );
+  const fallback = shown.length <= DETACHED_OPEN_UP_TO;
+  // Folded or opened by hand, against the count's default.
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const open = chosen ?? fallback;
+  const section = useRef<HTMLDetailsElement | null>(null);
+  const { cursor } = view;
+  useEffect(() => {
+    // The cursor (j / k) on one of its threads: shown.
+    if (open || !cursor) return;
+    if (
+      section.current?.querySelector(`[data-chat-stop="${CSS.escape(cursor)}"]`)
+    ) {
+      setChosen(true);
+    }
+  }, [cursor, open]);
   if (!shown.length) return null;
   return (
-    <div
+    <details
+      ref={section}
       className="diff-review-general file-preview-detached"
       data-testid="file-preview-detached"
+      open={open}
+      onToggle={(event) => {
+        const now = event.currentTarget.open;
+        setChosen(now === fallback ? null : now);
+      }}
     >
+      <summary className="file-preview-detached-summary">
+        {shown.length === 1
+          ? "1 comment not shown in the page"
+          : `${shown.length} comments not shown in the page`}
+        <span className="file-preview-detached-hint">
+          on the review, or on code not shown here
+        </span>
+      </summary>
       <section className="diff-review-general-part">
-        <h3>Comments on the review, or on code not shown here</h3>
         {shown.map((thread) => (
           <div key={thread.id} className="chat-review diff-review-thread">
             <FileThread
@@ -956,7 +990,7 @@ export function DetachedFileThreads({
           </div>
         ))}
       </section>
-    </div>
+    </details>
   );
 }
 
@@ -1382,6 +1416,9 @@ export function focusFileThread(
     `.chat-thread[data-thread-id="${CSS.escape(thread.id)}"]`,
   );
   if (!root || !element) return;
+  // In the folded list of threads on no line: opened first.
+  const folded = element.closest<HTMLDetailsElement>("details:not([open])");
+  if (folded) folded.open = true;
   const stop = element.dataset.chatStop
     ? element
     : element.querySelector<HTMLElement>("[data-chat-stop]");

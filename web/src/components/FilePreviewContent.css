@@ -169,11 +169,40 @@
   overflow: hidden;
 }
 
-/* The threads on no line (a rendered page's element threads among them):
-   at most part of the height, scrolled on their own, so the page or file
-   under them keeps the rest. Unbounded, a long list took the whole column
-   (it does not shrink, the page's frame does) and was clipped with no way
-   to scroll: on a phone the page was gone. */
+/* The threads on no line (FileThreads' DetachedFileThreads): a section
+   folded under its count, open while there are a couple. In a Markdown
+   document it is the document's first block, in its scroll, as wide as
+   the threads under its blocks. */
+.file-preview-detached > .file-preview-detached-summary {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.file-preview-detached > .file-preview-detached-summary:hover {
+  color: var(--text-strong);
+}
+
+.file-preview-detached-hint {
+  margin-left: 8px;
+  font-weight: 400;
+}
+
+.file-preview-detached:not([open]) {
+  gap: 0;
+}
+
+.md-lead-slot > .file-preview-detached {
+  margin-bottom: 18px;
+  padding-inline: 0;
+}
+
+/* Above a page in a frame or the source, which scroll on their own: at
+   most part of the height once opened, so the page under it keeps the
+   rest. Unbounded, a long list took the whole column (it does not shrink,
+   the page's frame does) and was clipped with no way to scroll: on a
+   phone the page was gone. */
 .file-preview-file-content > .file-preview-detached {
   flex: 0 1 auto;
   min-height: 0;

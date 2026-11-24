@@ -181,9 +181,15 @@ if (
       return (
         <section className="file-preview">
           <div ref={setElement} className="file-preview-file-content">
-            <DetachedFileThreads threads={api.threads} api={api} view={view} />
             <MarkdownPreview
               text={text}
+              lead={
+                <DetachedFileThreads
+                  threads={api.threads}
+                  api={api}
+                  view={view}
+                />
+              }
               threadsFor={(stops, stopOf, where) => (
                 <SlotThreads
                   stops={stops}
@@ -238,9 +244,22 @@ if (
       const listed = host.querySelector(
         '[data-testid="file-preview-detached"]',
       )!;
-      expect(listed.textContent).toContain(
-        "Comments on the review, or on code not shown here",
+      // First in the document, in its scroll, through its HTML replaced;
+      // one thread: open.
+      expect(listed.parentElement?.classList.contains("md-lead-slot")).toBe(
+        true,
       );
+      expect(host.querySelector(".file-preview-markdown")?.firstChild).toBe(
+        listed.parentElement,
+      );
+      expect((listed as HTMLDetailsElement).open).toBe(true);
+      expect(listed.querySelector("summary")?.textContent).toContain(
+        "1 comment not shown in the page",
+      );
+      // Not a block of the document for the threads under blocks.
+      expect(
+        listed.parentElement?.closest("[data-for-stop]") ?? null,
+      ).toBeNull();
       expect(listed.textContent).toContain(
         'todo.md · "Call 1 on 2026-11-19 stopped listening at 23:31 after an',
       );

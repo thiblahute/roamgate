@@ -2703,6 +2703,18 @@ export function FilePreviewContent({
       ) : null}
     </>
   );
+  const markdownRendered = hasMarkdownPreview && renderRichPreview;
+  // The threads on no line of the file: listed, not drawn on whatever is
+  // on their old lines now (FileThreads.tsx).
+  const detachedThreads = (
+    <DetachedFileThreads
+      threads={fileThreads.threads}
+      api={fileThreads}
+      view={threadView}
+      undelivered={undelivered}
+      nested={fileThreads.nested}
+    />
+  );
 
   return (
     <section
@@ -3027,18 +3039,17 @@ export function FilePreviewContent({
                 ) : null}
               </div>
             ) : null}
-            {!loading && !error && canComment && hasPreviewText ? (
-              // The threads on no line of the file: listed, not drawn on
-              // whatever is on their old lines now (FileThreads.tsx).
-              <DetachedFileThreads
-                threads={fileThreads.threads}
-                api={fileThreads}
-                view={threadView}
-                undelivered={undelivered}
-                nested={fileThreads.nested}
-              />
-            ) : null}
-            {!loading && !error && hasMarkdownPreview && renderRichPreview ? (
+            {!loading &&
+            !error &&
+            canComment &&
+            hasPreviewText &&
+            !markdownRendered
+              ? // The threads on no line of the file, above it (a page in a
+                // frame, the source): the Markdown document has them first
+                // in its own scroll.
+                detachedThreads
+              : null}
+            {!loading && !error && markdownRendered ? (
               <DiagramFrameContext.Provider value={diagramFrames}>
                 <MarkdownPreview
                   className="file-preview-reading"
@@ -3054,6 +3065,7 @@ export function FilePreviewContent({
                   onSelectionChange={
                     onCreateAnnotation ? setMarkdownSelection : undefined
                   }
+                  lead={canComment ? detachedThreads : undefined}
                 />
               </DiagramFrameContext.Provider>
             ) : null}
