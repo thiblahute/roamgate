@@ -78,6 +78,53 @@ A real Northstar demo workspace with code changes and passing tests.
   </tbody>
 </table>
 
+### Work board and reviews
+
+Agents track their work on one board and discuss their changes with you, line
+by line, in Roamgate's reviews.
+
+<table width="100%">
+  <thead>
+    <tr>
+      <th width="40%" align="center">Work board</th>
+      <th width="40%" align="center">Design doc with a question</th>
+      <th width="20%" align="center">Work on a phone</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td width="40%" align="center" valign="top">
+        <a href="./docs/images/roamgate-desktop-work.png"><img src="./docs/images/roamgate-desktop-work.png" alt="The Work board for the Northstar demo project" width="100%" /></a>
+      </td>
+      <td width="40%" align="center" valign="top">
+        <a href="./docs/images/roamgate-desktop-work-item.png"><img src="./docs/images/roamgate-desktop-work-item.png" alt="A work item's design doc with the agent's open question on one paragraph" width="100%" /></a>
+      </td>
+      <td width="20%" align="center" valign="top">
+        <a href="./docs/images/roamgate-mobile-work.png"><img src="./docs/images/roamgate-mobile-work.png" alt="The Work board on a phone" width="100%" /></a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<table width="100%">
+  <thead>
+    <tr>
+      <th width="50%" align="center">Branch review with the agent</th>
+      <th width="50%" align="center">Comments on a rendered file</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td width="50%" align="center" valign="top">
+        <a href="./docs/images/roamgate-desktop-review.png"><img src="./docs/images/roamgate-desktop-review.png" alt="A review of the Northstar status-filter branch with the agent's question on a line" width="100%" /></a>
+      </td>
+      <td width="50%" align="center" valign="top">
+        <a href="./docs/images/roamgate-desktop-rendered-comments.png"><img src="./docs/images/roamgate-desktop-rendered-comments.png" alt="Northstar's README rendered in the Files preview with a comment thread" width="100%" /></a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
 ### Ranger
 
 An experimental workspace management assistant for desktop and mobile.

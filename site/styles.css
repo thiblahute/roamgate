@@ -879,7 +879,9 @@
   }
 
   .annotation-chip {
-    display: inline-flex;
+    display: flex;
+    width: fit-content;
+    max-width: 100%;
     align-items: center;
     gap: 8px;
     margin-top: 16px;
@@ -898,6 +900,18 @@
     border-radius: 50%;
     background: rgba(167, 139, 250, 0.18);
     font-size: 0.57rem;
+  }
+
+  .annotation-reply {
+    margin-top: 8px;
+    margin-left: 22px;
+    border-color: rgba(84, 209, 122, 0.26);
+    color: #bcf2ca;
+    background: rgba(84, 209, 122, 0.08);
+  }
+
+  .annotation-reply span {
+    background: rgba(84, 209, 122, 0.2);
   }
 
   .branch-map {
@@ -1183,6 +1197,74 @@
   .ranger-gallery img {
     width: 100%;
     height: auto;
+  }
+
+  .split-feature {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 40px;
+    align-items: center;
+    margin-top: 40px;
+  }
+
+  .split-feature > a {
+    display: block;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: 18px;
+    background: #0b0d12;
+  }
+
+  .split-feature img {
+    width: 100%;
+    height: auto;
+  }
+
+  .feature-list {
+    display: grid;
+    gap: 28px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .feature-list-row {
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 40px;
+  }
+
+  .feature-list li {
+    padding-left: 18px;
+    border-left: 1px solid var(--line-strong);
+  }
+
+  .feature-list h3 {
+    margin-bottom: 8px;
+    font-size: 1rem;
+  }
+
+  .feature-list p {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.7;
+  }
+
+  .shot-placeholder {
+    display: grid;
+    min-height: 220px;
+    margin: 0 0 40px;
+    padding: 32px;
+    place-content: center;
+    gap: 8px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 18px;
+    color: var(--text-soft);
+    background: rgba(11, 13, 18, 0.6);
+    text-align: center;
+  }
+
+  .shot-placeholder small {
+    color: var(--muted);
   }
 
   .workflow-section {
@@ -1840,6 +1922,11 @@
   .ranger-gallery a:last-child {
     width: min(280px, 100%);
     justify-self: center;
+  }
+
+  .split-feature,
+  .feature-list-row {
+    grid-template-columns: 1fr;
   }
 
   .workflow-step + .workflow-step {

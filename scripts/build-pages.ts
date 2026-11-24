@@ -23,6 +23,17 @@ const assets = [
   ["docs/images/roamgate-mobile-terminal.png", "roamgate-mobile-terminal.png"],
   ["docs/images/roamgate-desktop-ranger.png", "roamgate-desktop-ranger.png"],
   ["docs/images/roamgate-mobile-ranger.png", "roamgate-mobile-ranger.png"],
+  ["docs/images/roamgate-desktop-work.png", "roamgate-desktop-work.png"],
+  [
+    "docs/images/roamgate-desktop-work-item.png",
+    "roamgate-desktop-work-item.png",
+  ],
+  ["docs/images/roamgate-mobile-work.png", "roamgate-mobile-work.png"],
+  ["docs/images/roamgate-desktop-review.png", "roamgate-desktop-review.png"],
+  [
+    "docs/images/roamgate-desktop-rendered-comments.png",
+    "roamgate-desktop-rendered-comments.png",
+  ],
 ] as const;
 
 async function ensureFile(path: string): Promise<void> {
