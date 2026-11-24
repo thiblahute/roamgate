@@ -59,6 +59,10 @@ fn main() {
                                 .fronts
                                 .iter()
                                 .any(|name| name == scenario::current_front()))
+                        || roamgate_parity::run::rust_owned_off_its_front(
+                            scenario::owner_family(&loaded.family),
+                            scenario::current_front(),
+                        )
                 }
                 Err(_) => false,
             };

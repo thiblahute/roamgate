@@ -88,7 +88,9 @@ servers run at once. To run the suite on the Rust front, set
 `ROAMGATE_SERVER_CMD` to `<checkout>/target/debug/roamgate front`,
 `ROAMGATE_SIDECAR_BIN` to `<checkout>/server/src/index.ts` and
 `ROAMGATE_CLI_CMD` to `bun <checkout>/server/src/index.ts`: the front's CLI
-is still the Bun one. A run names its front, server and CLI commands on stderr, in each
+is still the Bun one. A family that flips only behind the Rust front
+(voice) is skipped by a hybrid run on the Bun front that gives it to Rust
+(`RUST_FRONT_ONLY` in `parity/src/run.rs`). A run names its front, server and CLI commands on stderr, in each
 failure and in `run.json` of each run's directory.
 
 ### Rust workspace

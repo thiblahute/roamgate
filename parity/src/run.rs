@@ -177,6 +177,21 @@ pub fn rust_owners() -> Vec<String> {
         .collect()
 }
 
+/// Families that flip only behind the Rust front (contract/wire/
+/// core-channel.md: the voice family, whose socket the Bun front keeps):
+/// a hybrid run on the Bun front that gives one to Rust skips its
+/// scenarios, as if they named `fronts: [rust]`.
+pub const RUST_FRONT_ONLY: &[&str] = &["voice"];
+
+/// Whether this run skips a scenario of `family` (its owners table's
+/// family): Rust's on the Bun front, and flipping only behind the Rust
+/// front.
+pub fn rust_owned_off_its_front(family: &str, front: &str) -> bool {
+    front != "rust"
+        && RUST_FRONT_ONLY.contains(&family)
+        && rust_owners().iter().any(|name| name == family)
+}
+
 /// The variable naming the file a debug core appends what it served to
 /// (`<family> <method or path or cli command>` per line).
 pub const CORE_SERVED_LOG_ENV: &str = "ROAMGATE_CORE_SERVED_LOG";
