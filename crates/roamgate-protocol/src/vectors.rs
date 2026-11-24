@@ -194,7 +194,12 @@ mod tests {
             }
             let name = path.file_stem().unwrap().to_string_lossy().into_owned();
             let raw = load_raw(&name);
-            if raw.get("cases").is_some() {
+            // A file in another format says so in its description (the
+            // README): history-cursor.json's cases are steps, not calls.
+            let other_format = raw["description"]
+                .as_str()
+                .is_some_and(|text| text.starts_with("Not in the call format"));
+            if raw.get("cases").is_some() && !other_format {
                 let file = load(&name);
                 assert!(!file.cases.is_empty(), "{name}");
                 read += 1;
