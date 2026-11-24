@@ -36,12 +36,25 @@ use roamgate_base::paths::DataContext;
 /// writer: off the async runtime's threads, at once, the changes made
 /// while one is written coalesced into the next. Its owner keeps the value
 /// in memory; `flush` it before reading the file.
-pub(crate) fn written_behind(path: &Path, clock: SharedClock) -> WriteBehindFile {
-    WriteBehindFile::new(
+/// A failed write is warned as `failed` on the voice log, as Bun's owner
+/// warns it; None keeps the writer's own warning.
+pub(crate) fn written_behind(
+    path: &Path,
+    clock: SharedClock,
+    failed: Option<&'static str>,
+) -> WriteBehindFile {
+    let file = WriteBehindFile::new(
         DataContext::from_env(&ProcessEnv),
         path,
         0o600,
         clock,
         Duration::ZERO,
-    )
+    );
+    match failed {
+        Some(message) => file.on_failure(std::sync::Arc::new(move |error| {
+            crate::server_log::server_log("voice")
+                .warn(message, Some(&crate::server_log::error_fields(error)));
+        })),
+        None => file,
+    }
 }

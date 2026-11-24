@@ -100,7 +100,7 @@ impl WaitingAnswers {
         let answers = file.as_deref().map(load).unwrap_or_default();
         Self {
             answers: Mutex::new(answers),
-            file: file.map(|file| crate::companion::written_behind(&file, clock.clone())),
+            file: file.map(|file| crate::companion::written_behind(&file, clock.clone(), None)),
             clock,
         }
     }

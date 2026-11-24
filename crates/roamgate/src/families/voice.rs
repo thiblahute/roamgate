@@ -313,6 +313,9 @@ impl VoiceServer {
         // (console.error), and its timings through the server's logger.
         let errors: roamgate_voice_server::helper::ErrorSink = Arc::new(|line| eprintln!("{line}"));
         let log = super::limit_resume::scoped_logger(cx, "bridge.voice");
+        // The companion's own lines (YouTube, taste, memory), on children
+        // of the server's logger as Bun's modules take them.
+        roamgate_voice_server::set_server_logger(super::limit_resume::scoped_logger(cx, "bridge"));
         let spawn = {
             let (data, errors) = (data.clone(), errors.clone());
             Arc::new(move |config: &VoiceConfig| spawn_voice_helper(config, &data, errors.clone()))

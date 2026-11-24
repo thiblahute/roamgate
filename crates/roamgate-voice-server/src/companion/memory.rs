@@ -304,7 +304,11 @@ impl CompanionMemory {
     /// Loads the file; its idle compaction armed when it holds entries
     /// (which needs a tokio runtime).
     pub fn new(options: MemoryOptions) -> Self {
-        let file = crate::companion::written_behind(&options.path, options.clock.clone());
+        let file = crate::companion::written_behind(
+            &options.path,
+            options.clock.clone(),
+            Some("companion memory: not saved"),
+        );
         let memory = Self(Arc::new(Inner {
             options,
             file,
@@ -343,17 +347,36 @@ impl CompanionMemory {
         if !path.exists() {
             return;
         }
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return;
+        let log = crate::server_log::server_log("voice");
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) => {
+                log.warn(
+                    "companion memory unreadable",
+                    Some(&crate::server_log::error_fields(error)),
+                );
+                return;
+            }
         };
-        let raw = serde_json::from_str::<Value>(&text).ok().filter(|raw| {
-            raw.get("version") == Some(&json!(1))
-                && raw.get("summary").is_some_and(Value::is_string)
-        });
-        let Some(raw) = raw else {
-            // Kept aside to look at; the companion just starts fresh.
-            let _ = std::fs::rename(path, format!("{}.corrupt", path.display()));
-            return;
+        let raw = serde_json::from_str::<Value>(&text)
+            .map_err(|error| error.to_string())
+            .and_then(|raw| {
+                (raw.get("version") == Some(&json!(1))
+                    && raw.get("summary").is_some_and(Value::is_string))
+                .then_some(raw)
+                .ok_or_else(|| "Error: not a companion memory".to_owned())
+            });
+        let raw = match raw {
+            Ok(raw) => raw,
+            Err(error) => {
+                // Kept aside to look at; the companion just starts fresh.
+                log.warn(
+                    "companion memory corrupted, starting fresh",
+                    Some(&crate::server_log::error_fields(error)),
+                );
+                let _ = std::fs::rename(path, format!("{}.corrupt", path.display()));
+                return;
+            }
         };
         let log = raw
             .get("log")
@@ -583,7 +606,15 @@ impl CompanionMemory {
         let asked = (self.0.options.compact)(prompt, writes);
         let memory = self.clone();
         tokio::spawn(async move {
+            let log = crate::server_log::server_log("voice");
             let compacted = asked.await;
+            if let Err(error) = &compacted {
+                // The log stays, bounded, and is summed up next time.
+                log.warn(
+                    "companion memory: compaction failed",
+                    Some(&crate::server_log::error_fields(error)),
+                );
+            }
             let done = {
                 let mut state = memory.0.state.lock().unwrap();
                 let summary = compacted
@@ -591,20 +622,36 @@ impl CompanionMemory {
                     .map(|text| js::slice16(js::trim(&text), 0, Some(MAX_SUMMARY_CHARS as i64)))
                     .unwrap_or_default();
                 if state.epoch == epoch && !summary.is_empty() {
+                    let chars = js::len16(&summary);
                     state.summary = summary;
                     state.summarized_at = memory.now();
                     state.entries.retain(|entry| entry.seq > up_to);
                     let gone = forgotten.min(state.forgetting.len());
                     state.forgetting.drain(..gone);
                     memory.save(&state);
+                    let mut fields = roamgate_base::log::LogFields::new();
+                    fields.insert("reason".into(), json!(reason.as_str()));
+                    fields.insert("chars".into(), json!(chars));
+                    fields.insert(
+                        "compact_ms".into(),
+                        js::number(js::round(memory.now() - started)),
+                    );
+                    fields.insert("left".into(), json!(state.entries.len()));
+                    log.debug("companion memory compacted", Some(&fields));
                     true
                 } else {
                     false
                 }
             };
-            if done && let Some(on_compacted) = &memory.0.options.on_compacted {
-                let _ =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| on_compacted(reason)));
+            if done
+                && let Some(on_compacted) = &memory.0.options.on_compacted
+                && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| on_compacted(reason)))
+                    .is_err()
+            {
+                log.warn(
+                    "companion memory: restart failed",
+                    Some(&crate::server_log::error_fields("the restart panicked")),
+                );
             }
             if writes && let Some(files) = memory.0.options.files.clone() {
                 let _ = tokio::task::spawn_blocking(move || files.sweep(started)).await;

@@ -133,7 +133,9 @@ impl CompanionMemoryFiles {
 
     /// The directory exists: the agents write into it.
     pub fn ensure(&self) {
-        let _ = roamgate_base::private::create_dir_all_mode(&self.dir);
+        if let Err(error) = roamgate_base::private::create_dir_all_mode(&self.dir) {
+            warn("companion memories: no directory", error);
+        }
     }
 
     fn index_path(&self) -> PathBuf {
@@ -149,8 +151,12 @@ impl CompanionMemoryFiles {
         if !self.index_is_file() {
             return String::new();
         }
-        let Ok(text) = std::fs::read_to_string(self.index_path()) else {
-            return String::new();
+        let text = match std::fs::read_to_string(self.index_path()) {
+            Ok(text) => text,
+            Err(error) => {
+                warn("companion memories: index unreadable", error);
+                return String::new();
+            }
         };
         let lines: Vec<&str> = LINE_BREAK.split(&text).take(MAX_INDEX_LINES).collect();
         js::trim(&js::slice16(
@@ -267,15 +273,21 @@ impl CompanionMemoryFiles {
 
     fn drop_from_index(&self, file: &str) {
         let path = self.index_path();
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        if !path.exists() {
             return;
+        }
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) => return warn("companion memories: index not updated", error),
         };
         let needle = format!("({file})");
         let lines: Vec<&str> = LINE_BREAK
             .split(&text)
             .filter(|line| !line.contains(&needle))
             .collect();
-        let _ = self.write_index(&lines.join("\n"));
+        if let Err(error) = self.write_index(&lines.join("\n")) {
+            warn("companion memories: index not updated", error);
+        }
     }
 
     fn write_index(&self, text: &str) -> std::io::Result<()> {
@@ -310,19 +322,36 @@ impl CompanionMemoryFiles {
             for (file, _) in &memories[..extra] {
                 self.remove(file);
             }
+            let mut fields = roamgate_base::log::LogFields::new();
+            fields.insert("dropped".into(), serde_json::json!(extra));
+            crate::server_log::server_log("voice").warn(
+                "companion memories: over the limit, oldest dropped",
+                Some(&fields),
+            );
         }
         if !self.index_is_file() {
             return;
         }
-        let Ok(text) = std::fs::read_to_string(self.index_path()) else {
-            return;
+        let text = match std::fs::read_to_string(self.index_path()) {
+            Ok(text) => text,
+            Err(error) => return warn("companion memories: sweep failed", error),
         };
         let lines: Vec<&str> = LINE_BREAK.split(&text).collect();
         if lines.len() > MAX_INDEX_LINES || js::len16(&text) > MAX_INDEX_CHARS {
             let kept = lines[..lines.len().min(MAX_INDEX_LINES)].join("\n");
-            let _ = self.write_index(&js::slice16(&kept, 0, Some(MAX_INDEX_CHARS as i64)));
+            if let Err(error) =
+                self.write_index(&js::slice16(&kept, 0, Some(MAX_INDEX_CHARS as i64)))
+            {
+                warn("companion memories: sweep failed", error);
+            }
         }
     }
+}
+
+/// One of the memories' warnings, on the voice log as Bun's.
+fn warn(message: &str, error: impl std::fmt::Display) {
+    crate::server_log::server_log("voice")
+        .warn(message, Some(&crate::server_log::error_fields(error)));
 }
 
 /// The agreed layout, for a session told to keep them: any agent can

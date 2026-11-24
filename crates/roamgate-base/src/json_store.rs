@@ -227,7 +227,12 @@ pub struct WriteBehindFile {
     clock: SharedClock,
     delay: Duration,
     behind: Arc<Behind>,
+    /// Told a write behind that failed; None: a `tracing` warning.
+    failed: Option<WriteFailed>,
 }
+
+/// What a [`WriteBehindFile`] says of a write behind that failed.
+pub type WriteFailed = Arc<dyn Fn(&std::io::Error) + Send + Sync>;
 
 impl WriteBehindFile {
     pub fn new(
@@ -244,7 +249,14 @@ impl WriteBehindFile {
             clock,
             delay,
             behind: Arc::default(),
+            failed: None,
         }
+    }
+
+    /// Says a failed write behind with `failed` (the owner's own warning).
+    pub fn on_failure(mut self, failed: WriteFailed) -> Self {
+        self.failed = Some(failed);
+        self
     }
 
     pub fn path(&self) -> &Path {
@@ -300,9 +312,15 @@ impl WriteBehindFile {
             self.mode,
             self.behind.clone(),
         );
+        let failed = self.failed.clone();
         move || {
             if let Err(error) = write_newest(&context, &path, mode, &behind) {
-                tracing::warn!(path = %path.display(), %error, "write-behind save failed");
+                match failed {
+                    Some(failed) => failed(&error),
+                    None => {
+                        tracing::warn!(path = %path.display(), %error, "write-behind save failed")
+                    }
+                }
             }
         }
     }

@@ -613,6 +613,15 @@ impl YoutubePlayer {
 
 /// The helper's call_youtube events: a video stopping by itself.
 fn youtube_event(state: &Mutex<PlayerState>, event: &Map<String, Value>) {
+    let log = crate::server_log::server_log("voice-youtube");
+    if event.get("state") == Some(&json!("playing")) {
+        let mut fields = roamgate_base::log::LogFields::new();
+        if let Some(duration) = event.get("duration") {
+            fields.insert("duration".into(), duration.clone());
+        }
+        log.info("youtube plays", Some(&fields));
+        return;
+    }
     if event.get("state") != Some(&json!("stopped")) {
         return;
     }
@@ -625,6 +634,9 @@ fn youtube_event(state: &Mutex<PlayerState>, event: &Map<String, Value>) {
             .unwrap_or("it stopped")
             .to_owned(),
     };
+    let mut fields = roamgate_base::log::LogFields::new();
+    fields.insert("reason".into(), json!(ended));
+    log.info("youtube stopped", Some(&fields));
     let mut state = state.lock().unwrap();
     state.ended = Some(ended);
     state.track = None;

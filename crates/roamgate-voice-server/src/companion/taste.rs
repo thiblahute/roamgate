@@ -644,11 +644,21 @@ fn read_taste_file(path: &Path) -> TasteFile {
     if !std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
         return TasteFile::default();
     }
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return TasteFile::default();
+    let unreadable = |error: &dyn std::fmt::Display| {
+        crate::server_log::server_log("voice").warn(
+            "taste: unreadable, starting empty",
+            Some(&crate::server_log::error_fields(error)),
+        );
+        TasteFile::default()
     };
-    let Ok(Value::Object(mut parsed)) = serde_json::from_str::<Value>(&text) else {
-        return TasteFile::default();
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) => return unreadable(&error),
+    };
+    let mut parsed = match serde_json::from_str::<Value>(&text) {
+        Ok(Value::Object(parsed)) => parsed,
+        Ok(_) => return TasteFile::default(),
+        Err(error) => return unreadable(&error),
     };
     if parsed.get("version") != Some(&json!(1)) {
         return TasteFile::default();
@@ -695,7 +705,8 @@ impl VoiceTaste {
     }
 
     pub fn with(path: PathBuf, memories_dir: Option<PathBuf>, clock: Arc<dyn Clock>) -> Self {
-        let file = crate::companion::written_behind(&path, clock.clone());
+        let file =
+            crate::companion::written_behind(&path, clock.clone(), Some("taste: not written"));
         Self(Arc::new(TasteInner {
             path,
             memories_dir,
@@ -779,8 +790,22 @@ impl VoiceTaste {
         let gathered = gather();
         let taste = self.clone();
         let running = async move {
-            let calls = gathered.await.unwrap_or_default();
+            let log = crate::server_log::server_log("voice");
+            let calls = match gathered.await {
+                Ok(calls) => calls,
+                Err(error) => {
+                    log.warn(
+                        "taste: refresh failed",
+                        Some(&crate::server_log::error_fields(error)),
+                    );
+                    Vec::new()
+                }
+            };
             let folded = fold_taste(&calls, taste.now() as f64);
+            let mut fields = roamgate_base::log::LogFields::new();
+            fields.insert("profile".into(), json!(folded.profile.is_some()));
+            fields.insert("missing".into(), json!(folded.missing.join(", ")));
+            fields.insert("needsLogin".into(), json!(folded.needs_login));
             let now = taste.now();
             taste.change(|file| {
                 file.tried = now;
@@ -798,6 +823,7 @@ impl VoiceTaste {
                     }
                 }
             });
+            log.info("taste: refreshed", Some(&fields));
             *taste.0.refreshing.lock().unwrap() = None;
         }
         .boxed()

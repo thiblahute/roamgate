@@ -17,12 +17,15 @@ pub mod models;
 pub mod process;
 pub mod profiles;
 pub mod reading;
+mod server_log;
 pub mod setup;
 pub mod socket;
 pub mod speakers;
 pub mod speech_rate;
 pub mod stock;
 pub mod surprise;
+
+pub use server_log::set_server_logger;
 
 #[cfg(test)]
 mod testdata;
