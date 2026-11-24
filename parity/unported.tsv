@@ -5,10 +5,6 @@ roamgate-connections	server/src/connections/protocol	S18
 roamgate-connections	server/src/connections/shutdown	S18
 roamgate-connections	server/src/connections/startup	S18
 
-# roamgate-http was made by S13 for the settings family; the rest of its rows
-# wait for the front (S18): the contract recorder.
-roamgate-http	server/src/contract-record/	S18
-
 roamgate-mr-reviews	server/src/mr-reviews/board-tools.test.ts	S20
 
 # roamgate-claude was made by S15 for the tool registry; the Claude driver,

@@ -115,6 +115,38 @@ pub fn start_core_profile(
     }
 }
 
+/// Record mode in a standalone core: the processes it runs (`spawn`
+/// lines, hooks.ts `recordSpawns`), in the directory its front resolved
+/// (`ROAMGATE_CONTRACT_RECORD`, absolute; `0` when off), flushed until
+/// the core stops.
+pub fn start_core_recorder(
+    env: &dyn roamgate_base::env::Env,
+) -> Option<std::sync::Arc<roamgate_base::record::ContractRecorder>> {
+    if !roamgate_sidecar::core::standalone_on(env) {
+        return None;
+    }
+    let now: roamgate_base::log::NowFn = std::sync::Arc::new(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_millis() as i64)
+    });
+    // The front names an absolute directory: no data root is needed.
+    let options =
+        roamgate_base::record::RecorderOptions::from_env(env, std::env::temp_dir, "server", now)?;
+    let recorder = match roamgate_base::record::ContractRecorder::new(options) {
+        Ok(recorder) => std::sync::Arc::new(recorder),
+        Err(error) => {
+            eprintln!("[core] contract record mode off: {error}");
+            return None;
+        }
+    };
+    roamgate_exec::process::ProcessRunner::observe_every_run(std::sync::Arc::new(
+        roamgate_exec::process::RecordObserver::new(recorder.clone()),
+    ));
+    recorder.run_flusher(std::sync::Arc::new(roamgate_base::clock::SystemClock));
+    Some(recorder)
+}
+
 #[derive(RustEmbed)]
 #[folder = "$ROAMGATE_WEB_DIST"]
 struct Web;

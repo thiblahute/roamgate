@@ -260,6 +260,9 @@ pub struct RunEnd {
     pub duration_ms: f64,
 }
 
+/// [`ProcessRunner::observe_every_run`]'s observer.
+static PROCESS_OBSERVER: std::sync::OnceLock<Arc<dyn ProcessObserver>> = std::sync::OnceLock::new();
+
 /// Sees every process the runner starts (record mode's `recordSpawns`).
 pub trait ProcessObserver: Send + Sync {
     fn started(&self, run: &RunInfo);
@@ -475,6 +478,17 @@ impl ProcessRunner {
         self
     }
 
+    /// The observer of every runner of this process that has none of its
+    /// own (record mode's `recordSpawns`, which patched every spawn
+    /// function); the first one set stays.
+    pub fn observe_every_run(observer: Arc<dyn ProcessObserver>) {
+        let _ = PROCESS_OBSERVER.set(observer);
+    }
+
+    fn observer(&self) -> Option<&Arc<dyn ProcessObserver>> {
+        self.observer.as_ref().or_else(|| PROCESS_OBSERVER.get())
+    }
+
     pub fn clock(&self) -> &SharedClock {
         &self.clock
     }
@@ -489,13 +503,13 @@ impl ProcessRunner {
     }
 
     fn started(&self, info: &RunInfo) {
-        if let Some(observer) = &self.observer {
+        if let Some(observer) = self.observer() {
             observer.started(info);
         }
     }
 
     fn report(&self, info: &RunInfo, started: f64, code: Option<i32>, error: Option<&ExecError>) {
-        if let Some(observer) = &self.observer {
+        if let Some(observer) = self.observer() {
             observer.exited(
                 info,
                 &RunEnd {

@@ -26,6 +26,7 @@ async fn main() -> ExitCode {
             } else {
                 roamgate::core_families()
             };
+            let recorder = roamgate::start_core_recorder(&env);
             let profile = roamgate::start_core_profile(&env)
                 .map(|(profile, duration)| (std::sync::Arc::new(profile), duration));
             // The capture ends on the server's clock, as Bun's timer did.
@@ -48,6 +49,9 @@ async fn main() -> ExitCode {
             // The capture's files are written when the server stops early.
             if let Some((profile, _)) = profile {
                 profile.stop().await;
+            }
+            if let Some(recorder) = recorder {
+                recorder.close();
             }
             ExitCode::from(code)
         }

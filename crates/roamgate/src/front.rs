@@ -152,6 +152,36 @@ fn built_public_dir(sidecar_bin: Option<&str>) -> Option<PathBuf> {
     Some(entry.parent()?.parent()?.join("public"))
 }
 
+/// Record mode's variable (contract-record/recorder.ts).
+pub const CONTRACT_RECORD_ENV: &str = "ROAMGATE_CONTRACT_RECORD";
+
+/// The recorder `ROAMGATE_CONTRACT_RECORD` asks for (`HERDR_GUI_*` names
+/// when absent), its lines timed on the server's clock; None when record
+/// mode is off or its directory cannot be made (said on stderr).
+fn start_recorder(
+    env: &dyn Env,
+    root: &std::path::Path,
+    clock: &roamgate_base::clock::SharedClock,
+) -> Option<Arc<roamgate_base::record::ContractRecorder>> {
+    let now: roamgate_base::log::NowFn = {
+        let clock = clock.clone();
+        Arc::new(move || clock.now())
+    };
+    let options = roamgate_base::record::RecorderOptions::from_env(
+        env,
+        || root.to_path_buf(),
+        "server",
+        now,
+    )?;
+    match roamgate_base::record::ContractRecorder::new(options) {
+        Ok(recorder) => Some(Arc::new(recorder)),
+        Err(error) => {
+            eprintln!("[bridge] contract record mode off: {error}");
+            None
+        }
+    }
+}
+
 /// A signal, or the core's `server.scheduleExit` (`exit`).
 async fn shutdown(exit: Arc<tokio::sync::Notify>) {
     #[cfg(unix)]
@@ -323,6 +353,41 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
     let mut clock_server = None;
     // The environment file's entries reach the core as the front's own.
     let mut core_env: Vec<(String, String)> = overrides.into_iter().collect();
+    // Record mode (`ROAMGATE_CONTRACT_RECORD`): with no Bun the front
+    // records the browser's requests and sockets, and its core the
+    // processes it runs, in the directory the front resolved. Behind a Bun
+    // core the recording stays Bun's (its channel's frames).
+    let recorder = if standalone {
+        let recorder = start_recorder(env.as_ref(), &root, &clock);
+        core_env.push((
+            CONTRACT_RECORD_ENV.into(),
+            recorder.as_ref().map_or_else(
+                || "0".into(),
+                |recorder| recorder.directory().to_string_lossy().into_owned(),
+            ),
+        ));
+        recorder
+    } else {
+        None
+    };
+    if let Some(recorder) = &recorder {
+        for secret in [
+            config.password.as_str(),
+            config.pin.as_deref().unwrap_or(""),
+            session_secret.as_str(),
+        ] {
+            recorder.redactor.add_secret(secret);
+        }
+        let mut fields = roamgate_base::log::LogFields::new();
+        fields.insert(
+            "directory".into(),
+            recorder.directory().to_string_lossy().into_owned().into(),
+        );
+        logger.info("contract record mode on", Some(&fields));
+    }
+    let record_flusher = recorder
+        .as_ref()
+        .map(|recorder| recorder.run_flusher(clock.clone()));
     // The Bun core runs the Rust core ROAMGATE_CORE_BIN names, as it does
     // behind the Bun front (stage 1): its owners table and handovers are
     // unchanged. The update family replaces this front's executable, in
@@ -466,7 +531,10 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
         }
         logger.info("authentication required", Some(&fields));
     }
-    let sockets = Sockets::default();
+    let sockets = match &recorder {
+        Some(recorder) => Sockets::recorded(recorder.clone()),
+        None => Sockets::default(),
+    };
     let (stop_core, core_stop) = watch::channel(false);
     let (rust_link, rust_core) = watch::channel(None);
     // A standalone core is the Rust core: no link besides the channel.
@@ -596,6 +664,12 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
     }
     if let Some(task) = clock_server {
         task.abort();
+    }
+    if let Some(task) = record_flusher {
+        task.abort();
+    }
+    if let Some(recorder) = &recorder {
+        recorder.close();
     }
     let _ = std::fs::remove_file(&channel);
     let _ = std::fs::remove_file(&core_clock_path);

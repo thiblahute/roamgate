@@ -20,6 +20,7 @@ use axum::extract::{ConnectInfo, State};
 use bytes::Bytes;
 use futures_util::StreamExt;
 use http::request::Parts;
+use roamgate_base::record::ContractRecorder;
 use roamgate_sidecar::peer::{Handler, HttpReply, HttpRequest, Peer, WsOpen};
 use roamgate_sidecar::protocol::{Ctx, Message};
 use roamgate_ws::socket::{Config as SocketConfig, Event, SocketHandle};
@@ -30,9 +31,11 @@ use crate::auth::{Auth, unauthenticated_login_redirect};
 use crate::response::{self, header};
 use crate::static_files::{StaticFiles, StaticRequest};
 
+mod record;
 mod rust_core;
 mod sidecar;
 
+pub use record::{RECORD_BODY_LIMIT, RecordedSocket};
 pub use rust_core::{RustCoreLinkConfig, link_token, run_rust_core_link};
 pub use sidecar::{SidecarCommand, SidecarConfig, StandaloneCore, run_sidecar};
 
@@ -66,14 +69,31 @@ struct SocketEntry {
     flow: bool,
     /// Served by the Rust core's link of this number; None: the Bun core.
     rust: Option<u64>,
+    /// Its lines in record mode.
+    recorded: Option<RecordedSocket>,
 }
 
-/// The browser sockets, shared with the core's handler.
+/// The browser sockets, shared with the core's handler, and the recorder
+/// of record mode (`ROAMGATE_CONTRACT_RECORD`) when it is on.
 #[derive(Default, Clone)]
-pub struct Sockets(Arc<Mutex<HashMap<u64, SocketEntry>>>);
+pub struct Sockets(
+    Arc<Mutex<HashMap<u64, SocketEntry>>>,
+    Option<Arc<ContractRecorder>>,
+);
 
 impl Sockets {
-    fn apply(handle: &SocketHandle, flow: bool, message: &Message) {
+    /// The sockets of a front in record mode: their traffic and every
+    /// request go to `recorder`.
+    pub fn recorded(recorder: Arc<ContractRecorder>) -> Self {
+        Self(Arc::default(), Some(recorder))
+    }
+
+    fn apply(
+        handle: &SocketHandle,
+        flow: bool,
+        recorded: Option<&RecordedSocket>,
+        message: &Message,
+    ) {
         match message {
             Message::WsSend {
                 data,
@@ -85,13 +105,21 @@ impl Sockets {
                 if *binary {
                     use base64::Engine;
                     match base64::engine::general_purpose::STANDARD.decode(data) {
-                        Ok(bytes) => handle.send_binary(bytes),
+                        Ok(bytes) => {
+                            if let Some(recorded) = recorded {
+                                recorded.binary_out(bytes.len());
+                            }
+                            handle.send_binary(bytes)
+                        }
                         Err(_) => tracing::warn!(
                             target: "bridge.front",
                             "a binary message of the core that is not base64, dropped"
                         ),
                     }
                     return;
+                }
+                if let Some(recorded) = recorded {
+                    recorded.text_out(data);
                 }
                 if flow {
                     handle.send(
@@ -125,7 +153,9 @@ impl Sockets {
         };
         match &mut entry.socket {
             Socket::Pending(held) => held.push(message),
-            Socket::Open(handle) => Self::apply(handle, entry.flow, &message),
+            Socket::Open(handle) => {
+                Self::apply(handle, entry.flow, entry.recorded.as_ref(), &message)
+            }
         }
     }
 
@@ -134,7 +164,7 @@ impl Sockets {
         if let Some(entry) = sockets.get_mut(&socket_id) {
             if let Socket::Pending(held) = &entry.socket {
                 for message in held {
-                    Self::apply(&handle, entry.flow, message);
+                    Self::apply(&handle, entry.flow, entry.recorded.as_ref(), message);
                 }
             }
             entry.socket = Socket::Open(handle);
@@ -478,6 +508,11 @@ impl Front {
         let (parts, _) = request.into_parts();
         let socket_id = self.next_socket.fetch_add(1, Ordering::Relaxed);
         let session = self.auth.session_token(&parts.headers);
+        let recorded = self
+            .sockets
+            .1
+            .clone()
+            .map(|recorder| RecordedSocket::new(recorder, parts.uri.path()));
         self.sockets.0.lock().unwrap().insert(
             socket_id,
             SocketEntry {
@@ -485,6 +520,7 @@ impl Front {
                 session,
                 flow: parts.uri.path() == "/ws",
                 rust: None,
+                recorded: recorded.clone(),
             },
         );
         let open = WsOpen {
@@ -530,16 +566,27 @@ impl Front {
             };
             let (handle, mut events) =
                 roamgate_ws::socket::spawn(io, deflate, SocketConfig::default());
+            if let Some(recorded) = &recorded {
+                recorded.open();
+            }
             front.sockets.open(socket_id, handle);
             while let Some(event) = events.recv().await {
                 match event {
-                    Event::Text { text, .. } => peer.send(&Message::WsMessage {
-                        socket_id,
-                        data: text,
-                        binary: false,
-                    }),
+                    Event::Text { text, .. } => {
+                        if let Some(recorded) = &recorded {
+                            recorded.text_in(&text);
+                        }
+                        peer.send(&Message::WsMessage {
+                            socket_id,
+                            data: text,
+                            binary: false,
+                        })
+                    }
                     Event::Binary { data } => {
                         use base64::Engine;
+                        if let Some(recorded) = &recorded {
+                            recorded.binary_in(data.len());
+                        }
                         peer.send(&Message::WsMessage {
                             socket_id,
                             data: base64::engine::general_purpose::STANDARD.encode(data),
@@ -547,10 +594,16 @@ impl Front {
                         })
                     }
                     Event::Closed { code, reason } => {
+                        if let Some(recorded) = &recorded {
+                            recorded.close(code, &reason);
+                        }
                         front.socket_closed(&peer, socket_id, code, reason);
                         return;
                     }
                 }
+            }
+            if let Some(recorded) = &recorded {
+                recorded.close(Some(1006), "");
             }
             front.socket_closed(&peer, socket_id, Some(1006), String::new());
         });
@@ -625,7 +678,16 @@ pub async fn route(
     ConnectInfo(address): ConnectInfo<SocketAddr>,
     request: http::Request<Body>,
 ) -> http::Response<Body> {
-    front.handle(request, address.ip().to_string()).await
+    let client_ip = address.ip().to_string();
+    match front.sockets.1.clone() {
+        Some(recorder) => {
+            record::exchange(&recorder, request, |request| {
+                front.handle(request, client_ip)
+            })
+            .await
+        }
+        None => front.handle(request, client_ip).await,
+    }
 }
 
 /// The router over [`Front`].
