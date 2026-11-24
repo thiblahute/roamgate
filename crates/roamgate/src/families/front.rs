@@ -516,10 +516,12 @@ impl Inner {
 
     fn closed_ws(&self, cx: &FamilyContext, socket_id: u64, code: Option<u16>, reason: &str) {
         self.deltas.lock().unwrap().remove(&socket_id);
+        let mut viewed = Vec::new();
         if let Some(layer) = self.layer.get() {
             layer.session_versions.socket_closed(socket_id);
             // The socket's terminals go with it.
             for composition in layer.runtimes.compositions() {
+                viewed.extend(composition.bridge.viewed_terminals(socket_id));
                 composition.bridge.cleanup_socket(socket_id);
             }
         }
@@ -538,6 +540,12 @@ impl Inner {
         if !reason.is_empty() {
             fields.insert("reason".into(), reason.into());
         }
+        let terminals = if viewed.is_empty() {
+            "none".to_owned()
+        } else {
+            viewed.join(",")
+        };
+        fields.insert("terminals".into(), terminals.into());
         bridge_logger().debug("client disconnected", Some(&fields));
         self.client_count_changed(clients.len());
         // The families' state of the socket goes with it.
