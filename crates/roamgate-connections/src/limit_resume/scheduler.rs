@@ -792,6 +792,23 @@ impl LimitResumer {
         Outcome::ok()
     }
 
+    /// Marks a send of `session_id` under way, unless one is (or was just
+    /// made): false then.
+    fn claim_send(&self, session_id: &str) -> bool {
+        let now = self.now();
+        let guard = self.timings().sent_guard_ms;
+        let mut state = self.state();
+        if state
+            .sending
+            .get(session_id)
+            .is_some_and(|sent| now - sent < guard)
+        {
+            return false;
+        }
+        state.sending.insert(session_id.to_owned(), now);
+        true
+    }
+
     /// A pause's time came: resumed if nothing changed meanwhile.
     async fn fire(&self, connection_id: &str, pane_id: &str) {
         if self.state().stopped {
@@ -840,6 +857,12 @@ impl LimitResumer {
         });
         match stop {
             Some(stop) if ready => {
+                // Never two sends at once: a timer set again while this one
+                // looked may have fired and sent meanwhile (the tasks run in
+                // parallel).
+                if !self.claim_send(&pane.session_id) {
+                    return;
+                }
                 self.send(&connection, &pane, &stop, &settings.message, "auto")
                     .await;
             }
