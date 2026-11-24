@@ -1130,6 +1130,28 @@ Roamgate stops a wrapped helper by closing its standard input, which ends
 it within 10 s, and signals the wrapper only if it still runs 15 s later,
 since a wrapper may not pass signals on.
 
+A `systemd-run` unit can hold the GPU through a unit of its own that
+conflicts with another GPU service, which starts again when the helper
+stops (an `ExecStopPost=` of the GPU unit). The helper then starts right
+after a stop more often than it looks: a restart of a stuck helper, a
+change of the low-GPU set, voice moving between the Bun server and the
+Rust core. systemd-run queues its start in `fail` mode by default, which
+refuses it while that service's start is still queued ("Transaction ... is
+destructive"); `--job-mode=replace` (systemd 258 or newer) cancels that
+start instead:
+
+```json
+"helper_wrapper": [
+  "systemd-run", "--user", "--unit=roamgate-voice", "--job-mode=replace",
+  "--pipe", "--collect",
+  "-p", "Requires=gpu-for-voice.service",
+  "-p", "After=gpu-for-voice.service",
+  "-p", "PropagatesStopTo=gpu-for-voice.service",
+  "-E", "ROAMGATE_VOICE_ICE_ADDRESSES", "-E", "ROAMGATE_VOICE_DEBUG",
+  "-E", "GST_DEBUG", "--"
+]
+```
+
 The helper's standard output carries only its frames to Roamgate: anything
 else written there goes to its standard error, in Roamgate's log. A helper that writes something
 that is not a frame is restarted at once, the log showing the first bytes

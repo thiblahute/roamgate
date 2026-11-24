@@ -201,6 +201,60 @@ fn the_helper_s_command_comes_after_its_wrapper_s_arguments() {
     );
 }
 
+/// The desktop's wrapper: a transient unit holding the GPU unit, queued
+/// with `--job-mode=replace` so a start right after a stop (a restart, the
+/// flip of voice between Bun and the core) cancels the start of the
+/// service the GPU unit conflicts with instead of failing as destructive.
+/// The command line is the wrapper as written, then the helper's, as Bun's
+/// helperCommand makes it: nothing is added before or between.
+#[test]
+fn a_systemd_unit_wrapper_holding_the_gpu_is_passed_as_written() {
+    let wrapper = strings(&[
+        "systemd-run",
+        "--user",
+        "--unit=roamgate-voice",
+        "--job-mode=replace",
+        "--pipe",
+        "--collect",
+        "-p",
+        "Requires=llm-gpu-voice.service",
+        "-p",
+        "After=llm-gpu-voice.service",
+        "-p",
+        "PropagatesStopTo=llm-gpu-voice.service",
+        "-E",
+        "ROAMGATE_VOICE_ICE_ADDRESSES",
+        "-E",
+        "ROAMGATE_VOICE_DEBUG",
+        "-E",
+        "GST_DEBUG",
+        "--",
+    ]);
+    let mut expected = wrapper.clone();
+    expected.extend(own());
+    let held = config(json!({ "helper_wrapper": wrapper }));
+    assert_eq!(held.helper_command(), expected);
+    assert_eq!(held.yield_cpu_priority(), None);
+    // Yielding the CPU, the unit's priority goes right after systemd-run:
+    // the job mode and the GPU unit stay as written.
+    let mut yielding = strings(&[
+        "systemd-run",
+        "-p",
+        "Nice=10",
+        "-p",
+        "CPUWeight=20",
+        "-p",
+        "IOSchedulingClass=idle",
+    ]);
+    yielding.extend(wrapper[1..].iter().cloned());
+    yielding.extend(own());
+    yielding.extend(strings(&["--cpu-threads", "4"]));
+    assert_eq!(
+        config(json!({ "helper_wrapper": wrapper, "yield_cpu": {"threads": 4} })).helper_command(),
+        yielding
+    );
+}
+
 #[test]
 fn a_helper_yielding_the_cpu_to_a_game_low_priority_a_few_onnx_threads() {
     let systemd = json!([
