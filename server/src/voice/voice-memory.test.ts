@@ -44,7 +44,7 @@ describe("CompanionMemory", () => {
     memory.record(said("lance les tests"));
     memory.record({ kind: "work", text: "lance les tests", who: "roamgate" });
     memory.record({ kind: "said", text: "Je lance les tests." });
-    await memory.flushForTests();
+    await memory.flush();
     const back = make();
     expect(back.entries).toHaveLength(3);
     expect(back.block(Date.now())).toContain('the user: "lance les tests"');
@@ -77,7 +77,7 @@ describe("CompanionMemory", () => {
     expect(prompt).toContain('the user: "lance les tests"');
     expect(memory.summary).toBe("Ils ont lancé les tests de roamgate.");
     expect(memory.entries).toHaveLength(0);
-    await memory.flushForTests();
+    await memory.flush();
     expect(make().summary).toBe("Ils ont lancé les tests de roamgate.");
   });
 
@@ -125,7 +125,7 @@ describe("CompanionMemory", () => {
     expect(memory.block()).toBe("");
     expect(existsSync(`${path}.corrupt`)).toBe(true);
     memory.record(said("ça marche encore"));
-    await memory.flushForTests();
+    await memory.flush();
     expect(JSON.parse(readFileSync(path, "utf8")).log).toHaveLength(1);
   });
 
@@ -174,7 +174,7 @@ describe("CompanionMemory", () => {
     finish("résumé d'avant");
     await Bun.sleep(1);
     expect(memory.block()).toBe("");
-    await memory.flushForTests();
+    await memory.flush();
     const back = make();
     expect(back.epoch).toBe(1);
     expect(back.block()).toBe("");
@@ -275,7 +275,7 @@ describe("the long-term memories", () => {
     });
     memory.record({ kind: "heard", text: "hello" });
     memory.reset();
-    await memory.flushForTests();
+    await memory.flush();
     expect(readdirSync(files.dir).sort()).toEqual(before);
     expect(readFileSync(join(files.dir, "cat.md"), "utf8")).toContain("A cat");
     expect(files.list().map((one) => one.file)).toEqual(["cat.md"]);

@@ -14,16 +14,22 @@
 //! tools and states (`voice.work_tool`, `voice.work_states`, Bun's board or
 //! the core's, as Bun's own companion has them) and a new login for a
 //! handed-off call (`voice.session_cookie`).
+//!
+//! One helper at a time: taking the family, the core asks Bun to stop its
+//! own voice first (`voice.release`) and serves nothing that may start its
+//! helper before Bun did; giving it back, it stops its helper, watches and
+//! companion when the front asks (`internal.voice.release`).
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use futures_util::FutureExt;
-use futures_util::future::BoxFuture as FutureBox;
+use futures_util::future::{BoxFuture as FutureBox, Shared};
 use roamgate_base::env::ProcessEnv;
 use roamgate_base::log::Logger;
 use roamgate_base::paths::DataContext;
 use roamgate_sidecar::family::{CoreFamily, FamilyContext};
-use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse};
+use roamgate_sidecar::peer::{BodyReceiver, BoxFuture, HttpRequest, HttpResponse, IncomingCall};
 use roamgate_sidecar::protocol::RpcError;
 use roamgate_voice_server::companion::answers::answers_dir;
 use roamgate_voice_server::companion::claude::{ClaudeCommand, ResolveCommand};
@@ -602,6 +608,12 @@ impl ErrandDeps for KeepingErrands {
 
 struct VoiceFamily {
     server: OnceLock<Arc<VoiceServer>>,
+    /// Bun's voice released (`voice.release`) since the core took the
+    /// family: everything that may start the helper waits for it.
+    ready: Mutex<Option<Shared<BoxFuture<()>>>>,
+    /// Counts the takes and releases: a late release's end starts nothing
+    /// once the family moved again.
+    turn: Arc<AtomicU64>,
 }
 
 impl VoiceFamily {
@@ -609,6 +621,17 @@ impl VoiceFamily {
         self.server
             .get_or_init(|| Arc::new(VoiceServer::new(cx)))
             .clone()
+    }
+
+    /// Settles once Bun's helper, watches and companion stopped for the
+    /// core's (at once while the core never took the family): one helper,
+    /// never two.
+    pub fn ready(&self) -> Shared<BoxFuture<()>> {
+        let ready = self.ready.lock().unwrap().clone();
+        ready.unwrap_or_else(|| {
+            let done: BoxFuture<()> = Box::pin(async {});
+            done.shared()
+        })
     }
 }
 
@@ -707,8 +730,10 @@ impl CoreFamily for VoiceFamily {
         body: Option<BodyReceiver>,
     ) -> BoxFuture<Result<HttpResponse, RpcError>> {
         let server = self.server(cx);
+        let ready = self.ready();
         let cx = cx.clone();
         Box::pin(async move {
+            ready.await;
             roamgate_sidecar::core::note_served(
                 &ProcessEnv,
                 "voice",
@@ -720,11 +745,48 @@ impl CoreFamily for VoiceFamily {
         })
     }
 
+    fn call(&self, cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
+        if call.method == "internal.voice.release" {
+            // Bun takes voice back: the core's helper and watches stop
+            // before Bun may start its own.
+            self.ready.lock().unwrap().take();
+            self.turn.fetch_add(1, Ordering::SeqCst);
+            if let Some(server) = self.server.get() {
+                server.stop();
+            }
+            return Box::pin(async { Ok(json!({})) });
+        }
+        let _ = cx;
+        Box::pin(async move {
+            Err(RpcError::with_code(
+                format!("unknown method {}", call.method),
+                "unknown_method",
+            ))
+        })
+    }
+
     fn owned(&self, cx: &FamilyContext, owned: bool) {
         let server = self.server(cx);
         if owned {
-            server.start();
+            // Bun's helper, watches and companion stop first, as the
+            // assistant family's service does.
+            let (cx, started) = (cx.clone(), server.clone());
+            let turn = self.turn.clone();
+            let this_turn = turn.fetch_add(1, Ordering::SeqCst) + 1;
+            let release: BoxFuture<()> = Box::pin(async move {
+                if let Err(error) = cx.reverse("voice.release", json!({})).await {
+                    tracing::warn!("Bun did not release voice: {}", error.message);
+                }
+                if turn.load(Ordering::SeqCst) == this_turn {
+                    started.start();
+                }
+            });
+            let release = release.shared();
+            tokio::spawn(release.clone());
+            *self.ready.lock().unwrap() = Some(release);
         } else {
+            self.ready.lock().unwrap().take();
+            self.turn.fetch_add(1, Ordering::SeqCst);
             server.stop();
         }
     }
@@ -734,6 +796,8 @@ impl CoreFamily for VoiceFamily {
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
     Some(Arc::new(VoiceFamily {
         server: OnceLock::new(),
+        ready: Mutex::new(None),
+        turn: Arc::default(),
     }))
 }
 

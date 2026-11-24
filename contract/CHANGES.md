@@ -6,6 +6,23 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.28
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+The voice family changes hands with one helper at a time (Phase 10, S22;
+wire/core-channel.md, Families in the core): Bun's voice steps aside while
+the core owns the family. The browser surface is unchanged; the inventory
+too.
+
+- wire, reverse target: `voice.release` (Bun closes its voice sockets and
+  stops its helper, low-GPU watch, setup job and companion before the core
+  serves voice).
+- wire: the front's own call `internal.voice.release` (the core stops its
+  own before Bun runs voice again).
+- http: `/api/voice/ws` and `/api/voice/call/signalling` answer 503 from
+  Bun while the core runs voice.
+
 ## 1.27
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

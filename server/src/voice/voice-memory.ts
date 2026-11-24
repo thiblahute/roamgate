@@ -369,6 +369,27 @@ export class CompanionMemory {
     return this.state.epoch;
   }
 
+  /**
+   * Another writer takes the file (the Rust core owns the voice family):
+   * no idle compaction from here on, and what was noted is on disk once
+   * the returned promise settles.
+   */
+  async suspend() {
+    if (this.idle) clearTimeout(this.idle);
+    this.idle = null;
+    await this.flush();
+  }
+
+  /** The file read afresh (the voice family came back to Bun). */
+  reload() {
+    this.state = { epoch: 0, summary: "", summarizedAt: 0, entries: [] };
+    this.nextSeq = 1;
+    this.again = null;
+    this.forgetting = [];
+    this.load();
+    if (this.state.entries.length) this.armIdle();
+  }
+
   private armIdle() {
     if (this.idle) clearTimeout(this.idle);
     this.idle = setTimeout(() => this.compactNow("idle"), this.idleMs);
@@ -498,8 +519,8 @@ export class CompanionMemory {
     await rename(tmp, path);
   }
 
-  /** Waits for what was noted to be on disk, for tests. */
-  async flushForTests() {
+  /** Waits for what was noted to be on disk. */
+  async flush() {
     while (this.saving || this.dirty)
       await new Promise((resolve) => setTimeout(resolve, 1));
   }

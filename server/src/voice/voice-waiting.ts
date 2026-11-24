@@ -148,6 +148,11 @@ export class WaitingAnswers {
     }
   }
 
+  /** The file read afresh (the voice family came back to Bun). */
+  reload() {
+    this.load();
+  }
+
   private load() {
     if (!this.file) return;
     try {

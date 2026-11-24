@@ -780,9 +780,20 @@ const notifications = createNotificationFeed({
 });
 /** The permission prompts open per connection, to notify each once. */
 const notifiedPrompts = new Map<string, Set<string>>();
+/**
+ * Whether Bun gave the voice family to the Rust core: its helper, low-GPU
+ * watch and companion stopped, its voice sockets refused. Cleared only once
+ * the core let go of its own (`internal.voice.release`): the helper never
+ * runs twice.
+ */
+let voiceReleasedToCore = false;
+const VOICE_ON_CORE = "Voice runs in the Rust core";
 // Voice chat's helper starts on the first voice request, with the low-GPU
-// profile's models over voice.json's while it is on.
-const voiceHelper = new VoiceHelper(() => voiceLowGpu.config());
+// profile's models over voice.json's while it is on; never while the Rust
+// core runs voice.
+const voiceHelper = new VoiceHelper(() =>
+  voiceReleasedToCore ? { error: VOICE_ON_CORE } : voiceLowGpu.config(),
+);
 // The low-GPU profile (`roamgate voice profile low-gpu`, the Voice
 // settings, GameMode at a call's start): its state file followed.
 const voiceLowGpu = new VoiceLowGpu({
@@ -793,7 +804,8 @@ const voiceLowGpu = new VoiceLowGpu({
   gameMode: () => gameModeActive(),
 });
 voiceHelper.beforeCall = () => voiceLowGpu.beforeCall();
-voiceLowGpu.watch();
+/** The low-GPU file watch, while Bun runs voice. */
+let unwatchVoiceLowGpu: (() => void) | null = voiceLowGpu.watch();
 const handleVoiceLowGpu = createVoiceLowGpuRoute(voiceLowGpu);
 // The Voice settings' setup assistant: models downloaded, voice.json
 // pointed at them, the helper restarted with them once it is free.
@@ -897,6 +909,8 @@ const voiceErrands = new VoiceErrands({
 // Voice sockets open, and when one was last used: a call keeps the
 // sessions' processes up (idle stop), its pauses included.
 let voiceSocketsOpen = 0;
+/** Bun's open voice and signalling sockets, closed when the core takes voice. */
+const bunVoiceSockets = new Set<ServerWebSocket<ServeData>>();
 let lastVoiceAt = 0;
 const VOICE_KEEPS_AWAKE_MS = 10 * 60_000;
 /** Why a conversation's process must stay up now; null: nothing. */
@@ -942,9 +956,10 @@ const voiceFront = configuredFront(
   () => companionMemory.block(),
   companionMemoryFiles,
 );
+const voiceRouter = configuredRouter(() => readVoiceConfig());
 const handleVoice = createVoiceRoutes(
   voiceHelper,
-  configuredRouter(() => readVoiceConfig()),
+  voiceRouter,
   voiceErrands,
   () => {
     const config = readVoiceConfig();
@@ -968,9 +983,14 @@ const handleVoice = createVoiceRoutes(
   waitingAnswers,
   () => voiceLowGpu.reason(),
 );
+const voiceCleaner = configuredCleaner(() => readVoiceConfig());
+const voiceDictation = configuredDictation(
+  () => readVoiceConfig(),
+  companionMemoryFiles,
+);
 const voiceSocket = createVoiceSocket(
   voiceHelper,
-  configuredCleaner(() => readVoiceConfig()),
+  voiceCleaner,
   () => {
     const config = readVoiceConfig();
     return "error" in config ? undefined : config.max_pause_ms;
@@ -987,9 +1007,51 @@ const voiceSocket = createVoiceSocket(
   },
   undefined,
   () => companionMemory.callEnded(),
-  configuredDictation(() => readVoiceConfig(), companionMemoryFiles),
+  voiceDictation,
   () => voiceFront() !== null,
 );
+/** Bun's voice released to the core, once: the last release's end. */
+let voiceRelease: Promise<void> | null = null;
+
+/**
+ * Stops what Bun runs of voice, for the Rust core to run it: its sockets
+ * closed (the pages reconnect to the core), the helper, the low-GPU
+ * watch, a setup job, the companion's sessions and jobs, its memory
+ * written and no longer compacted here.
+ */
+function releaseBunVoice(): Promise<void> {
+  if (voiceReleasedToCore && voiceRelease) return voiceRelease;
+  voiceReleasedToCore = true;
+  voiceRelease = (async () => {
+    for (const ws of bunVoiceSockets) ws.close(1012, VOICE_ON_CORE);
+    bunVoiceSockets.clear();
+    unwatchVoiceLowGpu?.();
+    unwatchVoiceLowGpu = null;
+    voiceSetup.cancel();
+    voiceHelper.stop();
+    voiceFront()?.stop();
+    voiceRouter()?.stop();
+    voiceCleaner()?.stop();
+    voiceDictation()?.stop();
+    voiceTools()?.stop();
+    voiceResearch()?.stop();
+    await companionMemory.suspend().catch(() => undefined);
+    logger.child("voice").info("handed to the Rust core");
+  })();
+  return voiceRelease;
+}
+
+/** Bun runs voice again: its watch back, its files read afresh. */
+function takeBackBunVoice(): void {
+  if (!voiceReleasedToCore) return;
+  voiceReleasedToCore = false;
+  voiceRelease = null;
+  companionMemory.reload();
+  waitingAnswers.reload();
+  unwatchVoiceLowGpu ??= voiceLowGpu.watch();
+  logger.child("voice").info("served by Bun again");
+}
+
 const VOICE_HTTP_IDLE_TIMEOUT_SECONDS = 120;
 const downstreamConnectionConfig = {
   socketPath: config.socketPath,
@@ -2000,6 +2062,11 @@ const coreReverseTargets = {
       .items()
       .map((item) => item.state),
   "voice.session_cookie": async () => ({ cookie: newSessionCookie() }),
+  // The core takes voice: Bun's helper, watches and companion stop first.
+  "voice.release": async () => {
+    await releaseBunVoice();
+    return {};
+  },
   "work.panes": async (args: unknown) =>
     workServiceDeps().panes!(workConnectionOf(args)),
   "work.workspaces": async (args: unknown) =>
@@ -6298,6 +6365,28 @@ onOwnershipChanged(() => {
   }
 });
 
+// Voice: while the Rust core owns the family it runs the helper, the
+// low-GPU watch, the setup jobs and the companion; Bun's stop first (the
+// core asks with `voice.release` before it serves) and start again, their
+// files read afresh, once the family comes back and the core let go of its
+// own (`internal.voice.release`). The helper never runs twice.
+onOwnershipChanged(() => {
+  const ours = bunOwns("voice");
+  if (!ours && coreFront) {
+    void releaseBunVoice();
+  } else if (ours && voiceReleasedToCore) {
+    const front = coreFront;
+    void (
+      front
+        ? front.callInternal("voice", "release", {}).catch(() => undefined)
+        : Promise.resolve()
+    ).then(() => {
+      if (!bunOwns("voice")) return;
+      takeBackBunVoice();
+    });
+  }
+});
+
 // Agent profiles: while the Rust core owns the family it is
 // session-profiles.json's one writer and runs the return after a limit's
 // reset. Bun's store keeps the choices in memory for its synchronous
@@ -8327,6 +8416,14 @@ async function handleFetch(
     if (coreServesHere()) return forwardToCore();
     return handleHerdrSetup(req);
   }
+  // The Rust core runs voice: Bun's voice sockets would start Bun's helper
+  // beside the core's.
+  if (
+    voiceReleasedToCore &&
+    (url.pathname === "/api/voice/ws" ||
+      url.pathname === "/api/voice/call/signalling")
+  )
+    return new Response(VOICE_ON_CORE, { status: 503 });
   if (url.pathname === "/api/voice/ws") {
     if (
       server.upgrade(req, {
@@ -8408,11 +8505,13 @@ const bridgeWebSocket: WebSocketHandler<ServeData> = {
         ws.remoteAddress,
       );
     if (ws.data.signalling) {
+      bunVoiceSockets.add(ws);
       const { call, token } = ws.data.signalling;
       return voiceSocket.openSignalling(ws, call, token);
     }
     // A voice socket is no Herdr client: see voiceSocket.
     if (ws.data.voice) {
+      bunVoiceSockets.add(ws);
       voiceSocketsOpen += 1;
       lastVoiceAt = Date.now();
       return;
@@ -8554,8 +8653,12 @@ const bridgeWebSocket: WebSocketHandler<ServeData> = {
   },
   close(ws, code, reason) {
     if (ws.data.notifications) return notifications.close(ws, code, reason);
-    if (ws.data.signalling) return voiceSocket.closeSignalling(ws);
+    if (ws.data.signalling) {
+      bunVoiceSockets.delete(ws);
+      return voiceSocket.closeSignalling(ws);
+    }
     if (ws.data.voice) {
+      bunVoiceSockets.delete(ws);
       voiceSocketsOpen = Math.max(0, voiceSocketsOpen - 1);
       lastVoiceAt = Date.now();
       return voiceSocket.close(ws);
