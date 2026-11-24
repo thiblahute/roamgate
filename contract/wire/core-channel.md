@@ -659,7 +659,9 @@ channel goes.
 
 ## CLI pass-through
 
-A family's `cli` entries in families.json are commands of `roamgate`. When
+A family's `cli` entries in families.json are commands of `roamgate`, or a
+command and its first word (`setup voice` is the voice family's while
+`setup`'s other words stay with the command's own). When
 the Bun CLI runs one of them and the owners table gives that family to
 `rust`, it runs the core binary instead, with the same arguments
 (`<core> <command> <args...>`): `ROAMGATE_CORE_BIN` when set, else the

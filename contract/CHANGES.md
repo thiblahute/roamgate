@@ -6,6 +6,18 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.29
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+`roamgate setup voice` is the voice family's (Phase 10, S22;
+wire/core-channel.md, CLI pass-through): passed through to the core while
+Rust owns voice, `setup`'s other words staying the Bun CLI's. The browser
+surface and the inventory are unchanged.
+
+- owners: a family's `cli` entry may name a command and its first word;
+  `voice` gives `cli` `["voice", "setup voice"]`.
+
 ## 1.28
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

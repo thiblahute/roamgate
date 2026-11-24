@@ -92,7 +92,7 @@ export async function passThroughToCore(
   context: PassThroughContext,
   deps: { families?: Families; runCore?: RunCore } = {},
 ): Promise<number | null> {
-  const family = cliFamilyOf(command, deps.families ?? FAMILIES);
+  const family = cliFamilyOf(command, deps.families ?? FAMILIES, args);
   if (!family) return null;
   const { runtime } = context;
   const runtimeDir = join(

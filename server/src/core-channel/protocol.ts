@@ -118,13 +118,27 @@ export function httpFamilyOf(path: string, families: Families): string | null {
   return familyFor(path, families, (entry) => entry.http, "/");
 }
 
-/** The family a CLI command belongs to (exact names only). */
+/**
+ * The family a CLI command belongs to (exact names only): a `cli` entry
+ * names a command, or a command and its first word (`setup voice`: the
+ * other setups stay with their own command's family).
+ */
 export function cliFamilyOf(
   command: string,
   families: Families,
+  args: readonly string[] = [],
 ): string | null {
+  const first = args[0];
+  const sub =
+    first !== undefined && first !== "" && !first.startsWith("-")
+      ? `${command} ${first}`
+      : null;
   for (const [family, entry] of Object.entries(families))
-    if (!entry.test && entry.cli?.includes(command)) return family;
+    if (
+      !entry.test &&
+      (entry.cli?.includes(command) || (sub && entry.cli?.includes(sub)))
+    )
+      return family;
   return null;
 }
 

@@ -3,7 +3,8 @@
 //! routes (status, settings, speech, voices, setup, low-GPU, the call
 //! handoff's redeem and the companion's routes), with the helper, the
 //! voice socket the routes read the running call from, the companion
-//! layer, and `roamgate voice` passed through by the Bun CLI.
+//! layer, and `roamgate voice` and `roamgate setup voice` passed through by
+//! the Bun CLI.
 //!
 //! Landed Bun-owned: the front terminates every browser WebSocket in stage
 //! 1 (contract/wire/core-channel.md), so the voice socket and its call stay
@@ -806,6 +807,17 @@ pub fn cli(args: &[String]) -> u8 {
     roamgate_sidecar::core::note_served(&ProcessEnv, "voice", "cli voice");
     let runtime = cli_runtime(Arc::new(ProcessEnv));
     emit(roamgate_cli::voice::voice(&runtime, args))
+}
+
+/// `roamgate setup voice ...` (`args` from `voice`); returns the exit
+/// code. Its output is written as it goes: a download shows its progress.
+pub async fn setup_cli(args: &[String]) -> u8 {
+    roamgate_sidecar::core::note_served(&ProcessEnv, "voice", "cli setup voice");
+    let runtime = cli_runtime(Arc::new(ProcessEnv));
+    let deps = roamgate_cli::setup_voice::SetupCommandDeps::system();
+    let mut out = roamgate_cli::archive::ProcessOutput;
+    let code = roamgate_cli::setup_voice::setup(&runtime, &deps, args, &mut out).await;
+    u8::try_from(code).unwrap_or(1)
 }
 
 #[cfg(test)]

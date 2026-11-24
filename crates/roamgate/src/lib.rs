@@ -86,6 +86,10 @@ pub const FAMILY_COMMANDS: &[&str] = &[
     "voice",
 ];
 
+/// The commands this binary answers for one first word only, by family
+/// (families.json's `setup voice`): `setup`'s other words are not ours.
+pub const FAMILY_SUBCOMMANDS: &[(&str, &str)] = &[("setup", "voice")];
+
 /// Reads the command line; `env` gives the environment's HOST and PORT.
 pub fn parse_args(
     args: &[String],
@@ -103,6 +107,13 @@ pub fn parse_args(
         Some("owners") => return Ok(Options::Owners(args[1..].to_vec())),
         Some("front") => return Ok(Options::Front(args[1..].to_vec())),
         Some(command) if FAMILY_COMMANDS.contains(&command) => {
+            return Ok(Options::Command(command.to_owned(), args[1..].to_vec()));
+        }
+        Some(command)
+            if FAMILY_SUBCOMMANDS.iter().any(|(name, word)| {
+                *name == command && args.get(1).map(String::as_str) == Some(word)
+            }) =>
+        {
             return Ok(Options::Command(command.to_owned(), args[1..].to_vec()));
         }
         _ => {}
@@ -276,7 +287,12 @@ mod tests {
             parse_args(&args(&["service", "install"]), |_| None),
             Ok(Options::Command("service".into(), args(&["install"])))
         );
-        assert!(parse_args(&args(&["setup", "voice"]), |_| None).is_err());
+        assert_eq!(
+            parse_args(&args(&["setup", "voice", "list"]), |_| None),
+            Ok(Options::Command("setup".into(), args(&["voice", "list"])))
+        );
+        assert!(parse_args(&args(&["setup"]), |_| None).is_err());
+        assert!(parse_args(&args(&["setup", "--help"]), |_| None).is_err());
         for command in roamgate_cli::index::RUST_COMMANDS {
             assert!(FAMILY_COMMANDS.contains(command), "{command}");
         }

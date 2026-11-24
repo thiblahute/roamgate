@@ -232,7 +232,7 @@
         "data:voice-gst-registry.bin"
       ],
       "shadow": [],
-      "cli": ["voice"]
+      "cli": ["voice", "setup voice"]
     },
     "assistant": {
       "phase": 11,

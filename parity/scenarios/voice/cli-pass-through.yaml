@@ -1,0 +1,50 @@
+name: while the Rust core owns voice, roamgate voice and roamgate setup voice run in the core binary, and setup's other words do not
+family: voice
+description: >
+  The owners table gives voice to Rust (the core is ROAMGATE_CORE_BIN): the Bun
+  CLI runs `roamgate voice ...` and `roamgate setup voice ...` in it
+  (families.json's `voice` and `setup voice`), each noted in the core's
+  served log, with the same output and exit code as Bun's own. `roamgate
+  setup` with another word, or none, stays the Bun CLI's.
+server:
+  start: false
+  herdr: false
+  env:
+    ROAMGATE_CORE_BIN: "${CORE}"
+  files:
+    ".config/roamgate/runtime/owners.json":
+      mode: "0600"
+      json:
+        version: 1
+        owners: { voice: rust }
+        shadow: { enabled: false, rate: 0 }
+steps:
+  - cli: [setup, voice, --tier, bogus]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect:
+      {
+        exit: 2,
+        stderr_contains:
+          [
+            "roamgate setup: --tier is heavy or light",
+            "Run `roamgate setup --help` for usage.",
+          ],
+      }
+  - cli: [setup, voice, remove-unused]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect:
+      { exit: 0, stdout_contains: Nothing unused in the models directory. }
+  - cli: [voice, profile, low-gpu, status, --json]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect: { exit: 0, stdout_json: { active: false, holders: [] } }
+  # Setup's other words, and none, stay Bun's.
+  - cli: [setup, herdr]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect: { exit: 2, stderr_contains: "roamgate setup: unknown setup: herdr" }
+  - cli: [setup]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect:
+      { exit: 2, stderr_contains: "roamgate setup: what to set up: voice" }
+  - assert_file:
+      path: "${ROOT}/core-served.log"
+      text: "voice cli setup voice\nvoice cli setup voice\nvoice cli voice\n"
