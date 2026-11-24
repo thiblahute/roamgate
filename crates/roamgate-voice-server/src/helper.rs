@@ -995,11 +995,20 @@ impl VoiceHelper {
         call: Option<u64>,
         retried: bool,
     ) -> BoxFuture<Spoken> {
+        // Its own task, as a promise in Bun runs to its end: a caller gone
+        // (a cancelled POST /api/voice/speak, the page reading something
+        // else) must not drop it halfway, its sentence left counted as
+        // speaking: the speak watch would find the helper stuck and restart
+        // it, ending the call.
         let helper = self.clone();
-        Box::pin(async move {
+        let task = tokio::spawn(async move {
             helper
                 .speak_request_inner(text, language, models, rate, call, retried)
                 .await
+        });
+        Box::pin(async move {
+            task.await
+                .unwrap_or_else(|error| Err(format!("The sentence was not said: {error}")))
         })
     }
 

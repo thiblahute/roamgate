@@ -1502,3 +1502,63 @@ async fn a_helper_stuck_on_a_sentence_is_restarted_kokoro_saying_it() {
     assert!(joined(&lines).contains("made no speech in 45 s"));
     assert_eq!(models_sent(&fake.child(1)), vec![kokoro_fr()]);
 }
+
+#[tokio::test]
+async fn a_sentence_whose_caller_went_away_is_still_answered_and_not_found_stuck() {
+    // Dogfood, 2026-11-24: a POST /api/voice/speak cancelled (the page
+    // reading something else) dropped the sentence halfway, left counted
+    // as speaking: 15 s later the watch restarted a healthy helper,
+    // ending the call.
+    let clock = TestClock::new(1_700_000_000_000);
+    let (sink, lines) = errors();
+    let fake = Fake::new(|request| match request["op"].as_str().unwrap() {
+        "ping" => vec![json!({"id": request["id"]})],
+        _ => vec![],
+    });
+    let helper = VoiceHelper::with(
+        source(config(json!({}))),
+        fake.spawn(),
+        Arc::new(clock.clone()),
+        Logger::silent(),
+    )
+    .with_errors(sink);
+    let last_speak = |fake: &Fake| {
+        fake.child(0)
+            .requests()
+            .iter()
+            .rev()
+            .find(|request| request["op"] == "speak")
+            .map(|request| request["id"].clone())
+            .expect("the sentence was sent")
+    };
+    let speaking = {
+        let helper = helper.clone();
+        tokio::spawn(async move { helper.speak("Oui.", Some("fr"), None, None).await })
+    };
+    settle().await;
+    let id = last_speak(&fake);
+    speaking.abort();
+    let _ = speaking.await;
+    fake.child(0)
+        .say(json!({"id": id, "audio": "", "language": "fr"}));
+    settle().await;
+    clock.advance(SPEAK_COLD_MS + PING_MS).await;
+    settle().await;
+    assert!(
+        !joined(&lines).contains("made no speech"),
+        "{}",
+        joined(&lines)
+    );
+    assert!(!fake.child(0).killed());
+    assert_eq!(fake.count(), 1);
+    // The next sentence is answered as usual.
+    let next = {
+        let helper = helper.clone();
+        tokio::spawn(async move { helper.speak("Non.", Some("fr"), None, None).await })
+    };
+    settle().await;
+    fake.child(0)
+        .say(json!({"id": last_speak(&fake), "audio": "", "language": "fr"}));
+    assert!(next.await.unwrap().is_ok());
+    assert!(!joined(&lines).contains("made no speech"));
+}
