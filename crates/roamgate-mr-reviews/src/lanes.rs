@@ -268,19 +268,59 @@ fn strings(value: Option<&Value>) -> Vec<String> {
         .collect()
 }
 
+fn authored(entry: &Obj) -> bool {
+    strings(entry.get("reasons"))
+        .iter()
+        .any(|r| r == "authored")
+}
+
+/// What an own request waits on: the user's override, else what was
+/// inferred and is not outdated.
+fn depends_of(entry: &Obj) -> Vec<String> {
+    let override_depends = strings(
+        entry
+            .get("override")
+            .and_then(Value::as_object)
+            .and_then(|o| o.get("dependsOn")),
+    );
+    if !override_depends.is_empty() {
+        return override_depends;
+    }
+    strings(
+        entry
+            .get("inferred")
+            .and_then(Value::as_object)
+            .filter(|_| !truthy(entry.get("inferredOutdated")))
+            .and_then(|i| i.get("dependsOn")),
+    )
+}
+
 /// Lanes, next steps and nesting for the own requests among `entries`.
 pub fn assign_lanes(entries: &mut [Obj], stale_days: f64, now: f64) {
-    let snapshot: Vec<Obj> = entries.to_vec();
     let mut by_key: HashMap<String, usize> = HashMap::new();
-    for (index, entry) in snapshot.iter().enumerate() {
+    for (index, entry) in entries.iter().enumerate() {
         by_key.insert(js::sv(entry.get("key")).to_owned(), index);
+    }
+    // The entries waited on from an earlier one, as they are before any
+    // lane is set: only those are copied.
+    let mut snapshot: HashMap<usize, Obj> = HashMap::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if !authored(entry) {
+            continue;
+        }
+        for key in depends_of(entry) {
+            if let Some(&waited) = by_key.get(&key)
+                && waited >= index
+            {
+                snapshot
+                    .entry(waited)
+                    .or_insert_with(|| entries[waited].clone());
+            }
+        }
     }
     for index in 0..entries.len() {
         let entry = &entries[index];
-        if !strings(entry.get("reasons"))
-            .iter()
-            .any(|r| r == "authored")
-        {
+        if !authored(entry) {
             continue;
         }
         let over = entry.get("override").and_then(Value::as_object).cloned();
@@ -289,12 +329,7 @@ pub fn assign_lanes(entries: &mut [Obj], stale_days: f64, now: f64) {
             .and_then(Value::as_object)
             .filter(|_| !truthy(entry.get("inferredOutdated")))
             .cloned();
-        let override_depends = strings(over.as_ref().and_then(|o| o.get("dependsOn")));
-        let depends_on = if !override_depends.is_empty() {
-            override_depends
-        } else {
-            strings(inferred.as_ref().and_then(|i| i.get("dependsOn")))
-        };
+        let depends_on = depends_of(entry);
         // Entries before this one hold their lanes already, as the TS
         // reads them live from the same objects.
         let waiting_for: Vec<Obj> = depends_on
@@ -304,7 +339,7 @@ pub fn assign_lanes(entries: &mut [Obj], stale_days: f64, now: f64) {
                 if *i < index {
                     entries[*i].clone()
                 } else {
-                    snapshot[*i].clone()
+                    snapshot[i].clone()
                 }
             })
             .collect();

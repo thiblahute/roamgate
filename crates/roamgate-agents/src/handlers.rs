@@ -355,15 +355,13 @@ impl AgentSessionHandlers {
                 obj! { "messages" => Vec::<Value>::new() },
             ));
         }
-        let projected = self.cache.recent(&resolved).await?;
-        let messages = &projected.messages;
-        let messages = messages[messages.len().saturating_sub(MAX_MESSAGES_PER_AGENT)..].to_vec();
+        let (file, messages) = self
+            .cache
+            .recent_messages(&resolved, MAX_MESSAGES_PER_AGENT)
+            .await?;
         let mut out = resolved.value;
-        out.insert("file".into(), projected.file.to_value());
-        out.insert(
-            "updated_at".into(),
-            Value::String(js::iso(projected.file.mtime_ms)),
-        );
+        out.insert("file".into(), file.to_value());
+        out.insert("updated_at".into(), Value::String(js::iso(file.mtime_ms)));
         out.insert("messages".into(), Value::Array(messages));
         Ok(Value::Object(out))
     }

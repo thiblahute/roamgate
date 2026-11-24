@@ -5,6 +5,7 @@
 //! (`JSON.stringify` and a newline, atomic replace, 0600 in a 0700 directory).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use roamgate_agents::js::{self, Obj};
 use roamgate_base::paths::DataContext;
@@ -83,11 +84,14 @@ pub fn normalize_state(raw: &Value) -> Obj {
     out
 }
 
-/// The state store: read once, written through on each change.
+/// The state store: read once, written through on each change. The state
+/// is shared copy-on-write: a reader keeps a snapshot without copying it
+/// (the inbox reads it on every call), a change copies it only while a
+/// snapshot is still held.
 pub struct MrStore {
     context: DataContext,
     path: PathBuf,
-    state: Obj,
+    state: Arc<Obj>,
 }
 
 impl MrStore {
@@ -102,7 +106,7 @@ impl MrStore {
         MrStore {
             context,
             path,
-            state,
+            state: Arc::new(state),
         }
     }
 
@@ -114,18 +118,23 @@ impl MrStore {
         &self.state
     }
 
+    /// The state as it is now, without copying it.
+    pub fn snapshot(&self) -> Arc<Obj> {
+        Arc::clone(&self.state)
+    }
+
     fn save(&self) -> std::io::Result<()> {
         if let Some(dir) = self.path.parent() {
             create_dir_all_mode(dir)?;
         }
-        let text = format!("{}\n", js::stringify(&Value::Object(self.state.clone())));
+        let text = format!("{}\n", js::stringify(&Value::Object((*self.state).clone())));
         self.context
             .replace_data_file(&self.path, text.as_bytes(), 0o600)
     }
 
     /// Changes the state and writes it.
     pub fn update(&mut self, change: impl FnOnce(&mut Obj)) -> std::io::Result<()> {
-        change(&mut self.state);
+        change(Arc::make_mut(&mut self.state));
         self.save()
     }
 
@@ -164,7 +173,7 @@ impl MrStore {
             }));
         }
         let skip = feedback.len().saturating_sub(FEEDBACK_KEPT);
-        self.state.insert(
+        Arc::make_mut(&mut self.state).insert(
             "feedback".into(),
             Value::Array(feedback.into_iter().skip(skip).collect()),
         );

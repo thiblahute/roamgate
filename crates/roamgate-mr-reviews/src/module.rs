@@ -455,10 +455,19 @@ impl MrReviews {
     /// Branches headed upstream: their own rows, and the requests they are.
     pub fn upstream_rows(&self, value: &Obj) -> Upstream {
         let inbox = &self.0.inbox;
-        let items = inbox.items();
         let users = inbox.users();
         let ids = self.0.upstream.patch_ids();
         let branches = self.0.upstream.branches();
+        // Each branch's request, by key: the requests read in place.
+        let requests: Vec<Option<String>> = inbox.with_items(|items| {
+            branches
+                .iter()
+                .map(|branch| {
+                    request_of_branch(branch, items.iter().copied(), &ids, &[])
+                        .map(|request| key_of(request).to_owned())
+                })
+                .collect()
+        });
         let efforts = records(value.get("efforts"));
         let effort_of = |group: &str| {
             efforts
@@ -466,9 +475,9 @@ impl MrReviews {
                 .find(|each| js::sv(each.get("group")) == group)
         };
         let mut out = Upstream::default();
-        for branch in &branches {
+        for (branch, request) in branches.iter().zip(requests) {
             let effort = effort_of(&branch.member.group);
-            if let Some(request) = request_of_branch(branch, &items, &ids, &[]) {
+            if let Some(request) = request {
                 let mut covered = Obj::new();
                 if let Some(effort) = effort {
                     covered.insert(
@@ -487,7 +496,7 @@ impl MrReviews {
                         }),
                     );
                 }
-                out.covered.insert(key_of(request).to_owned(), covered);
+                out.covered.insert(request, covered);
                 continue;
             }
             // The effort's own source checkout is its card, not a row.

@@ -3,7 +3,7 @@
 //! forge. Held to `contract/vectors/mr-reviews-merge.json`.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use fancy_regex::Regex;
 use roamgate_agents::js::{self, Obj};
@@ -112,14 +112,17 @@ fn compile(pattern: &str) -> Option<Regex> {
     Regex::new(&format!("(?i){pattern}")).ok()
 }
 
-static CACHE: LazyLock<Mutex<HashMap<String, Option<Regex>>>> = LazyLock::new(Default::default);
+/// Compiled patterns, shared: a clone of a `Regex` gets a search cache of
+/// its own, built again on its first search.
+static CACHE: LazyLock<Mutex<HashMap<String, Option<Arc<Regex>>>>> =
+    LazyLock::new(Default::default);
 
-fn regex(pattern: &str) -> Option<Regex> {
+fn regex(pattern: &str) -> Option<Arc<Regex>> {
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(found) = cache.get(pattern) {
         return found.clone();
     }
-    let found = compile(pattern);
+    let found = compile(pattern).map(Arc::new);
     if cache.len() > 500 {
         cache.clear();
     }

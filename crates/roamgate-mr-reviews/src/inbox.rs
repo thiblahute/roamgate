@@ -287,6 +287,36 @@ struct Inner {
     complexity: ComplexityGuard,
 }
 
+/// Every request known in a state: the forges' lists, then those the
+/// reviews agent found and the pins read (once in a list, the list's copy
+/// wins). Borrowed: the inbox reads them on every call.
+fn items_in(state: &Obj) -> Vec<&Obj> {
+    let mut out: Vec<&Obj> = list(state.get("items"))
+        .iter()
+        .filter_map(Value::as_object)
+        .collect();
+    let mut listed: HashSet<&str> = out.iter().map(|item| key_of(item)).collect();
+    let found = state
+        .get("found")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|f| f.values())
+        .filter_map(|entry| entry.get("item").and_then(Value::as_object));
+    let pins = state
+        .get("pins")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|p| p.values())
+        .filter(|pin| truthy(pin.get("item")))
+        .filter_map(|pin| pin.get("item").and_then(Value::as_object));
+    for item in found.chain(pins) {
+        if listed.insert(key_of(item)) {
+            out.push(item);
+        }
+    }
+    out
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -368,8 +398,9 @@ impl Inner {
         }
     }
 
-    fn state(&self) -> Obj {
-        lock(&self.deps.store).get().clone()
+    /// The state as it is now: a shared snapshot, not a copy.
+    fn state(&self) -> Arc<Obj> {
+        lock(&self.deps.store).snapshot()
     }
 
     fn update(&self, change: impl FnOnce(&mut Obj)) {
@@ -433,31 +464,7 @@ impl Inner {
     /// Every request known: the forges' lists, then those the reviews
     /// agent found and the pins read (once in a list, the list's copy wins).
     fn items(&self) -> Vec<Obj> {
-        let state = self.state();
-        let mut out: Vec<Obj> = list(state.get("items"))
-            .iter()
-            .filter_map(|v| v.as_object().cloned())
-            .collect();
-        let mut listed: HashSet<String> = out.iter().map(|i| key_of(i).to_owned()).collect();
-        let found = state
-            .get("found")
-            .and_then(Value::as_object)
-            .into_iter()
-            .flat_map(|f| f.values())
-            .filter_map(|entry| entry.get("item").and_then(Value::as_object));
-        let pins = state
-            .get("pins")
-            .and_then(Value::as_object)
-            .into_iter()
-            .flat_map(|p| p.values())
-            .filter(|pin| truthy(pin.get("item")))
-            .filter_map(|pin| pin.get("item").and_then(Value::as_object));
-        for item in found.chain(pins) {
-            if listed.insert(key_of(item).to_owned()) {
-                out.push(item.clone());
-            }
-        }
-        out
+        items_in(&self.state()).into_iter().cloned().collect()
     }
 
     /// One pinned request, read from the forge and kept.
@@ -1410,12 +1417,12 @@ impl MrInbox {
         let mut hidden: Vec<Obj> = Vec::new();
         let mut out: Vec<Obj> = Vec::new();
         let mut listed: HashSet<String> = HashSet::new();
-        for item in inner.items() {
-            let key = key_of(&item).to_owned();
+        for item in items_in(&state) {
+            let key = key_of(item).to_owned();
             listed.insert(key.clone());
             let section = if is_pinned(&key) {
                 "pinned"
-            } else if reasons_has(&item, "authored") {
+            } else if reasons_has(item, "authored") {
                 "authored"
             } else if !list(item.get("reasons")).is_empty() {
                 "mine"
@@ -1443,7 +1450,7 @@ impl MrInbox {
             if section != "pinned"
                 && hidden_at
                     .get(&key)
-                    .is_some_and(|marker| *marker == json!(activity_marker(&item)))
+                    .is_some_and(|marker| *marker == json!(activity_marker(item)))
             {
                 let mut row = Obj::new();
                 for name in [
@@ -1479,7 +1486,7 @@ impl MrInbox {
             entry.insert("section".into(), json!(section));
             entry.insert(
                 "unread".into(),
-                unread(&item, seen).map_or(Value::Null, Value::Object),
+                unread(item, seen).map_or(Value::Null, Value::Object),
             );
             entry.insert("isNew".into(), json!(seen.is_none()));
             if section == "suggested"
@@ -1499,7 +1506,7 @@ impl MrInbox {
             }
             if let Some(found) = overrides.get(&key).and_then(Value::as_object) {
                 entry.insert("override".into(), Value::Object(found.clone()));
-                if override_outdated(found, &activity_marker(&item)) {
+                if override_outdated(found, &activity_marker(item)) {
                     entry.insert("overrideOutdated".into(), json!(true));
                 }
             }
@@ -1743,7 +1750,8 @@ impl MrInbox {
     pub fn snapshot(&self, settings: &Obj) -> Obj {
         let inner = &self.0;
         let (entries, hidden) = self.entries(settings);
-        let known = lock(&inner.hosts).clone();
+        // Only each host's state is copied, not what it read.
+        let known = lock(&inner.hosts);
         let hosts: Vec<Value> = list(settings.get("hosts"))
             .iter()
             .map(|host| {
@@ -1754,6 +1762,7 @@ impl MrInbox {
                 }
             })
             .collect();
+        drop(known);
         let mut out = Obj::new();
         out.insert(
             "entries".into(),
@@ -1871,6 +1880,13 @@ impl MrInbox {
     /// Every request known (`items`).
     pub fn items(&self) -> Vec<Obj> {
         self.0.items()
+    }
+
+    /// The requests known, read without copying them: `f` gets them
+    /// borrowed from the state as it is now.
+    pub fn with_items<R>(&self, f: impl FnOnce(&[&Obj]) -> R) -> R {
+        let state = self.0.state();
+        f(&items_in(&state))
     }
 
     /// The user's name on each host read (their own requests are theirs).

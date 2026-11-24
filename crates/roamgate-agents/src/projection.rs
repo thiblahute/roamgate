@@ -941,6 +941,21 @@ impl ProjectionCache {
         Ok(self.load(resolved).await?.projection.clone())
     }
 
+    /// The transcript's file and its last `max` messages: the rest of the
+    /// projection is not copied.
+    pub async fn recent_messages(
+        &self,
+        resolved: &Resolved,
+        max: usize,
+    ) -> io::Result<(SessionFile, Vec<Value>)> {
+        let cached = self.load(resolved).await?;
+        let messages = &cached.projection.messages;
+        Ok((
+            cached.projection.file.clone(),
+            messages[messages.len().saturating_sub(max)..].to_vec(),
+        ))
+    }
+
     /// Every entry known (for an entry looked up by id).
     pub async fn entries(&self, resolved: &Resolved) -> io::Result<Vec<Value>> {
         let cached = self.load(resolved).await?;
