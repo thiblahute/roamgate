@@ -11,4 +11,5 @@ steps:
   - login: {}
   - advance: 1500
   - sh: ls legacy-profiles/roamgate-*/cpu.json | wc -l
+    retry: 10000
     expect: { exit: 0, stdout: "{{re:^\\s*1\\n$}}" }

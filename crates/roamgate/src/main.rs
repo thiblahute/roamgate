@@ -26,9 +26,30 @@ async fn main() -> ExitCode {
             } else {
                 roamgate::core_families()
             };
-            ExitCode::from(
-                roamgate_sidecar::core::run_core(&env, roamgate::VERSION, families).await,
+            let profile = roamgate::start_core_profile(&env)
+                .map(|(profile, duration)| (std::sync::Arc::new(profile), duration));
+            // The capture ends on the server's clock, as Bun's timer did.
+            let timed = profile.clone();
+            let on_clock = Box::new(move |clock: roamgate_base::clock::SharedClock| {
+                if let Some((profile, duration)) = timed {
+                    tokio::spawn(async move {
+                        clock.sleep(duration).await;
+                        profile.stop().await;
+                    });
+                }
+            });
+            let code = roamgate_sidecar::core::run_core_with_clock(
+                &env,
+                roamgate::VERSION,
+                families,
+                on_clock,
             )
+            .await;
+            // The capture's files are written when the server stops early.
+            if let Some((profile, _)) = profile {
+                profile.stop().await;
+            }
+            ExitCode::from(code)
         }
         Options::Owners(args) => {
             let (code, out, err) =

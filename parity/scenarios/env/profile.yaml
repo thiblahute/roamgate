@@ -16,8 +16,11 @@ server:
 steps:
   - login: {}
   - advance: 2500
+  # The capture's files are written as it ends, on a thread of their own
+  # (the Rust server's sampler): real I/O after the timer.
   - sh: ls profiles/roamgate-*/cpu.json profiles/roamgate-*/summary.txt | sed 's#roamgate-[^/]*#roamgate-ID#'
     within_ms: 20000
+    retry: 10000
     expect:
       {
         exit: 0,

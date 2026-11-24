@@ -110,6 +110,18 @@ pub const FRONT_FAMILY: &str = "front";
 
 /// Runs the core with `families`; returns its exit code.
 pub async fn run_core(env: &dyn Env, version: &str, families: Families) -> u8 {
+    run_core_with_clock(env, version, families, Box::new(|_| {})).await
+}
+
+/// [`run_core`], `on_clock` given the families' clock once the front
+/// welcomed the core (its test clock in a test run): what the core's
+/// process runs besides its families times itself on it.
+pub async fn run_core_with_clock(
+    env: &dyn Env,
+    version: &str,
+    families: Families,
+    on_clock: Box<dyn FnOnce(SharedClock) + Send>,
+) -> u8 {
     let clock: SharedClock = Arc::new(SystemClock);
     install_logger(env, clock.clone());
     let (Some(address), Some(token)) = (
@@ -200,6 +212,7 @@ pub async fn run_core(env: &dyn Env, version: &str, families: Families) -> u8 {
         Some(test_clock) => Arc::new(test_clock.clone()),
         None => clock.clone(),
     };
+    on_clock(family_clock.clone());
     tracing::debug!(test, "core connected");
     let families: Families = families
         .into_iter()

@@ -69,6 +69,52 @@ pub fn parse_args(args: &[String]) -> Result<Options, String> {
     }
 }
 
+/// The CPU profile's variables (`--profile`, `--profile-duration`,
+/// `--profile-dir`), which the front sets on its standalone core.
+pub const PROFILE_ENV: &str = "ROAMGATE_PROFILE";
+pub const PROFILE_DURATION_ENV: &str = "ROAMGATE_PROFILE_DURATION";
+pub const PROFILE_DIR_ENV: &str = "ROAMGATE_PROFILE_DIR";
+
+/// The CPU profile a standalone core takes when its front asks for one
+/// (`ROAMGATE_PROFILE=1` with the duration in seconds and the directory the
+/// front resolved), and its duration. A directory it cannot use is logged, and the core runs
+/// unprofiled (Bun's server exited on it: the front checked it already).
+pub fn start_core_profile(
+    env: &dyn roamgate_base::env::Env,
+) -> Option<(roamgate_cli::cpu_profile::CpuProfile, std::time::Duration)> {
+    if !roamgate_sidecar::core::standalone_on(env) || env.var(PROFILE_ENV).as_deref() != Some("1") {
+        return None;
+    }
+    let seconds: u64 = env.var(PROFILE_DURATION_ENV)?.parse().ok()?;
+    let directory = std::path::PathBuf::from(env.var(PROFILE_DIR_ENV)?);
+    let level = roamgate_base::env::roamgate_env(env, "LOG_LEVEL")
+        .and_then(|value| roamgate_base::log::parse_log_level(&value).ok())
+        .unwrap_or(roamgate_base::log::LogLevel::Info);
+    let logger = roamgate_base::log::Logger::with(roamgate_base::log::LoggerOptions {
+        level: Some(level),
+        scope: Some("core".into()),
+        ..Default::default()
+    });
+    match roamgate_cli::cpu_profile::start_cpu_profile(
+        &directory,
+        std::time::Duration::from_secs(seconds),
+        VERSION,
+        &logger,
+    ) {
+        Ok(profile) => Some((profile, std::time::Duration::from_secs(seconds))),
+        Err(error) => {
+            let mut fields = roamgate_base::log::LogFields::new();
+            fields.insert(
+                "directory".into(),
+                directory.to_string_lossy().into_owned().into(),
+            );
+            fields.insert("error".into(), error.to_string().into());
+            logger.error("CPU profile failed", Some(&fields));
+            None
+        }
+    }
+}
+
 #[derive(RustEmbed)]
 #[folder = "$ROAMGATE_WEB_DIST"]
 struct Web;

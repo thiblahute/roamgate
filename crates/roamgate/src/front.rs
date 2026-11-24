@@ -390,8 +390,32 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
     }
     let start_clock = clock.clone();
     let has_test_clock = virtual_clock.is_some() && !standalone;
+    // The CPU profile (`--profile`, utils/cpu-profile.ts) samples where the
+    // server's work runs: the standalone core, the first one only (a
+    // restarted core is not profiled again, as Bun profiled its one start).
+    let profile = config.profile.clone().filter(|_| standalone);
+    let profiled = std::sync::atomic::AtomicBool::new(false);
     let core_env = Arc::new(move || {
         let mut env = core_env.clone();
+        if let Some(profile) = &profile {
+            if profiled.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                env.push((crate::PROFILE_ENV.into(), "0".into()));
+            } else {
+                env.push((crate::PROFILE_ENV.into(), "1".into()));
+                env.push((
+                    crate::PROFILE_DURATION_ENV.into(),
+                    (profile.duration_ms / 1000).to_string(),
+                ));
+                env.push((
+                    crate::PROFILE_DIR_ENV.into(),
+                    profile.directory.to_string_lossy().into_owned(),
+                ));
+            }
+        } else if standalone {
+            // The front decides: a profile its flags and environment did
+            // not ask for is not the core's either.
+            env.push((crate::PROFILE_ENV.into(), "0".into()));
+        }
         if has_test_clock {
             env.push((
                 roamgate_base::clock::TEST_CLOCK_EPOCH_ENV.into(),
