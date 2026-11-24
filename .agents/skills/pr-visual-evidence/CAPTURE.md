@@ -44,7 +44,7 @@ server or accidentally record another checkout's backend.
 
 For parallel revision comparisons, build each checkout with `bun run build:web`
 and serve its generated assets directly from its own bridge on a free loopback
-port. Use `NODE_ENV=production bun server/src/index.ts --host 127.0.0.1 --port <free-port>` with the
+port. Use `cargo run -p roamgate -- --host 127.0.0.1 --port <free-port>` with the
 explicit demo `--socket-path` and `--client-socket-path` from
 [Start the Real Workspace](../../../docs/SCREENSHOTS.md#start-the-real-workspace).
 Log in normally and remove any token from the URL before recording. For login,

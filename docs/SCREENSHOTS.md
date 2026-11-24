@@ -113,7 +113,7 @@ Build and start the bridge:
 ```sh
 bun run build:web
 mkdir -p /tmp/roamgate-demo/runtime-state
-XDG_STATE_HOME=/tmp/roamgate-demo/runtime-state bun server/src/index.ts --host 127.0.0.1 --port 8799 \
+XDG_STATE_HOME=/tmp/roamgate-demo/runtime-state cargo run -p roamgate -- --host 127.0.0.1 --port 8799 \
   --socket-path /tmp/roamgate-demo/config/herdr/sessions/roamgate-demo/herdr.sock \
   --client-socket-path /tmp/roamgate-demo/config/herdr/sessions/roamgate-demo/herdr-client.sock
 ```
