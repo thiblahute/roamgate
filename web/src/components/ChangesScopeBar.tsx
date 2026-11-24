@@ -73,11 +73,13 @@ export function useChangesRepos(
   const agentKey = agentDirs.join("\n");
   const [scanned, setScanned] = useState<WorkspaceRepo[]>([]);
   useEffect(() => {
-    if (!shown || !ownRoot) return;
+    // Without a repository of its own (its folder holds repositories
+    // without being one), its panes' and agents' directories still have.
+    if (!shown || (!ownRoot && !dirsKey && !agentKey)) return;
     let cancelled = false;
     void scanRepos(
       connectionId,
-      [ownRoot, ...(dirsKey ? dirsKey.split("\n") : [])],
+      [...(ownRoot ? [ownRoot] : []), ...(dirsKey ? dirsKey.split("\n") : [])],
       agentKey ? agentKey.split("\n") : [],
     ).then((repos) => {
       if (!cancelled) setScanned(repos);
@@ -88,15 +90,26 @@ export function useChangesRepos(
   }, [connectionId, ownRoot, dirsKey, agentKey, shown]);
   const { summaries } = useReviewState();
   return useMemo(() => {
-    if (!ownRoot) return [];
-    // The workspace's own checkout stands for the review the list is of.
+    // The workspace's own checkout stands for the review the list is of;
+    // without one, its reviews and scanned repositories alone.
     const own = {
-      root: ownRoot,
+      root: ownRoot ?? "",
       connectionId,
       workspaceId,
     } as ReviewSummarySession;
     return workspaceRepos(scanned, summaries.values(), own);
   }, [connectionId, ownRoot, scanned, summaries, workspaceId]);
+}
+
+/**
+ * Whether the picker has a repository to go to: another than the one shown,
+ * or any when none is (the workspace's folder is not a repository).
+ */
+export function hasOtherRepo(
+  repos: readonly WorkspaceRepo[],
+  shownRoot: string | undefined,
+): boolean {
+  return repos.some((repo) => repo.root !== shownRoot);
 }
 
 /**
@@ -129,11 +142,12 @@ export function useChangesSeries({
   };
   const step = (by: number) => {
     const at = repos.findIndex((repo) => repo.root === shownRoot);
-    const next = repos[at + by];
-    if (next && at >= 0) pick(next.root);
+    const next = at < 0 ? repos[by > 0 ? 0 : repos.length - 1] : repos[at + by];
+    // None shown yet (the workspace's folder is not one): the first or last.
+    if (next && (at >= 0 || !shownRoot)) pick(next.root);
     else
       say(
-        repos.length < 2
+        !hasOtherRepo(repos, shownRoot)
           ? "This workspace has a single repository here."
           : by > 0
             ? "The last repository"
@@ -151,7 +165,7 @@ export function useChangesSeries({
         aliases: ["p"],
         description: "the workspace's repositories, searched as you type (p)",
         run: () => {
-          if (repos.length < 2) {
+          if (!hasOtherRepo(repos, shownRoot)) {
             say("This workspace has a single repository here.");
             return;
           }
@@ -480,7 +494,7 @@ export function ChangesScopeBar({
             </span>
           </strong>
         </>
-      ) : repos.length > 1 ? (
+      ) : repos.length > 1 || hasOtherRepo(repos, root) ? (
         <>
           <ThemedSelect
             className="changes-scope-repo"

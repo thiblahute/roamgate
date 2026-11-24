@@ -47,7 +47,8 @@ export function scanRepos(
 
 /**
  * The scanned repositories with those of the workspace's other reviews
- * (and their comment counts), the review's own always among them; by
+ * (and their comment counts), the review's own always among them when it
+ * has one; by
  * path, so ( and ) go the same way from every repository.
  */
 export function workspaceRepos(
@@ -75,7 +76,8 @@ export function workspaceRepos(
     entry.comments = (entry.comments ?? 0) + snapshot.counts.comments;
     byRoot.set(other.root, entry);
   }
-  if (!byRoot.has(session.root))
+  // A workspace whose folder is not a repository has no own one ("").
+  if (session.root && !byRoot.has(session.root))
     byRoot.set(session.root, { root: session.root });
   return [...byRoot.values()].sort((a, b) => a.root.localeCompare(b.root));
 }

@@ -159,6 +159,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
   }));
   /** The directories Changes' repository scan was asked about. */
   const scans: { dirs: string[]; agentDirs: string[] }[] = [];
+  /** The repositories the scan finds (none unless a test says). */
+  const scanFinds: { root: string }[] = [];
   const reviewRepos = await import("../reviewRepos");
   mock.module("../reviewRepos", () => ({
     ...reviewRepos,
@@ -168,7 +170,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       agentDirs: string[],
     ) => {
       scans.push({ dirs, agentDirs });
-      return [];
+      return [...scanFinds];
     },
   }));
 
@@ -1560,6 +1562,48 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       } finally {
         await inspector.unmount();
         restore.mockRestore();
+      }
+    });
+
+    test("a workspace whose folder is not a repository still lists the repositories of its panes in the picker, and p ( ) pick them", async () => {
+      // ~/devel, holding checkouts without being one: no root of its own,
+      // a pane in one of its repositories.
+      const restore = await withPanes([
+        pane("p1", "w1", { cwd: "/devel", foreground_cwd: "/devel" }),
+        pane("p2", "w1", { cwd: "/devel/blog", foreground_cwd: "/devel/blog" }),
+      ]);
+      scans.length = 0;
+      scanFinds.splice(0, scanFinds.length, { root: "/devel/blog" });
+      localStorage.setItem("vimKeys", "true");
+      const inspector = await mountInspector({
+        workspace: inspectorWorkspace({ label: "blog", worktree: undefined }),
+      });
+      try {
+        await act(async () => {});
+        await act(async () => {});
+        expect(scans[scans.length - 1]?.dirs).toEqual([
+          "/devel",
+          "/devel/blog",
+        ]);
+        const bar = inspector.host.querySelector<HTMLElement>(
+          "[data-stub=scope] .changes-scope-bar",
+        );
+        // The picker, not a bare "Repository" with nothing to pick.
+        expect(
+          bar?.querySelector(
+            '[aria-label="Repository (p; ( and ) the previous and next)"]',
+          ),
+        ).not.toBeNull();
+        await act(async () => diffSeen.run?.("nextrepo"));
+        await act(async () => {});
+        expect(diffSeen.repo).toEqual({ root: "/devel/blog", own: false });
+      } finally {
+        await inspector.unmount();
+        scanFinds.length = 0;
+        restore.mockRestore();
+        // The next tests show the workspace's own repository again.
+        const { rememberChangesRepo } = await import("../changesRepo");
+        rememberChangesRepo("workspace:w1", undefined);
       }
     });
 

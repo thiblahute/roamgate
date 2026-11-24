@@ -2832,7 +2832,15 @@ export function DiffViewerPanel({
       {/* A review's own files listed (a commit, a review from elsewhere):
           the scope's read, failed or not, is not what is shown. */}
       {cache.error && !viewFiles ? (
-        <p className="modal-error">{cache.error}</p>
+        !repoRoot && /not a git repository/i.test(cache.error) ? (
+          // A workspace's folder holding repositories without being one.
+          <p className="modal-error" title={cache.error}>
+            This workspace's folder is not a Git repository: pick one of its
+            repositories in the line above (p).
+          </p>
+        ) : (
+          <p className="modal-error">{cache.error}</p>
+        )
       ) : null}
 
       <div
