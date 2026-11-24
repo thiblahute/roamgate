@@ -4,7 +4,8 @@
 //! - parity/ledger.tsv has a row for every `it()`/`test()` of the TS suite
 //!   and none for a test that is gone, and its scenario mappings name
 //!   existing scenarios;
-//! - every contract entry is covered by a scenario.
+//! - every contract entry is covered by a scenario;
+//! - contract/env.md lists what the crates read, and only that.
 //!
 //! Tests mapped `todo` or `pending:<what>` and uncovered entries are
 //! reported; with `PARITY_GATE_STRICT=1` the `todo` ones and the uncovered
@@ -184,4 +185,102 @@ fn every_contract_entry_is_covered() {
             report.uncovered
         );
     }
+}
+
+/// A crate's source file, its tests left out (`tests` directories and
+/// modules, a `#[cfg(test)] mod tests` block).
+fn crate_sources() -> Vec<(String, String)> {
+    let crates = repo_root().join("crates");
+    walkdir::WalkDir::new(&crates)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "rs"))
+        .filter_map(|entry| {
+            let relative = entry
+                .path()
+                .strip_prefix(&crates)
+                .ok()?
+                .to_string_lossy()
+                .replace('\\', "/");
+            let in_src = relative.split('/').nth(1) == Some("src");
+            if !in_src || relative.contains("/tests") || relative.ends_with("tests.rs") {
+                return None;
+            }
+            let mut text = std::fs::read_to_string(entry.path()).ok()?;
+            if let Some(at) = text.find("#[cfg(test)]\nmod tests") {
+                text.truncate(at);
+            }
+            Some((relative, text))
+        })
+        .collect()
+}
+
+#[test]
+fn the_environment_table_is_what_the_crates_read() {
+    let env = std::fs::read_to_string(repo_root().join("contract/env.md")).unwrap();
+    let table: BTreeSet<String> = regex::Regex::new(r"(?m)^\| `([A-Z0-9_]+)`")
+        .unwrap()
+        .captures_iter(&env)
+        .map(|found| found[1].to_owned())
+        .collect();
+    let sources = crate_sources();
+    // Every name of the table is named by the crates (a legacy or
+    // ROAMGATE_ name also by its suffix, roamgate_env's argument).
+    let stale: Vec<&String> = table
+        .iter()
+        .filter(|name| {
+            let mut names = vec![format!("\"{name}\"")];
+            for prefix in ["ROAMGATE_", "HERDR_GUI_"] {
+                if let Some(rest) = name.strip_prefix(prefix) {
+                    names.push(format!("\"{rest}\""));
+                }
+            }
+            !sources
+                .iter()
+                .any(|(_, text)| names.iter().any(|quoted| text.contains(quoted.as_str())))
+        })
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "contract/env.md names variables no crate reads: {stale:?}"
+    );
+    // Every ROAMGATE_ or HERDR_GUI_ variable the crates read is listed.
+    let read = regex::Regex::new(
+        r#"(?:var|var_os)\(\s*"((?:ROAMGATE|HERDR_GUI)_[A-Z0-9_]+)"\s*\)|roamgate_env\([^,]+,\s*"([A-Z0-9_]+)"\s*\)|(?:var|var_os)\(\s*&?(?:[a-z_]+::)*([A-Z][A-Z0-9_]+)\s*\)"#,
+    )
+    .unwrap();
+    let constant =
+        regex::Regex::new(r#"const ([A-Z0-9_]+): &str = "((?:ROAMGATE|HERDR_GUI)_[A-Z0-9_]+)";"#)
+            .unwrap();
+    let constants: std::collections::BTreeMap<String, String> = sources
+        .iter()
+        .flat_map(|(_, text)| {
+            constant
+                .captures_iter(text)
+                .map(|found| (found[1].to_owned(), found[2].to_owned()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let mut missing = BTreeSet::new();
+    for (path, text) in &sources {
+        for found in read.captures_iter(text) {
+            let name = if let Some(name) = found.get(1) {
+                name.as_str().to_owned()
+            } else if let Some(suffix) = found.get(2) {
+                format!("ROAMGATE_{}", suffix.as_str())
+            } else {
+                match constants.get(&found[3]) {
+                    Some(name) => name.clone(),
+                    None => continue,
+                }
+            };
+            if !table.contains(&name) {
+                missing.insert(format!("{name} ({path})"));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "variables the crates read that contract/env.md does not list: {missing:#?}"
+    );
 }

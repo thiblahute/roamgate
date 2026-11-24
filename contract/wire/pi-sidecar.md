@@ -1,22 +1,19 @@
 # Pi sidecar
 
 Pi (`@earendil-works/pi-ai`, `pi-coding-agent`, `pi-durable`, `chord`) has
-no Rust equivalent, so a Rust server runs Ranger's non-Claude providers in
-a sidecar: a Bun program serving Pi's drivers over its stdin and stdout
-(Rust migration plan, section 6.8). It is started on the first Pi call and
-never for Claude Code. The sidecar is `server/src/assistant/pi-sidecar-main.ts`,
-compiled to the standalone `roamgate-pi` (`bun run compile:pi`); the Bun
-server's client is `server/src/assistant/pi-sidecar-client.ts`, the Rust
-server's the `roamgate-pi` crate. Both are held to
+no Rust equivalent, so the server runs Ranger's non-Claude providers in a
+sidecar: a Bun program serving Pi's drivers over its stdin and stdout. It
+is started on the first Pi call and never for Claude Code. The sidecar is
+`server/src/assistant/pi-sidecar-main.ts`, compiled to the standalone
+`roamgate-pi` (`bun run build:pi`, and `cargo xtask package` for a
+release); the server's client is the `roamgate-pi` crate. Both are held to
 `contract/vectors/pi-sidecar.json`.
-
-The Bun server runs Pi itself unless `ROAMGATE_PI_SIDECAR` names a sidecar.
 
 ## Variable
 
-| Variable              | Read by | Meaning                                                                                                                                                                                                                                                                                                                               |
-| --------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ROAMGATE_PI_SIDECAR` | server  | The sidecar to run: a `.ts`, `.js`, `.mjs` or `.cjs` file runs with Bun (the server's own Bun when it runs from source, else `bun` on PATH), anything else is the executable. Unset or empty: the Bun server runs Pi in-process; the Rust server runs `roamgate-pi` beside its own executable. The sidecar does not get the variable. |
+| Variable              | Read by | Meaning                                                                                                                                                                                                                                                                                       |
+| --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ROAMGATE_PI_SIDECAR` | server  | The sidecar to run: a `.ts`, `.js`, `.mjs` or `.cjs` file runs with Bun (the server's own Bun when it runs from source, else `bun` on PATH), anything else is the executable. Unset or empty: the server runs `roamgate-pi` beside its own executable. The sidecar does not get the variable. |
 
 The sidecar gets the server's environment otherwise: HOME, the data root
 and `PI_CODING_AGENT_DIR` decide where Pi's files are, as in the server.
@@ -91,9 +88,9 @@ sidecar sent them, before that run's result.
 
 ## Files
 
-The sidecar runs the same Pi code as the Bun server, on the same files:
+The sidecar runs Pi on the files Pi keeps:
 `auth.json` (written by Pi's logins), the durable stores
 `durable/<id>/execution.sqlite` with their `<id>.lock` (one live owner,
 whichever process), and `models.json` (read by Pi, written by the server
 through `configure_model.save`). A chat started by Pi in one process
-continues in the other.
+continues in the next sidecar the server starts.

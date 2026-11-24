@@ -6,6 +6,55 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.43
+
+inventory: 9742d83183a59ed3e96c6adb4c1198d90ee7f5c1dffc54db23b58e1d83c6fe6c
+
+The Bun server is gone (S25 cut-over, WP9): the server is the Rust binary
+alone, `roamgate [server flags]` as the front with its own executable as
+the core. The browser surface (RPC, pushes, HTTP, sockets, the agent
+socket, the CLI) is unchanged.
+
+- wire: `core-channel.md` describes the front and its core only. The
+  owners table leaves: no `<data>/runtime/owners.json` (and no
+  `roamgate owners`), no `owner` message, no `owners`, `shadow` or `side`
+  in `hello` and `welcome`, no `shadow` flag on `call`, no shadow reads
+  (`shadow.jsonl`); every family the core implements serves from the
+  `welcome` until the channel closes. The Bun side of the channel leaves
+  with the Rust core's link to a Rust front (`ROAMGATE_FRONT_CHANNEL`,
+  `ROAMGATE_FRONT_TOKEN`), the Bun core (`ROAMGATE_SIDECAR_BIN`), the Rust
+  core beside a Bun server (`ROAMGATE_CORE_BIN`) and the CLI pass-through;
+  `ROAMGATE_CORE_STANDALONE` is no longer set or read (the core always
+  answers in its own process). The handover targets (`*.release`,
+  `review.socketsTaken`, `claude_mod.released`, `history.configure`,
+  `activity.dayInput`, `review.addThread`) and the front's
+  `internal.settings.get`, `.update`, `internal.history.release`,
+  `internal.assistant.release`, `internal.voice.release`,
+  `internal.review.mod_release` and `internal.review.close` leave. A socket
+  no family serves is refused (`{accepted: false}`) instead of passed on.
+  `owners/families.json` moves to `wire/families.json`, without `phase`,
+  `shadow` and `cli`. The vectors keep the frames, the family of a method
+  or path and the outbound queue.
+- wire: `node-link.md`'s node contract is 2: the node link's `hello` and
+  `welcome` lose `side` with the core channel's; a home or node of contract
+  1 cannot read the other's handshake, a failed start that falls back to
+  the SSH tunnel.
+- env: the table lists what the Rust crates read, with the files that
+  read it; `ROAMGATE_CORE_BIN` leaves, `ROAMGATE_CORE_SERVED_LOG` joins
+  it, with the node's (`ROAMGATE_NODE_HOME`, `ROAMGATE_DATA_ROOT`,
+  `ROAMGATE_NODE_TITLE_SUFFIX` and the home's `ROAMGATE_NODE_ORIGINS`),
+  which no TypeScript read; `ROAMGATE_CLI_VERSION` is no longer read (the
+  front and its core are one binary). `OPEN_BROWSER` and `--open` open the browser again once the
+  server listens, as the Bun server did.
+- storage: `file:owners.json` and `file:shadow.jsonl` leave.
+- exec: the core channel's two spawn sites of the Bun server leave.
+- schemas: `server.schema.json` is written by hand (its TypeScript source,
+  `schemas/server-types.ts`, named the Bun server's types).
+- assets: `assets/index.json`'s `used_by` names the crates' sources.
+- The inventory digest is now that of the contract's own names
+  (`scripts/contract/entries.ts`), not of the names the Bun server's code
+  had: the check reads no server code.
+
 ## 1.42
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
@@ -56,7 +105,6 @@ publishes no task notification and runs no workspace auto-sync or
 arrangement; its hello is not followed by the forwards. The server and
 the browser surface of a home are unchanged; the inventory too.
 
-||||||| parent of d131e9c266 (Serve SSH profiles with node: true through a roamgate node link)
 ## 1.39
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

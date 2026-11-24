@@ -1,7 +1,7 @@
 {
   "name": "roamgate-server",
-  "version": "1.42",
-  "inventory_sha256": "55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a",
+  "version": "1.43",
+  "inventory_sha256": "9742d83183a59ed3e96c6adb4c1198d90ee7f5c1dffc54db23b58e1d83c6fe6c",
   "surfaces": {
     "rpc": "rpc/<family>/<method>.json",
     "push": "push/<name>.json",

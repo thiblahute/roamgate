@@ -11,10 +11,16 @@ description: >
   `served_by_home`; no shared job runs (no activity recorder, Claude mod
   hub, review agent socket, Claude start hook, tab renamer or auto-sync) and
   nothing is written under ~/.config/roamgate, ~/.claude or ~/.local/bin.
+  Its page is named with its --title-suffix.
 platforms: [linux, macos]
+covers:
+  - env:ROAMGATE_NODE_HOME
+  - env:ROAMGATE_DATA_ROOT
+  - env:ROAMGATE_NODE_TITLE_SUFFIX
 server:
   command: node
-  args: [--listen, "127.0.0.1:0", --home, "https://home.example/"]
+  args:
+    [--listen, "127.0.0.1:0", --home, "https://home.example/", --title-suffix, Laptop]
   clock: false
   herdr:
     endpoint: true
@@ -39,6 +45,12 @@ steps:
             connection_id: local,
             version: "{{string}}",
           }
+  - http: GET /manifest.json
+    expect:
+      {
+        status: 200,
+        json: { name: "Roamgate · Laptop", short_name: "Roamgate · Laptop" },
+      }
   - connect:
       expect_hello:
         {

@@ -4,8 +4,9 @@ The parity harness controls the server's time so that scenarios about idle
 stop, limit-resume, the work board's checks, cache TTLs, SSH backoff,
 notification pings, the voice helper's ping and stuck timers, login cooldowns
 and every other deadline run the same way on every server and every machine.
-Both servers implement this contract; the Bun server's implementation is
-`server/src/utils/test-clock.ts`.
+The server implements it in roamgate-base (`clock::test_clock`); the
+front follows it and relays each `advance` to its core
+(wire/core-channel.md).
 
 ## Enabling
 

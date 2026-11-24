@@ -1,0 +1,40 @@
+name: a home answers its node origins' /api/ requests and preflights with CORS, and only theirs
+family: standalone
+description: >
+  ROAMGATE_NODE_ORIGINS names the Roamgate nodes whose pages fetch the
+  home's /api/ routes from their own origin (Mac node phase 3): their
+  requests get the origin back with credentials allowed, before a login
+  too. Another origin, and a path outside /api/, get no CORS headers. (The
+  preflight, an OPTIONS the contract's HTTP surface does not list, is
+  roamgate-http's front tests'.)
+covers:
+  - env:ROAMGATE_NODE_ORIGINS
+server:
+  env:
+    ROAMGATE_NODE_ORIGINS: "https://Mac.example.ts.net/, http://127.0.0.1:8787"
+steps:
+  - http: GET /api/health
+    cookie: false
+    headers: { origin: "https://mac.example.ts.net" }
+    expect:
+      status: 401
+      headers:
+        {
+          access-control-allow-origin: "https://mac.example.ts.net",
+          access-control-allow-credentials: "true",
+        }
+  - http: GET /api/health
+    cookie: false
+    headers: { origin: "https://evil.example" }
+    expect:
+      { status: 401, headers: { access-control-allow-origin: "{{absent}}" } }
+  - login: {}
+  - http: GET /api/health
+    headers: { origin: "http://127.0.0.1:8787" }
+    expect:
+      status: 200
+      headers: { access-control-allow-origin: "http://127.0.0.1:8787" }
+  - http: GET /manifest.json
+    headers: { origin: "https://mac.example.ts.net" }
+    expect:
+      { status: 200, headers: { access-control-allow-origin: "{{absent}}" } }
