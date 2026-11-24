@@ -151,6 +151,116 @@ impl TreeRuntime {
     }
 }
 
+/// A connection's runtime as Ranger's live context reads it while the core
+/// runs it (Bun's `runtime.files`, `runtime.worktreeHooks` and
+/// `createWorkspaceWorktree`): None when the core runs no runtime of it.
+pub(crate) struct RangerRuntime {
+    runtime: Arc<Runtime>,
+    inner: Arc<Inner>,
+}
+
+pub(crate) fn ranger_runtime(connection_id: &str) -> Option<RangerRuntime> {
+    let inner = shared().ok()?;
+    let runtime = inner.runtime(connection_id)?;
+    Some(RangerRuntime { runtime, inner })
+}
+
+impl RangerRuntime {
+    pub(crate) fn generation(&self) -> u64 {
+        self.runtime.conn.generation
+    }
+
+    pub(crate) fn git(&self) -> &roamgate_git::GitContext {
+        &self.runtime.conn.git
+    }
+
+    pub(crate) fn is_windows(&self) -> bool {
+        self.runtime.conn.is_windows()
+    }
+
+    /// A Changes read (`git.diff_file`, `git.diff_summary`): the files'
+    /// own RPC, Unix only.
+    pub(crate) async fn git_read(&self, method: &str, query: &Value) -> Result<Value, RpcError> {
+        files::rpc(&self.runtime.files, &self.runtime.conn, method, query, None)
+            .await
+            .unwrap_or_else(|| Err(WorkspaceError::new(format!("unknown method {method}"))))
+            .map_err(rpc_error)
+    }
+
+    /// `resolveWorkspaceGitRoot`: `{workspaceId, workspace, root}`.
+    pub(crate) async fn git_root(&self, query: &Value) -> Result<Value, RpcError> {
+        let root = self
+            .runtime
+            .files
+            .workspace_git_root(&self.runtime.conn, query)
+            .await
+            .map_err(rpc_error)?;
+        Ok(json!({
+            "workspaceId": root.workspace_id,
+            "workspace": root.workspace,
+            "root": root.root,
+        }))
+    }
+
+    /// `readWorktreeHooks(cwd)`: `{path, source, config}`, or null.
+    pub(crate) async fn worktree_hooks(&self, cwd: &str) -> Result<Value, RpcError> {
+        let loaded = self
+            .runtime
+            .worktrees
+            .hooks
+            .read_worktree_hooks(&self.runtime.conn, cwd, None)
+            .await
+            .map_err(|error| RpcError::new(error.to_string()))?;
+        Ok(loaded.map_or(Value::Null, |loaded| {
+            json!({
+                "path": loaded.path,
+                "source": loaded.source,
+                "config": loaded.config_value(),
+            })
+        }))
+    }
+
+    /// index.ts `placeCreatedWorkspaceUnder`: a workspace Ranger made
+    /// goes under the one it came from, in the arrangement the core keeps.
+    pub(crate) async fn place_created(
+        &self,
+        created: Value,
+        requester: Option<String>,
+    ) -> Result<(), String> {
+        let callbacks = worktree_callbacks(&self.inner, &self.runtime);
+        match &callbacks.place_created {
+            Some(place) => place(created, requester)
+                .await
+                .map_err(|error| error.message),
+            None => Ok(()),
+        }
+    }
+
+    /// Ranger's confirmed `worktree.create`: the runtime's own creation,
+    /// placed under its source workspace, `before_dispatch` run before
+    /// anything reaches the host or Herdr.
+    pub(crate) async fn create_worktree(
+        &self,
+        params: &Value,
+        is_current: Guard,
+        before_dispatch: Arc<dyn Fn() -> Result<(), String> + Send + Sync>,
+    ) -> Result<Value, WorkspaceError> {
+        let callbacks = worktree_callbacks(&self.inner, &self.runtime);
+        let runtime_current = self.runtime.is_current();
+        let guard: Guard = Arc::new(move || runtime_current() && is_current());
+        self.runtime
+            .worktrees
+            .create_dispatched(
+                &self.runtime.conn,
+                params,
+                &guard,
+                &callbacks,
+                Some(before_dispatch),
+            )
+            .await
+    }
+}
+
 /// What a browser hears when git.pull_request fails (index.ts: a root's
 /// errors may hold remote URLs or CLI diagnostics).
 const PULL_REQUEST_FAILED: &str = "Cannot resolve this workspace's Git checkout.";

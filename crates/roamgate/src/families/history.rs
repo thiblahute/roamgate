@@ -270,7 +270,10 @@ impl HistoryBackend for Backend {
 }
 
 /// settings.json's `history` changed as `PUT /api/history` asks.
-async fn write_settings(cx: &FamilyContext, change: HistoryChange) -> Result<(), String> {
+pub(crate) async fn write_settings(
+    cx: &FamilyContext,
+    change: HistoryChange,
+) -> Result<(), String> {
     let home = DataContext::from_env(&ProcessEnv).home;
     let expanded = match &change.location {
         Some(Some(location)) => Some(Some(expand_location(location, &home)?)),

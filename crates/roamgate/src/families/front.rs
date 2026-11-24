@@ -17,11 +17,10 @@
 //! - The core's pushes, delivered to the `/ws` sockets.
 //! - Reverse targets in the process: the handovers' (a family taken from
 //!   Bun has it let go of its part first: nothing to let go of here), and
-//!   what the host family asks of the front for each generation (`host.runtime_start`, `host.runtime_stop`,
-//!   `host.events`, `host.status`, `host.master_ready`). The generation's
-//!   composition root (terminal bridge, task events, Last steps...) is not
-//!   built yet: a generation runs with the core's part only, its Herdr
-//!   events reaching the browsers.
+//!   the rest of what the families asked Bun ([`super::standalone`]),
+//!   among them what the host family asks of the front for each
+//!   generation. The generation's terminal bridge, task events and
+//!   forwards are not built yet.
 //! - The front's calls: `internal.front.start` (the server's configuration;
 //!   the connections start) and `internal.front.stop` (they stop, at the
 //!   front's shutdown).
@@ -32,15 +31,13 @@ use std::time::{Duration, Instant};
 
 use roamgate_base::clock::SharedClock;
 use roamgate_base::env::{ProcessEnv, roamgate_env};
-use roamgate_base::log::{
-    LogFields, LogLevel, Logger, LoggerOptions, RecoveryReporter, parse_log_level,
-};
+use roamgate_base::log::{LogFields, LogLevel, Logger, LoggerOptions, parse_log_level};
 use roamgate_connections::host_runtime::HostRuntime;
 use roamgate_connections::manager::{ConnectionManager, LEGACY_DEFAULT_CONNECTION_ID};
 use roamgate_connections::routing::{
     HttpEndpoint, LegacyRoutingLogger, Resolved, RoutingError, RpcRoute,
     parse_connection_http_route, raw_request_pathname, requested_http_generation,
-    resolve_connection_http_route, serialize_herdr_event_envelope,
+    resolve_connection_http_route,
 };
 use roamgate_http::browser_rpc::{
     BrowserClients, ClientSink, Hello, Outgoing, ReplyPublisher, RpcMeta, RpcOutcome, log_rpc,
@@ -59,6 +56,7 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use super::host::HostHandle;
+use super::standalone::{FrontConfig, Layer};
 
 /// How long a request waits for the connections to start (hostSettling).
 const SETTLE_WAIT: Duration = Duration::from_secs(10);
@@ -99,11 +97,10 @@ fn unported(method: &str) -> bool {
 pub fn family(host: HostHandle) -> Arc<dyn CoreFamily> {
     Arc::new(FrontFamily(Arc::new(Inner {
         host,
-        config: Mutex::default(),
         started: watch::channel(false).0,
         clients: OnceLock::new(),
+        layer: OnceLock::new(),
         deltas: Mutex::default(),
-        statuses: Mutex::default(),
         legacy: LegacyRoutingLogger::new(|line| {
             let mut fields = LogFields::new();
             fields.insert("detail".into(), line.into());
@@ -112,31 +109,16 @@ pub fn family(host: HostHandle) -> Arc<dyn CoreFamily> {
     })))
 }
 
-/// The server's configuration, as the front gives it.
-#[derive(Debug, Clone, Default)]
-struct Config {
-    socket_path: String,
-    task_notification_source: String,
-    auth_required: bool,
-}
-
 struct Inner {
     host: HostHandle,
-    config: Mutex<Config>,
     /// The connections' start finished (or failed): requests wait for it.
     started: watch::Sender<bool>,
     clients: OnceLock<Arc<BrowserClients>>,
+    /// What Bun kept for the families' reverse targets.
+    layer: OnceLock<Arc<Layer>>,
     /// The topology lists each socket was given.
     deltas: Mutex<HashMap<u64, ListDeltas>>,
-    /// Each connection's failures and the generation last logged ready.
-    statuses: Mutex<HashMap<String, ConnectionLog>>,
     legacy: LegacyRoutingLogger,
-}
-
-/// What the log said of a connection (onConnectionStatus).
-struct ConnectionLog {
-    failures: RecoveryReporter,
-    ready_generation: Option<u64>,
 }
 
 struct FrontFamily(Arc<Inner>);
@@ -274,6 +256,14 @@ impl Inner {
         self.clients.get()
     }
 
+    /// The server's configuration as `internal.front.start` gave it.
+    fn config(&self) -> FrontConfig {
+        self.layer
+            .get()
+            .map(|layer| layer.config.lock().unwrap().clone())
+            .unwrap_or_default()
+    }
+
     /// The connections once their start settled (at most 10 s).
     async fn manager(&self) -> Option<ConnectionManager<HostRuntime>> {
         let mut started = self.started.subscribe();
@@ -291,13 +281,23 @@ impl Inner {
         let flag = |key: &str| params.get(key).and_then(Value::as_bool).unwrap_or(false);
         let socket_path =
             text("socket_path").ok_or_else(|| RpcError::new("front.start needs a socket_path"))?;
-        *self.config.lock().unwrap() = Config {
+        let ssh_host = text("ssh_host");
+        let session = text("session");
+        let layer = self
+            .layer
+            .get()
+            .cloned()
+            .ok_or_else(|| RpcError::new("the front family is not registered"))?;
+        *layer.config.lock().unwrap() = FrontConfig {
             socket_path: socket_path.clone(),
+            client_socket_path: text("client_socket_path").unwrap_or_default(),
+            ssh_host: ssh_host.clone(),
+            session: session.clone(),
+            has_explicit_socket_path: flag("has_explicit_socket_path"),
+            has_explicit_client_socket_path: flag("has_explicit_client_socket_path"),
             task_notification_source: text("task_notification_source").unwrap_or_default(),
             auth_required: flag("auth_required"),
         };
-        let ssh_host = text("ssh_host");
-        let session = text("session");
         let explicit_legacy_override = flag("has_explicit_socket_path")
             || flag("has_explicit_client_socket_path")
             || ssh_host.is_some()
@@ -318,7 +318,11 @@ impl Inner {
         // No Bun recorder to stop first: the core's records now.
         let activity = standalone.call("internal.activity.start", json!({}), Ctx::default());
         let inner = self.clone();
+        let settings_cx = cx.clone();
         tokio::spawn(async move {
+            // What a settings change is compared against.
+            super::standalone::prime_settings(&layer, &settings_cx).await;
+            super::standalone::runtime::start_review_agents(&layer, &settings_cx);
             if let Err(error) = standalone
                 .call("internal.host.start", host_start, Ctx::default())
                 .await
@@ -368,89 +372,36 @@ impl Inner {
                 Arc::new(|_, _, _| Box::pin(async { Ok(json!({"ok": true})) })),
             );
         }
-        // The generation's composition root is the front's: not built yet.
-        standalone.register(
-            "host.runtime_start",
-            Arc::new(|_, _, _| Box::pin(async { Ok(json!({"ok": true})) })),
-        );
-        standalone.register(
-            "host.runtime_stop",
-            Arc::new(|_, _, _| Box::pin(async { Ok(json!({"ok": true})) })),
-        );
-        standalone.register(
-            "host.master_ready",
-            Arc::new(|_, _, _| Box::pin(async { Ok(json!({"ok": true})) })),
-        );
-        let statuses = self.clone();
-        standalone.register(
-            "host.status",
-            Arc::new(move |cx, args, _| {
-                if let Some(status) = args.get("status").filter(|status| status.is_object()) {
-                    statuses.connection_status(cx, status);
+        let layer = self
+            .layer
+            .get_or_init(|| Arc::new(Layer::new(self.host.clone(), clients, cx.clock.clone())));
+        super::standalone::register(standalone, layer);
+        // The Claude mod hub runs here: the core owns review and
+        // conversation (index.ts `switchModHub`, its families heard of a
+        // moment after this one).
+        let take = standalone.clone();
+        tokio::spawn(async move {
+            for attempt in 0..20 {
+                match take
+                    .call("internal.review.mod_take", json!({}), Ctx::default())
+                    .await
+                {
+                    Ok(_) => {
+                        tracing::info!(
+                            scope = "claude-mod",
+                            "the Claude mod hub runs in the Rust core"
+                        );
+                        return;
+                    }
+                    Err(error) if attempt == 19 => tracing::warn!(
+                        scope = "claude-mod",
+                        "the core did not take the Claude mod hub: {}",
+                        error.message
+                    ),
+                    Err(_) => tokio::time::sleep(Duration::from_millis(250)).await,
                 }
-                Box::pin(async { Ok(json!({"ok": true})) })
-            }),
-        );
-        let events = clients;
-        standalone.register(
-            "host.events",
-            Arc::new(move |_, args, _| {
-                let clients = events.clone();
-                Box::pin(async move {
-                    host_events(&clients, &args)?;
-                    Ok(json!({"ok": true}))
-                })
-            }),
-        );
-    }
-
-    /// A connection's status changed (onConnectionStatus): a failure
-    /// logged once per run of equal ones, a recovery, a new generation
-    /// ready.
-    fn connection_status(&self, cx: &FamilyContext, status: &Value) {
-        let Some(id) = status["id"].as_str() else {
-            return;
-        };
-        let state = status["state"].as_str().unwrap_or_default();
-        let generation = status["generation"].as_u64().unwrap_or(0);
-        let mut fields = LogFields::new();
-        fields.insert("connection".into(), id.into());
-        fields.insert("state".into(), state.into());
-        fields.insert("generation".into(), generation.into());
-        let logger = logger_on(Some(cx.clock.clone()));
-        let mut debug = fields.clone();
-        if let Some(error) = status["error"]["message"].as_str() {
-            debug.insert("error".into(), error.into());
-        }
-        logger.debug("connection status", Some(&debug));
-        let mut statuses = self.statuses.lock().unwrap();
-        let entry = statuses.entry(id.to_owned()).or_insert_with(|| {
-            let clock = cx.clock.clone();
-            ConnectionLog {
-                failures: RecoveryReporter::new(
-                    logger.child("connections"),
-                    "connection degraded",
-                    "connection recovered",
-                    Arc::new(move || clock.now()),
-                ),
-                ready_generation: None,
             }
         });
-        if matches!(state, "error" | "reconnecting")
-            && let Some(error) = status["error"]["message"].as_str()
-        {
-            entry.failures.failure(error, Some(&fields));
-            return;
-        }
-        if state != "ready" {
-            return;
-        }
-        if entry.failures.recovered(Some(&fields)) {
-            entry.ready_generation = Some(generation);
-        } else if entry.ready_generation != Some(generation) {
-            entry.ready_generation = Some(generation);
-            logger.info("connection ready", Some(&fields));
-        }
     }
 
     /// A `/ws` socket opened (the `open` handler).
@@ -477,7 +428,7 @@ impl Inner {
             Some(manager) => manager.default_id(),
             None => LEGACY_DEFAULT_CONNECTION_ID.to_owned(),
         };
-        let config = self.config.lock().unwrap().clone();
+        let config = self.config();
         let hello = Hello {
             socket: &config.socket_path,
             default_connection_id: &default_id,
@@ -518,6 +469,14 @@ impl Inner {
         bridge_logger().debug("client disconnected", Some(&fields));
         // The families' state of the socket goes with it.
         if let Some(standalone) = &cx.standalone {
+            let closed = standalone.call(
+                "internal.activity.signals",
+                json!({"signals": [{"op": "socket_closed", "ts": cx.clock.now(), "socket_id": socket_id}]}),
+                Ctx::default(),
+            );
+            tokio::spawn(async move {
+                let _ = closed.await;
+            });
             for family in ["agent_sessions", "conversation"] {
                 let call = standalone.call(
                     &format!("internal.{family}.socket_closed"),
@@ -733,7 +692,7 @@ impl Inner {
             return Ok(text_response(status, text));
         }
         if path == "/api/health" {
-            let config = self.config.lock().unwrap().clone();
+            let config = self.config();
             return Ok(json_response(
                 200,
                 &json!({
@@ -866,35 +825,6 @@ fn publish(resolved: &Resolved, mut response: HttpResponse) -> HttpResponse {
     });
     response.headers.extend(identity_headers(resolved));
     response
-}
-
-/// `host.events`: what a generation's subscriptions saw, to the browsers
-/// (the Herdr events in the connection's envelope, a subscription's
-/// (re)start as `session.resync_required`).
-fn host_events(clients: &BrowserClients, args: &Value) -> Result<(), RpcError> {
-    let connection_id = args["connection_id"]
-        .as_str()
-        .ok_or_else(|| RpcError::new("host.events needs a connection_id"))?;
-    let generation = args["generation"].as_u64();
-    let events = args["events"]
-        .as_array()
-        .ok_or_else(|| RpcError::new("host.events needs events"))?;
-    for each in events {
-        let event = match each["kind"].as_str() {
-            Some("herdr") => each["event"].clone(),
-            Some("ready") => json!({"event": "session.resync_required", "data": {}}),
-            _ => continue,
-        };
-        match serialize_herdr_event_envelope(connection_id, &event, generation) {
-            Ok(line) => clients.broadcast(&line, "event", None),
-            Err(error) => tracing::warn!(
-                scope = "bridge",
-                connection = connection_id,
-                "dropped invalid Herdr event: {error}"
-            ),
-        }
-    }
-    Ok(())
 }
 
 impl CoreFamily for FrontFamily {

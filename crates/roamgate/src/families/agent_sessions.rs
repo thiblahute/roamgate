@@ -61,7 +61,32 @@ const SEEN_POLL: Duration = Duration::from_millis(200);
 
 /// The family, once this build implements it.
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
-    Some(Arc::new(AgentSessionsFamily::default()))
+    let family = AgentSessionsFamily::default();
+    *SHARED.lock().unwrap() = Arc::downgrade(&family.shared);
+    Some(Arc::new(family))
+}
+
+/// The family's state, for the standalone core's own reads of a
+/// connection's transcripts (the runtime's `agentSessions` in Bun).
+static SHARED: Mutex<std::sync::Weak<Shared>> = Mutex::new(std::sync::Weak::new());
+
+/// A connection's readers while the core owns the family (its index
+/// store and its files), as the browser calls use them.
+pub(crate) async fn owned_readers(
+    cx: &FamilyContext,
+    connection_id: &str,
+) -> Result<(Arc<AgentSessionHandlers>, Arc<dyn SessionFiles>), RpcError> {
+    let shared = SHARED.lock().unwrap().upgrade().ok_or_else(not_owner)?;
+    if !*shared.owned.lock().unwrap() {
+        return Err(not_owner());
+    }
+    let connection = shared
+        .connection(cx, Some(connection_id), None, true)
+        .await?;
+    if connection.windows {
+        return Err(RpcError::new(UNIX_ONLY));
+    }
+    Ok((connection.handlers.clone(), connection.files.clone()))
 }
 
 #[derive(Default)]
@@ -85,6 +110,7 @@ struct Connection {
     generation: Option<u64>,
     windows: bool,
     handlers: Arc<AgentSessionHandlers>,
+    files: Arc<dyn SessionFiles>,
     watcher: Option<HistoryWatcher<u64>>,
     remote: Arc<RemoteSlot>,
 }
@@ -363,7 +389,7 @@ fn build_connection(cx: &FamilyContext, id: &str, info: &Value, owned: bool) -> 
     let clock = cx.clock.clone();
     let handlers = Arc::new(AgentSessionHandlers::new(
         herdr,
-        files,
+        files.clone(),
         Arc::new(ResolverContext::new(AgentEnv::from_process())),
         store,
         Arc::new(move || clock.now() as f64),
@@ -405,6 +431,7 @@ fn build_connection(cx: &FamilyContext, id: &str, info: &Value, owned: bool) -> 
         generation,
         windows: info["remote_platform"].as_str() == Some("windows"),
         handlers,
+        files,
         watcher,
         remote,
     }

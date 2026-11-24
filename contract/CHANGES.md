@@ -6,6 +6,22 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.33
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+A standalone core answers the reverse targets of the connections,
+conversation mode, the Claude mod hub, profiles, Ranger, settings, the
+local history, the activity log and the host family's generations with
+what Bun did for them (S25 cut-over, WP2a; wire/core-channel.md, The
+standalone core), feeds its families what Bun's runtime fed them, runs the
+Claude mod hub from its start and tells the review family its agents (this
+machine's socket). Its `server.scheduleExit` goes on to the Rust front,
+which answers it and exits with code 0 a second later; a connection's
+endpoints a family declares reach the core's `front` family first when no
+connection is in their context. Hybrid modes and the browser surface are
+unchanged; the inventory too.
+
 ## 1.32
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

@@ -241,11 +241,37 @@ Bun core runs never takes it from the front's environment).
   answered with its own code that no family declares yet fails with code
   `standalone_unported`; `/api/notifications/ws` is refused with 503 until
   the notification feed is ported.
+  A connection's endpoints that a family declares (`agent_sessions`'
+  downloads, `workspace`'s file routes) reach the `front` family first
+  when their `ctx` names no connection: it resolves the connection and
+  hands them to the family with it, as Bun routed them in place.
 - Reverse targets are answered in the core's own process, from a registry
   the binary fills; a target nobody registered fails with code
   `unknown_target`, its message naming it. A debug core notes each such
   failure in `ROAMGATE_CORE_SERVED_LOG` as `reverse-missing <target>`, and
-  each refused method or route as `unported <what>`.
+  each refused method or route as `unported <what>`. The core answers each
+  with what Bun did for it, on its own families where Bun's went back into
+  the core: the connections' (`connections.list`, `.ready`, `herdr.call`,
+  `herdr.ping`, `herdr.setupGuard`, `host.run`, `workspace.ssh_run`,
+  `activity.hostScript`, `agent_sessions.*`, `agent.transcript_tail`,
+  `agents.addresses`; commands on an SSH host through the host family's
+  session slots), conversation mode's and the Claude mods'
+  (`conversation.host`, `.owned_panes`, `.prompt`, `claude_mod.*`; the
+  Claude mod hub runs in the core from its start), `profiles.*`,
+  `assistant.*` (a dispatch gate is the core's own closure, evaluated by
+  its token), `settings.changed` and `settings.limit_resume.get`,
+  `history.*`, `activity.dayInput`, `workspace.kept_steps`, and each
+  generation's `host.runtime_start`, `.runtime_stop`, `.events`, `.status`
+  and `.master_ready`, which feed the other families what Bun's runtime
+  fed them (the workspace family's runtime and its events, conversation
+  mode's `attach`, closed panes and sweeps, the activity log's signals,
+  the usage limit resumer's pokes, the notifications a pane's events
+  withdraw, Ranger's connection table, the claude start hook, and the
+  review family's agents: `internal.review.agents` with this machine's
+  socket key, on each status change and every second when changed).
+  `server.scheduleExit` goes on to the front as the reverse call it is:
+  the Rust front answers `{scheduled: true}` and a second later stops as
+  on a signal, with code 0.
 - Pushes go to the `/ws` sockets the core holds, as `ws_send` with
   context `core-push` and the push's key, filtered and enveloped as the Bun
   front delivers them.

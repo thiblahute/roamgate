@@ -25,6 +25,7 @@ pub mod notifications;
 pub mod review;
 pub mod review_socket;
 pub mod settings;
+pub mod standalone;
 pub mod time_report;
 pub mod update;
 pub mod voice;

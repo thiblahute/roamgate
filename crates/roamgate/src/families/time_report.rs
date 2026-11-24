@@ -47,7 +47,7 @@ async fn provider_settings() -> Option<ProviderSettings> {
 
 /// The day from activity.sqlite (rpc.ts's `dayInput`): recording off or no
 /// log are answers, `not_configured`.
-async fn local_day_input(now: i64, date: String) -> Result<Value, Failure> {
+pub(crate) async fn local_day_input(now: i64, date: String) -> Result<Value, Failure> {
     let raw = settings_json().await;
     let settings = ActivitySettings::from_settings(&raw);
     if !settings.enabled {

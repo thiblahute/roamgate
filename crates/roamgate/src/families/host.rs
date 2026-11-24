@@ -96,6 +96,30 @@ impl HostHandle {
     pub fn list(&self) -> Option<Value> {
         self.0.running().map(|running| Inner::list(&running))
     }
+
+    /// The connection manager now, without waiting for the start.
+    pub fn manager_now(&self) -> Option<ConnectionManager<HostRuntime>> {
+        self.0.running().map(|running| running.manager)
+    }
+
+    /// The connections' list items (each status with its public profile).
+    pub fn profiles(&self) -> Vec<Value> {
+        self.0
+            .running()
+            .and_then(|running| running.service.list().ok())
+            .unwrap_or_default()
+    }
+
+    /// A connection's profile.
+    pub fn profile(&self, connection_id: &str) -> Option<ConnectionProfile> {
+        self.0.running()?.service.profile(connection_id)
+    }
+
+    /// The SSH slots and the runner every command of the core goes
+    /// through.
+    pub fn ops(&self) -> HostOps {
+        self.0.ops()
+    }
 }
 
 /// The legacy connection as the front was started with it.

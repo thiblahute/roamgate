@@ -100,6 +100,10 @@ pub fn standalone_on(env: &dyn Env) -> bool {
     env.var(STANDALONE_ENV).as_deref() == Some("1")
 }
 
+/// The families whose paths are a connection's endpoints: a standalone
+/// core's front family resolves their connection first.
+const ROUTED_IN_PLACE: [&str; 2] = ["agent_sessions", "workspace"];
+
 /// The family a standalone core gives what no family declares: the
 /// `/ws` socket and its RPCs, and the routes Bun answered itself.
 pub const FRONT_FAMILY: &str = "front";
@@ -346,7 +350,20 @@ impl CoreHandler {
         body: Option<BodyReceiver>,
     ) -> BoxFuture<Result<HttpResponse, RpcError>> {
         let path = path_of(&request.url).to_owned();
-        match (self.path_family(&path), self.context.get()) {
+        // A connection's endpoints (a file, an agent session's download)
+        // are routed, their connection resolved, by the front family
+        // first, which hands them on with the connection in their context
+        // (Bun's routing in place).
+        let family = match (&self.standalone, request.ctx.connection_id.as_deref()) {
+            (Some(_), None)
+                if http_family_of(&path, declared_families())
+                    .is_some_and(|family| ROUTED_IN_PLACE.contains(&family.as_str())) =>
+            {
+                self.family(FRONT_FAMILY).cloned()
+            }
+            _ => self.path_family(&path),
+        };
+        match (family, self.context.get()) {
             (Some(family), Some(cx)) => {
                 self.served(family.name(), &format!("{} {path}", request.method));
                 family.http(cx, request, body)

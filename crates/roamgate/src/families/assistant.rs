@@ -52,7 +52,37 @@ use serde_json::{Value, json};
 pub const FAMILY: &str = "assistant";
 
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
-    Some(Arc::new(AssistantFamily::default()))
+    let family = AssistantFamily::default();
+    *GATES.lock().unwrap() = Arc::downgrade(&family.gates);
+    Some(Arc::new(family))
+}
+
+/// The family's open gates, for a standalone core's `assistant.host`
+/// (same process): a gate is the core's own closure.
+static GATES: Mutex<std::sync::Weak<Gates>> = Mutex::new(std::sync::Weak::new());
+
+/// The gate a reverse call carries (`token`), evaluated now: its error
+/// with whether Ranger may show it (`assistant_user`). A gate no longer
+/// open (its call ended) holds.
+pub(crate) fn gate_check(token: u64) -> Result<(), RpcError> {
+    let gate = GATES
+        .lock()
+        .unwrap()
+        .upgrade()
+        .and_then(|gates| gates.open.lock().unwrap().get(&token).cloned());
+    match gate.map(|gate| gate()) {
+        Some(Err(error)) => Err(reverse_error(error)),
+        _ => Ok(()),
+    }
+}
+
+/// An error of Ranger's as `assistantReverse` sends it over the channel.
+pub(crate) fn reverse_error(error: AssistantError) -> RpcError {
+    match error {
+        AssistantError::Platform(message) => RpcError::with_code(message, "unsupported_platform"),
+        other if other.surfaced() => RpcError::with_code(other.message(), "assistant_user"),
+        other => RpcError::new(other.message().to_owned()),
+    }
 }
 
 /// A reverse call's error as Ranger knows it: a message it may show keeps

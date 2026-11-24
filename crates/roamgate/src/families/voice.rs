@@ -417,6 +417,7 @@ impl VoiceServer {
             clock.clone(),
         ));
         let causes = Arc::new(TurnCauses::new(clock.clone()));
+        *CAUSES.lock().unwrap() = Arc::downgrade(&causes);
         let errands = {
             let waiting = waiting.clone();
             VoiceErrands::new(
@@ -912,6 +913,37 @@ impl CoreFamily for VoiceFamily {
 }
 
 /// The family.
+/// The voice companion's turn causes, while the family runs here: what
+/// a standalone core notes for Ranger (`assistant.host` `note_turn_cause`).
+static CAUSES: std::sync::Mutex<std::sync::Weak<TurnCauses>> =
+    std::sync::Mutex::new(std::sync::Weak::new());
+
+/// voice/turn-causes.ts `note` with a cause as Ranger sends it
+/// (`{by: "ranger"}`, `{by: "agent", name}`, ...).
+pub(crate) fn note_turn_cause(connection_id: &str, pane_id: &str, cause: &Value) {
+    use roamgate_voice_server::companion::turn_causes::{TurnCause, UserVia};
+    let cause = match cause.get("by").and_then(Value::as_str) {
+        Some("ranger") => TurnCause::Ranger,
+        Some("companion") => TurnCause::Companion,
+        Some("agent") => TurnCause::Agent(
+            cause
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned(),
+        ),
+        Some("user") => TurnCause::User(match cause.get("via").and_then(Value::as_str) {
+            Some("chat") => UserVia::Chat,
+            Some("review") => UserVia::Review,
+            _ => UserVia::Terminal,
+        }),
+        _ => return,
+    };
+    if let Some(causes) = CAUSES.lock().unwrap().upgrade() {
+        causes.note(connection_id, pane_id, cause);
+    }
+}
+
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
     Some(Arc::new(VoiceFamily {
         server: OnceLock::new(),
