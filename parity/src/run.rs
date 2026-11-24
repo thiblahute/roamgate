@@ -187,7 +187,7 @@ pub const RUST_FRONT_ONLY: &[&str] = &["voice"];
 /// family): Rust's on the Bun front, and flipping only behind the Rust
 /// front.
 pub fn rust_owned_off_its_front(family: &str, front: &str) -> bool {
-    front != "rust"
+    front == "bun"
         && RUST_FRONT_ONLY.contains(&family)
         && rust_owners().iter().any(|name| name == family)
 }
@@ -208,6 +208,27 @@ pub fn hybrid_core() -> Option<String> {
     std::env::var(CORE_BIN_ENV)
         .ok()
         .filter(|path| !path.trim().is_empty())
+}
+
+/// Whether the suite's server runs no Bun at all: `ROAMGATE_SERVER_CMD` is
+/// a Rust `roamgate front` and `ROAMGATE_SIDECAR_BIN` is unset, so the
+/// front runs its own executable as the standalone core
+/// (contract/wire/core-channel.md, The standalone core).
+pub fn rust_only() -> bool {
+    let sidecar = std::env::var("ROAMGATE_SIDECAR_BIN").unwrap_or_default();
+    if !sidecar.trim().is_empty() {
+        return false;
+    }
+    let (command, _) = server_command();
+    let mut words = command.iter();
+    let program = words.next().map(|program| {
+        Path::new(program)
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    });
+    program.is_some_and(|program| program.starts_with("roamgate"))
+        && words.next().is_some_and(|word| word == "front")
 }
 
 /// The server command: `ROAMGATE_SERVER_CMD`, or the Bun server.
@@ -454,6 +475,11 @@ impl Run {
             set(CORE_BIN_ENV, core);
             set(CORE_SERVED_LOG_ENV, text(&root.join("core-served.log")));
         }
+        // Rust only: what the standalone core served, did not serve
+        // (`unported`) and the reverse targets it lacked, for the report.
+        if options.command.is_none() && rust_only() {
+            set(CORE_SERVED_LOG_ENV, text(&root.join("core-served.log")));
+        }
         // Stage 2 (contract/wire/core-channel.md): the Rust front runs
         // the Bun server the suite names as its core.
         if let Ok(sidecar) = std::env::var("ROAMGATE_SIDECAR_BIN")
@@ -621,10 +647,10 @@ impl Run {
         // Not waited for here: the server serves without its core, and a
         // scenario connects as soon as the port opens (pushes sent at
         // startup go to the browsers already there). `check_core` waits.
-        self.core_connected = self
-            .env
-            .contains_key(CORE_BIN_ENV)
-            .then_some(core_connected);
+        // Rust only: the front's own core, welcomed before it listens;
+        // a scenario's ROAMGATE_CORE_BIN is no Bun's to run.
+        self.core_connected =
+            (self.env.contains_key(CORE_BIN_ENV) && !rust_only()).then_some(core_connected);
         self.server = Some(Server { child, port });
         // A scenario of a family the run gives to Rust starts its steps once
         // the core is connected: until then Bun serves them, and the
@@ -753,6 +779,72 @@ impl Run {
     pub fn fake_calls(&self) -> Vec<script::Call> {
         script::read_calls(&self.fakes_dir)
     }
+}
+
+impl Run {
+    /// The processes under the server whose name says Bun (`bun`, or a
+    /// compiled Bun build `roamgate.bun`); Linux only, empty elsewhere.
+    pub fn bun_descendants(&self) -> Vec<String> {
+        let Some(root) = self.server.as_ref().and_then(|server| server.child.id()) else {
+            return Vec::new();
+        };
+        descendants_named_bun(root)
+    }
+
+    /// The served log's lines about what the standalone core lacked:
+    /// `reverse-missing <target>` and `unported <method or route>`, with
+    /// their counts.
+    pub fn standalone_gaps(&self) -> BTreeMap<String, u64> {
+        let mut gaps = BTreeMap::new();
+        for line in self.core_served().lines() {
+            if line.starts_with("reverse-missing ") || line.starts_with("unported ") {
+                *gaps.entry(line.to_owned()).or_insert(0) += 1;
+            }
+        }
+        gaps
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn descendants_named_bun(root: u32) -> Vec<String> {
+    let mut parents: Vec<(u32, u32, String)> = Vec::new();
+    for entry in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+            continue;
+        };
+        // `pid (comm) state ppid ...`: comm may hold spaces and parens.
+        let (Some(open), Some(close)) = (stat.find('('), stat.rfind(')')) else {
+            continue;
+        };
+        let comm = stat[open + 1..close].to_owned();
+        let ppid = stat[close + 1..]
+            .split_whitespace()
+            .nth(1)
+            .and_then(|field| field.parse().ok())
+            .unwrap_or(0);
+        parents.push((pid, ppid, comm));
+    }
+    let mut found = Vec::new();
+    let mut frontier = vec![root];
+    while let Some(parent) = frontier.pop() {
+        for (pid, ppid, comm) in &parents {
+            if *ppid == parent {
+                frontier.push(*pid);
+                if comm == "bun" || comm.starts_with("roamgate.bun") {
+                    found.push(format!("{pid} {comm}"));
+                }
+            }
+        }
+    }
+    found
+}
+
+#[cfg(not(target_os = "linux"))]
+fn descendants_named_bun(_root: u32) -> Vec<String> {
+    Vec::new()
 }
 
 impl Drop for Run {

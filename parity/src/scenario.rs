@@ -90,8 +90,9 @@ pub struct Scenario {
     /// Platforms it runs on (linux, macos, windows); all when empty.
     #[serde(default)]
     pub platforms: Vec<String>,
-    /// Fronts it runs on (`bun`, `rust`: a run with `ROAMGATE_SIDECAR_BIN`
-    /// set is on the Rust front); all when empty.
+    /// Fronts it runs on (`bun`; `rust`: a run with `ROAMGATE_SIDECAR_BIN`
+    /// set is on the Rust front with its Bun core; `rust-only`: a Rust
+    /// front with no sidecar, no Bun at all); all when empty.
     #[serde(default)]
     pub fronts: Vec<String>,
     pub steps: Vec<Value>,
@@ -104,15 +105,18 @@ pub fn run_description(run: &crate::run::Run) -> Value {
         "server_command": run.command,
         "cli_command": run.cli_command,
         "sidecar": std::env::var("ROAMGATE_SIDECAR_BIN").ok().filter(|bin| !bin.trim().is_empty()),
+        "standalone": crate::run::rust_only(),
         "core": crate::run::hybrid_core(),
     })
 }
 
 /// The front this run's servers have: `rust` when `ROAMGATE_SIDECAR_BIN`
-/// names the Bun core of a Rust front, else `bun`.
+/// names the Bun core of a Rust front, `rust-only` when the server is a
+/// Rust front with no sidecar (crate::run::rust_only), else `bun`.
 pub fn current_front() -> &'static str {
     match std::env::var("ROAMGATE_SIDECAR_BIN") {
         Ok(bin) if !bin.trim().is_empty() => "rust",
+        _ if crate::run::rust_only() => "rust-only",
         _ => "bun",
     }
 }
@@ -2441,6 +2445,16 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
     if outcome.is_ok() {
         outcome = runner.run.check_core().await;
     }
+    // Rust only: no Bun anywhere under the server.
+    if outcome.is_ok() && crate::run::rust_only() {
+        let bun = runner.run.bun_descendants();
+        if !bun.is_empty() {
+            outcome = Err(anyhow::anyhow!(
+                "rust-only: Bun processes run under the server: {}",
+                bun.join(", ")
+            ));
+        }
+    }
     // A family a hybrid run gives to Rust: the core served the scenario.
     if outcome.is_ok() {
         let family = owner_family(&scenario.family);
@@ -2458,6 +2472,19 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
     }
     let _ = runner.run.stop().await;
     if let Err(error) = outcome {
+        // Rust only: what the standalone core lacked, first.
+        let gaps = runner.run.standalone_gaps();
+        let error = if gaps.is_empty() {
+            error
+        } else {
+            error.context(format!(
+                "rust-only gaps: {}",
+                gaps.iter()
+                    .map(|(gap, count)| format!("{gap} x{count}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        };
         let log = runner.run.log_text();
         let tail: String = log
             .lines()
