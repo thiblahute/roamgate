@@ -2,7 +2,7 @@
 // Source-build helper and compatibility entry point; installed plugins run
 // `roamgate plugin` directly and do not require an external Bun runtime.
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,12 +31,37 @@ function build(): number {
     : run(["sh", "scripts/install-plugin.sh"]);
 }
 
+/**
+ * The plugin's binaries from this checkout: the web app and the release
+ * server (`bun run build`), placed as `server/roamgate`, and the Pi
+ * sidecar `server/roamgate-pi` (`bun run build:pi`).
+ */
+function buildSource(): number {
+  for (const argv of [
+    ["bun", "install", "--frozen-lockfile"],
+    ["bun", "run", "build"],
+    ["bun", "run", "build:pi"],
+  ]) {
+    const status = run(argv);
+    if (status !== 0) return status;
+  }
+  const name = process.platform === "win32" ? "roamgate.exe" : "roamgate";
+  const built = join(
+    process.env.CARGO_TARGET_DIR ?? join(REPO_ROOT, "target"),
+    "release",
+    name,
+  );
+  if (!existsSync(built)) {
+    console.error(`studio-plugin: ${built} was not built`);
+    return 1;
+  }
+  copyFileSync(built, join(REPO_ROOT, "server", name));
+  return 0;
+}
+
 function main(): number {
   const verb = process.argv[2];
-  if (verb === "build-source") {
-    const installed = run(["bun", "install", "--frozen-lockfile"]);
-    return installed === 0 ? run(["bun", "run", "build"]) : installed;
-  }
+  if (verb === "build-source") return buildSource();
   if (verb === "build") return build();
   if (
     [

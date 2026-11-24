@@ -1,8 +1,5 @@
 name: the pane holder's child ends with it (HUP)
 family: agent_chat
-ledger:
-  - server/src/conversation/holder-child.test.ts > a pane that closes (${signal}) takes its child and log
-    with it
 description:
   "The headless claude a pane holder started does not outlive the holder: killed outright,
   or its pane closing (a hang-up or a terminate), its child ends, and a closing pane takes the holder's

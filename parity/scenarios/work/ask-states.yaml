@@ -1,7 +1,5 @@
 name: an item in For you or Verify says what the user has to do
 family: work
-ledger:
-  - "server/src/work/service.test.ts > an item in For you or Verify says what the user has to do"
 steps:
   - login: {}
   - connect: {}

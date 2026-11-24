@@ -1,11 +1,5 @@
 name: update checks that cannot be answered say why, and a disabled check never asks the mirror
 family: update
-ledger:
-  - "server/src/http/update.test.ts > reports disabled update checks without running curl"
-  - "server/src/http/update.test.ts > returns a 502 when update checks fail"
-  - "server/src/http/update.test.ts > missing metadata fails closed without any archive fallback"
-  - "server/src/http/update.test.ts > requires an explicit browser confirmation header for update requests"
-  - "server/src/http/update.test.ts > normalizes safe update base URLs without exposing credentials"
 platforms: [linux, macos]
 server:
   env:

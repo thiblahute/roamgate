@@ -1,7 +1,5 @@
 name: ROAMGATE_ARCHIVE_DIR places the session archive and ROAMGATE_ARCHIVE_HOST names this machine in it
 family: env
-ledger:
-  - "server/src/archive/dir.test.ts > an explicit directory wins and nothing is moved"
 server:
   herdr: false
   start: false

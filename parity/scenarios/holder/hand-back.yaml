@@ -2,9 +2,6 @@ name:
   "handing the session back ends the headless claude first, then resumes claude in the terminal: never
   both"
 family: agent_chat
-ledger:
-  - "server/src/conversation/holder-child.test.ts > handing back ends its child first, then resumes claude:
-    never both"
 description:
   "Conversation mode hands the pane back while its headless claude is up: the holder ends that
   child (its process gone, its state directory removed) before the terminal claude resumes on the session."

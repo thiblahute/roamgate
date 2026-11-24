@@ -1,7 +1,5 @@
 name: development loopback serves HTTP and WebSocket without credentials
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > development loopback serves HTTP and WebSocket without credentials"
 server:
   password: null
   env: { NODE_ENV: development, ROAMGATE_PASSWORD: "" }

@@ -1,7 +1,5 @@
 name: an agent makes and places workspaces and worktrees under its own
 family: workspace
-ledger:
-  - "server/src/review/agent-server.test.ts > an agent's worktrees and workspaces go under its own workspace"
 description: >
   roamgate-review workspace, worktree, place and groups: Herdr makes the
   workspace or worktree (workspace.create, worktree.create), the server

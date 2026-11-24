@@ -1,8 +1,5 @@
 name: "the chat rewinds the conversation to an earlier message, and refuses while messages wait"
 family: agent_chat
-ledger:
-  - "server/src/conversation/service.test.ts > the headless process rewinds; lease and holder stay, no second writer"
-  - "server/src/conversation/service.test.ts > the RPC validates its mode and message"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

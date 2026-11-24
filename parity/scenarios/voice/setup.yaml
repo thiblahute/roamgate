@@ -7,10 +7,6 @@ description: >
   to download, finishes at once, and the helper not running needs no
   reload. Downloads cannot be pointed at fake-models: the catalog's URLs
   are fixed (Hugging Face and GitHub).
-ledger:
-  - "server/src/http/voice-setup.test.ts > GET is the assistant's state, not cached"
-  - "server/src/http/voice-setup.test.ts > changes need the voice header and valid choices"
-  - "server/src/http/voice-setup.test.ts > remove answers what it freed; cancel with nothing running is fine"
 server:
   env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
   files:

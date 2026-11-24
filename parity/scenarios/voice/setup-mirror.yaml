@@ -8,9 +8,6 @@ description: >
   fake-models instead of Hugging Face: the turn model is asked for at
   <mirror>/huggingface.co/<its path>. fake-models serves a file of the
   wrong size, so the job fails and nothing is installed.
-ledger:
-  - "server/src/voice/voice-test-env.test.ts > model downloads go to the mirror, the catalog otherwise unchanged"
-  - "server/src/voice/voice-test-env.test.ts > the hardware comes from the file, read on each request"
 server:
   env:
     HTTPS_PROXY: "http://127.0.0.1:9"
@@ -84,10 +81,7 @@ steps:
   - sh: sleep 1
   - http: GET /api/voice/setup
     expect:
-      {
-        status: 200,
-        json: { job: { state: failed, error: "{{string}}" } },
-      }
+      { status: 200, json: { job: { state: failed, error: "{{string}}" } } }
   - http_fake_calls:
       {
         fake: models,

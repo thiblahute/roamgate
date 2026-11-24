@@ -1,7 +1,5 @@
 name: day and refresh hand the provider the activity log's whole day, and need the log
 family: time_report
-ledger:
-  - "server/src/time-report/rpc.test.ts > day passes the whole day with subjects, idle_seconds and the zone"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work, focused: true }]

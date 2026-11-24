@@ -50,12 +50,20 @@ function invoke(root: string, verb: string, env = {}) {
   );
 }
 
-test("source build uses the root frozen workspace lockfile", () => {
+test("source build uses the root frozen workspace lockfile and places the server", () => {
   const root = checkout();
-  expect(invoke(root, "build-source").exitCode).toBe(0);
+  mkdirSync(join(root, "target/release"), { recursive: true });
+  writeFileSync(join(root, "target/release/roamgate"), "built", {
+    mode: 0o755,
+  });
+  expect(
+    invoke(root, "build-source", { CARGO_TARGET_DIR: join(root, "target") })
+      .exitCode,
+  ).toBe(0);
   expect(readFileSync(join(root, "build.log"), "utf8")).toBe(
-    "install --frozen-lockfile\nrun build\n",
+    "install --frozen-lockfile\nrun build\nrun build:pi\n",
   );
+  expect(readFileSync(join(root, "server/roamgate"), "utf8")).toBe("built");
 });
 
 test("source build stops after a dependency installation failure", () => {

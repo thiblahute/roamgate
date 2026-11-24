@@ -1,7 +1,5 @@
 name: loopback requires login and forged forwarding headers cannot evade the login cooldown
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > loopback requires login and forged forwarding headers cannot evade login cooldown"
 steps:
   - http: GET /api/health
     expect: { status: 401 }

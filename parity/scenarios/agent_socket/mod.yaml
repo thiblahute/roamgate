@@ -1,7 +1,5 @@
 name: the Claude mod's requests on the agent socket
 family: claude_mod
-ledger:
-  - "server/src/review/agent-server.claude-mod.test.ts > the mod endpoints refuse a request from no pane"
 description: >
   What the mod's client sends (server/claude-mod/hooks/client.ts): its
   tools, a poll for the pane's messages (a long poll on the server's clock),

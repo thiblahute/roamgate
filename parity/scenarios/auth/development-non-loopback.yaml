@@ -1,7 +1,5 @@
 name: development non-loopback binding still requires login
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > development non-loopback binding still requires login"
 server:
   env: { NODE_ENV: development, HOST: 0.0.0.0 }
 steps:

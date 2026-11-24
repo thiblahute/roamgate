@@ -1,9 +1,5 @@
 name: a review opened in the browser, read and commented, exported and imported, removed
 family: review
-ledger:
-  - "server/src/review/rpc.test.ts > the browser opens by workspace and always writes as the user"
-  - "server/src/review/images.test.ts > a pasted image is kept with its review, named by its content"
-  - "server/src/review/images.test.ts > an agent's image by its path: only image files, by their bytes"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]

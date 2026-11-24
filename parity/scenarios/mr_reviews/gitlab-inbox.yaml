@@ -8,12 +8,6 @@ description: >
   mr-reviews/state.json. A refresh asked again within a minute makes no
   call; the periodic one (5 minutes while watched) asks the lists again but
   the details of a request still settling (its pipeline runs). Nothing is ever written to the forge.
-ledger:
-  - "server/src/mr-reviews/inbox.test.ts > lists the user's requests per host, says which hosts failed"
-  - "server/src/mr-reviews/inbox.own.test.ts > GitLab: the list, then status from the details"
-  - "server/src/mr-reviews/inbox.own.test.ts > a running pipeline is read again until it ends"
-  - "server/src/mr-reviews/hosts.test.ts > glab: hosts with a token, a keyring token, or the default"
-  - "server/src/mr-reviews/fetchers.test.ts > GitLab: the graphql query and draft notes are reads"
 server:
   files:
     .config/glab-cli/config.yml: "host: gitlab.example.com\nhosts:\n    gitlab.example.com:\n        token: glpat-parity\n        api_host: gitlab.example.com\n"

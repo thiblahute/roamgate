@@ -4,8 +4,6 @@ description: >
   When an SSH profile connects, the server installs its agent clients on
   the host (fake-ssh runs the setup in the fake remote home): the
   roamgate-hold there is the one installed locally, byte for byte.
-ledger:
-  - "server/src/conversation/holder-script.test.ts > is installed on SSH hosts"
 server:
   herdr: false
   herdrs:

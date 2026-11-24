@@ -17,7 +17,6 @@ import {
   INDEX_PATH,
   renderAssetsIndex,
 } from "../../../scripts/contract/assets-index";
-import { CLAUDE_START_HOOK_COMMAND } from "../conversation/claude-start-hook";
 import {
   ASSET_TEXTS,
   CLAUDE_START_HOOK_INSTALL_PY,
@@ -120,9 +119,6 @@ describe("contract/assets", () => {
     );
     for (const client of [ROAMGATE_REVIEW_PY, ROAMGATE_HOLD_PY])
       expect(client).toContain(`\nSTART_ENV = "${CLAUDE_START_ENV}"\n`);
-    expect(CLAUDE_START_HOOK_INSTALL_PY).toContain(
-      `\nCOMMAND = ${JSON.stringify(CLAUDE_START_HOOK_COMMAND)}\n`,
-    );
     expect(CLAUDE_START_HOOK_INSTALL_PY).toContain(
       '\nMARK = "roamgate-review claude-start"\n',
     );

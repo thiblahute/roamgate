@@ -6,9 +6,6 @@ description: >
   the first check leaves it open; merged into main, the next check (10
   minutes later on the test clock) makes it done with a deploy link, and
   an item waiting for the user keeps its state with its landing recorded.
-ledger:
-  - "server/src/work/service.test.ts > the branch rule asks the project's root on its connection"
-  - "server/src/work/service.test.ts > an item for you whose commit lands stays for you, its landing recorded; an open one goes done"
 steps:
   - sh: |
       set -e

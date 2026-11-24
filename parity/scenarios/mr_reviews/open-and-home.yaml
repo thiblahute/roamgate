@@ -7,8 +7,6 @@ description: >
   Herdr workspace on it, and the request's review there. Starting a review
   with a home makes a Herdr worktree of its own for the request's branch.
   The forge is only read.
-ledger:
-  - "server/src/mr-reviews/home.test.ts > Start a review with a home: workspace made, named, placed, review shown there, Claude started and told, link recorded"
 platforms: [linux, macos]
 server:
   env:

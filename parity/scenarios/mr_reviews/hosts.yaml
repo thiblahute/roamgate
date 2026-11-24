@@ -5,10 +5,6 @@ description: >
   then gets a hosts.yml, but `gh auth status` says no: the host shows not
   signed in, and nothing is asked of it. The logins are read again when the
   settings are saved.
-ledger:
-  - "server/src/mr-reviews/hosts.test.ts > no configuration: no host"
-  - "server/src/mr-reviews/fetchers.test.ts > GitHub without a login is said so, nothing asked"
-  - "server/src/mr-reviews/inbox.test.ts > the RPC saves through the stored form"
 server:
   fakes:
     gh:

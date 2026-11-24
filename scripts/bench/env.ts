@@ -314,13 +314,8 @@ export async function createEnv(options: EnvOptions = {}): Promise<BenchEnv> {
       BENCH_REMOTE_HOME: remoteHome,
       BENCH_REMOTE_CONTROL: join(root, "remote-herdr/herdr.sock"),
       BENCH_REMOTE_CLIENT: join(root, "remote-herdr/herdr-client.sock"),
-      // A HOME of its own, a fake ssh: its SSH hosts are fakes. (Bun's
-      // guard reads that HOME as the account's; the Rust core's does not.)
+      // A HOME of its own, a fake ssh: its SSH hosts are fakes.
       ROAMGATE_ALLOW_SSH: "1",
-      // The Rust front's Bun server (BENCH_SERVER_CMD="<roamgate> front").
-      ...(process.env.ROAMGATE_SIDECAR_BIN
-        ? { ROAMGATE_SIDECAR_BIN: process.env.ROAMGATE_SIDECAR_BIN }
-        : {}),
     },
     herdrSockets: {
       control: join(root, "herdr/herdr.sock"),
@@ -609,7 +604,7 @@ export type ServerHandle = {
 };
 
 export type ServerOptions = {
-  /** The server command; default: this checkout's Bun server from source. */
+  /** The server command; default: serverCommand(). */
   command?: string[];
   connections?: "none" | "ssh";
   testClock?: string;
@@ -617,75 +612,22 @@ export type ServerOptions = {
   label?: string;
 };
 
-/** The Rust core of the hybrid (ROAMGATE_CORE_BIN), or none. */
-export function coreBin(): string | undefined {
-  return process.env.ROAMGATE_CORE_BIN || undefined;
-}
-
 /**
- * The families the world's owners table gives to Rust
- * (BENCH_RUST_FAMILIES, comma separated): known to
- * contract/owners/families.json, and only with a core to run them.
+ * The server command: BENCH_SERVER_CMD, else this checkout's release
+ * `roamgate` (`cargo build --release -p roamgate`).
  */
-export function rustFamilies(): string[] {
-  const families = (process.env.BENCH_RUST_FAMILIES ?? "")
-    .split(",")
-    .map((family) => family.trim())
-    .filter(Boolean);
-  if (!families.length) return [];
-  const known = Object.keys(
-    JSON.parse(
-      readFileSync(join(REPO, "contract/owners/families.json"), "utf8"),
-    ).families,
-  );
-  for (const family of families)
-    if (!known.includes(family))
-      throw new Error(`BENCH_RUST_FAMILIES: unknown family ${family}`);
-  if (!coreBin())
-    throw new Error("BENCH_RUST_FAMILIES needs ROAMGATE_CORE_BIN");
-  return families;
-}
-
-/**
- * The world's owners table (<data>/runtime/owners.json,
- * contract/wire/core-channel.md): the families of BENCH_RUST_FAMILIES are
- * Rust's, shadow reads off (they would add work the run does not measure).
- */
-function writeOwners(env: BenchEnv) {
-  const families = rustFamilies();
-  const path = join(env.home, ".config/roamgate/runtime/owners.json");
-  if (!families.length) {
-    rmSync(path, { force: true });
-    return;
-  }
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(
-    path,
-    `${JSON.stringify(
-      {
-        version: 1,
-        owners: Object.fromEntries(families.map((family) => [family, "rust"])),
-        shadow: { enabled: false, rate: 0 },
-        core: coreBin(),
-      },
-      null,
-      2,
-    )}\n`,
-    { mode: 0o600 },
-  );
-}
-
 export function serverCommand(): string[] {
   const custom = process.env.BENCH_SERVER_CMD;
   if (custom) return custom.split(" ").filter(Boolean);
-  return [process.execPath, join(REPO, "server/src/index.ts")];
+  const target = process.env.CARGO_TARGET_DIR ?? join(REPO, "target");
+  return [join(target, "release", "roamgate")];
 }
 
 /**
  * The server a run on the test clock measures: BENCH_TEST_CLOCK_SERVER_CMD,
  * else the server's. A release build of the Rust server refuses
  * ROAMGATE_TEST_CLOCK; this names the same release built with the
- * `roamgate-base/test-clock` feature (Bun honours it from source).
+ * `roamgate-base/test-clock` feature.
  */
 export function testClockServerCommand(): string[] {
   const custom = process.env.BENCH_TEST_CLOCK_SERVER_CMD;
@@ -695,8 +637,7 @@ export function testClockServerCommand(): string[] {
 
 /**
  * The command line (`roamgate archive ...`): BENCH_CLI_CMD, else the
- * server's command, without the `front` of the Rust server's (the CLI is
- * the binary itself, its front refuses other arguments).
+ * server's command, without a `front` (the hidden alias of the server).
  */
 export function cliCommand(): string[] {
   const custom = process.env.BENCH_CLI_CMD;
@@ -720,8 +661,6 @@ export async function startServer(
   const command =
     options.command ??
     (options.testClock ? testClockServerCommand() : serverCommand());
-  writeOwners(env);
-  const core = coreBin();
   const start = performance.now();
   const child = Bun.spawn([...command, "--port", String(port)], {
     cwd: join(REPO, "server"),
@@ -744,7 +683,6 @@ export async function startServer(
       HERDR_SOCKET_PATH: env.herdrSockets.control,
       HERDR_CLIENT_SOCKET_PATH: env.herdrSockets.client,
       ...(options.testClock ? { ROAMGATE_TEST_CLOCK: options.testClock } : {}),
-      ...(core ? { ROAMGATE_CORE_BIN: core } : {}),
       ...options.extraEnv,
     },
     stdout: Bun.file(logPath),

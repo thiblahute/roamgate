@@ -1,8 +1,5 @@
 name: every Hours view operation runs the provider with its command line and body
 family: time_report
-ledger:
-  - "server/src/time-report/rpc.test.ts > operations map to the provider's command line"
-  - "server/src/time-report/provider.test.ts > the operation follows the command; the body goes on stdin; an empty directory"
 server:
   files:
     .config/roamgate/settings.json:

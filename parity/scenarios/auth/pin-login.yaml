@@ -1,7 +1,5 @@
 name: PIN login uses a separate endpoint and keeps password recovery during the PIN cooldown
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > PIN login uses a separate endpoint and preserves password recovery during PIN cooldown"
 server:
   env: { ROAMGATE_PIN: "012345" }
 steps:

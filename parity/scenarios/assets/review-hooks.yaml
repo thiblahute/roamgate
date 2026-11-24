@@ -7,17 +7,6 @@ description:
   agent sockets: a permission or a question answered or dismissed, stepping aside in a headless run, and
   the SessionStart hook that tells Roamgate of a claude started in a pane (a fake ps stands for the process
   tree)."
-ledger:
-  - server/src/conversation/holder-script.test.ts > answer in an ordinary pane
-  - server/src/conversation/holder-script.test.ts > a dismissed permission or question denies it, saying
-    the user dismissed it
-  - server/src/conversation/holder-script.test.ts > step aside when ROAMGATE_HEADLESS=1
-  - server/src/conversation/holder-script.test.ts > tells Roamgate of a claude started by hand, printing
-    nothing
-  - "server/src/conversation/holder-script.test.ts > steps aside: told to stay, headless, print mode, /clear,
-    a subagent, no pane"
-  - server/src/conversation/holder-script.test.ts > a resumed claude counts; Roamgate unreachable changes
-    nothing
 server:
   herdr: false
   files:

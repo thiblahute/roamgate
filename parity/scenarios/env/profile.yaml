@@ -1,7 +1,5 @@
 name: ROAMGATE_PROFILE samples the CPU for ROAMGATE_PROFILE_DURATION seconds into ROAMGATE_PROFILE_DIR
 family: env
-ledger:
-  - "server/src/utils/cpu-profile.test.ts > CPU profile: ${mode}"
 description: >
   The profile ends on the server's clock: after the duration a
   roamgate-<id> directory under the profile directory holds cpu.json and

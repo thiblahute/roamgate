@@ -5,8 +5,6 @@ description: >
   threads; the answer goes to every connected browser as a forge_cache push
   and into mr-cache/state.json. Asked again, the cached answer is given
   without a new call.
-ledger:
-  - "server/src/mr-cache/cache.test.ts > a known answer is served without a forge call"
 server:
   files:
     .config/gh/hosts.yml: "github.com:\n    user: me\n"

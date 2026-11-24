@@ -8,8 +8,6 @@ description: >
   token, nothing preloads). Its embedded app shell, assets and manifest are
   served with the cache rules the source server has; bad paths are refused.
   A release build never runs on the test clock.
-ledger:
-  - "scripts/standalone.test.ts > release standalone serves assets without ambient config or source maps"
 platforms: [linux, macos]
 server:
   command: standalone

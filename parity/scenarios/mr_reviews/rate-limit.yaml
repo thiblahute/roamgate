@@ -5,8 +5,6 @@ description: >
   an error and keeps no request, and the forge gate holds every call to it
   for 120 seconds of the server's clock (a refresh asked meanwhile waits);
   once they passed, the waiting refresh asks again and lists the requests.
-ledger:
-  - "server/src/mr-reviews/inbox.test.ts > a host that fails keeps its requests"
 server:
   files:
     .config/glab-cli/config.yml: "host: gitlab.example.com\nhosts:\n    gitlab.example.com:\n        token: glpat-parity\n        api_host: gitlab.example.com\n"

@@ -6,10 +6,6 @@ description: >
   task is taken as given. A comment on an owned item, and an item nobody
   owns (the project's coordinator's), are typed into that pane through
   Herdr's agent.prompt, naming the item and the client's work command.
-ledger:
-  - "server/src/work/service.test.ts > an owner's session must be one Roamgate manages; its task is taken as given"
-  - "server/src/work/service.test.ts > the real review service delivers an item's comment to its owner, and waits without one"
-  - "server/src/work/service.test.ts > an item nobody owns is the project's coordinator's, told of it as a review comment"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: Roamgate work }]

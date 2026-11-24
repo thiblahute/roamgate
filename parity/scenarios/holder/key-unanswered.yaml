@@ -1,8 +1,5 @@
 name: "a pane key Claude Code has no answer for: the start waits for the user and writes nothing"
 family: agent_chat
-ledger:
-  - "server/src/conversation/holder-child.test.ts > not answered yet: it says so, and starts nothing without
-    an answer"
 description: "a pane key Claude Code has no answer for: the start waits for the user and writes nothing"
 server:
   env:

@@ -1,11 +1,50 @@
 /**
- * The names the contract under `contract/` has an entry for, per surface of
- * the inventory: what `check.test.ts` compares with the code.
+ * The names the contract under `contract/` has an entry for, per surface:
+ * what `check.test.ts` checks and digests.
  */
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { REPO } from "./ast";
-import type { Inventory } from "./inventory";
+
+/** The contract's names, by surface. */
+export type Inventory = {
+  /** Browser `/ws` RPC methods. */
+  rpc: string[];
+  /** Messages the server pushes on `/ws` without a request. */
+  push: string[];
+  /** HTTP paths of the listener. */
+  http: string[];
+  /** `METHOD path` pairs of the OpenAPI document. */
+  http_methods: string[];
+  /** Operations and events of the other WebSockets. */
+  ws: string[];
+  /** `POST /v1/<command>` of the agent socket. */
+  agent_socket: string[];
+  /** Management commands, their actions and flags, and the server flags. */
+  cli: string[];
+  /** Environment variables read. */
+  env: string[];
+  /** Files and directories under the data root, other named files, tables. */
+  storage: string[];
+  /** Places that start a process, and the programs named there. */
+  exec: string[];
+};
+
+/**
+ * The digest of the contract's names (`inventory_sha256` in
+ * contract.json): a name added, removed or renamed changes it.
+ */
+export function inventoryDigest(inventory: Inventory): string {
+  const canonical = Object.keys(inventory)
+    .sort()
+    .map(
+      (key) =>
+        `${key}\n${[...inventory[key as keyof Inventory]].sort().join("\n")}`,
+    )
+    .join("\n\n");
+  return createHash("sha256").update(canonical).digest("hex");
+}
 
 export const CONTRACT = join(REPO, "contract");
 

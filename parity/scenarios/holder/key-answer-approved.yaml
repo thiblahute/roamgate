@@ -2,9 +2,6 @@ name:
   the user's answer (api_key) is filed in Claude Code's config as Claude Code files it, the rest kept,
   and used
 family: agent_chat
-ledger:
-  - server/src/conversation/holder-child.test.ts > the user's answer (${answer}) is filed as Claude Code
-    files it, the rest of its config kept, and used
 description:
   the user's answer (api_key) is filed in Claude Code's config as Claude Code files it, the
   rest kept, and used

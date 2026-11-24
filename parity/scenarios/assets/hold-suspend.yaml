@@ -6,9 +6,6 @@ description:
   "The installed roamgate-hold runs as a job of an interactive bash in a terminal (a pty),
   against a scripted agent socket: told to suspend, it stops as a job, keeps the session, and fg asks
   Roamgate to bring it back to conversation mode with a new log, then resumes as told."
-ledger:
-  - server/src/conversation/holder-suspend.test.ts > stops at Ctrl+Z, keeps the session, and fg brings it
-    back to conversation mode
 server:
   herdr: false
   files:

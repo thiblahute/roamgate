@@ -1,7 +1,5 @@
 name: a UI setting saved by one browser reaches the others and settings.json
 family: settings
-ledger:
-  - "server/src/bridge/settings-rpc.test.ts > server-wide interface preferences can be read, stored and cleared"
 steps:
   - login: {}
   - connect: { name: main }

@@ -1,7 +1,5 @@
 name: "a pane with an API key Claude Code would use unasked: the chat asks which to use, and the answer starts it"
 family: agent_chat
-ledger:
-  - "server/src/conversation/service.test.ts > the answer RPC checks what it is given"
 server:
   env: { ANTHROPIC_API_KEY: sk-ant-api03-parity-0123456789abcdefghij }
   herdr:

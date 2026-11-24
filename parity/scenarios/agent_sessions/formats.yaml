@@ -1,8 +1,5 @@
 name: every agent's transcript format reads as the same session, history and download
 family: agent_sessions
-ledger:
-  - "server/src/agent/codex-session.test.ts > uses CODEX_HOME, exact IDs and archived sessions"
-  - "server/src/agent/muse-session.test.ts > uses XDG_DATA_HOME and foreground cwd; never invents an integration command"
 description: >
   One pane per agent format, each transcript where its agent keeps it and
   found through the variables that say where: Codex (CODEX_HOME), Pi

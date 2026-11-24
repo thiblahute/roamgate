@@ -1,8 +1,5 @@
 name: comments reach the agent, by its watch, typed into its pane, on handoff and retry
 family: review
-ledger:
-  - "server/src/review/agent-delivery.test.ts > a comment written while a delivery is typed goes with the next one"
-  - "server/src/review/agent-delivery.test.ts > Retry sends what waits to the session's pane, or says why it cannot"
 description: >
   An agent opens a review of its branch and watches it. The user's comment
   wakes the watch; with nobody watching, comments are typed into the

@@ -6,9 +6,6 @@ description:
   substitution, a quote and an ampersand: history, commit, preview, commit file, diff summary and file,
   stage, unstage and deleting an untracked file all act on that file, and nothing the names hold ever
   runs."
-ledger:
-  - server/src/workspace/git-shell.integration.test.ts > Git features preserve quoted paths and shell routing
-    (%s)
 server:
   herdr:
     workspaces:

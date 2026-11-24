@@ -1,7 +1,5 @@
 name: HERDR_GUI_HISTORY and HERDR_GUI_HISTORY_DIR set the settings history's state and place
 family: env
-ledger:
-  - "server/src/history/place.test.ts > history is on at <data>/history unless the settings or the environment say"
 server:
   env:
     {

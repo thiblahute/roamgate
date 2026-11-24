@@ -4,8 +4,6 @@ description: >
   `roamgate --help` and `roamgate <command> --help` print contract/cli/help/,
   and the plugin command's usage goes to stderr. The server options
   (help/server.txt) are part of the top-level help.
-ledger:
-  - "scripts/contract/check.test.ts > CLI help matches the goldens"
 server:
   herdr: false
   start: false

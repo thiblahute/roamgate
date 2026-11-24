@@ -176,7 +176,6 @@ test("generated assets, binaries and workspace dependencies stay ignored", () =>
     "server/herdr-gui-fixture.js",
     "server/roamgate-fixture.js",
     "server/public/fixture.js",
-    "server/src/public-files.gen.ts",
     "web/dist/fixture.js",
     "web/node_modules/fixture.js",
     "server/node_modules/fixture.js",

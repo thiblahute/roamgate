@@ -1,8 +1,5 @@
 name: a merge request's review through glab, read, commented in the user's voice and pushed as draft notes
 family: review
-ledger:
-  - "server/src/review/rpc.test.ts > the browser finds a review's merge request on its own connection only"
-  - "server/src/review/rpc.test.ts > no review method submits, publishes, resolves or posts on a forge: drafts only"
 description: >
   A GitLab merge request reviewed in Roamgate: glab answers its REST API
   (fake-glab, glab's own config seeded). A local review of the branch finds

@@ -6,11 +6,6 @@ description: >
   remote: the diff summary and patches in working-tree and branch modes,
   refs, history, commits and their files, stage and unstage, a pull, and
   the pull request of a branch without a forge.
-ledger:
-  - "server/src/workspace/git-history.test.ts > commit history reads root, rename and deleted content from revisions"
-  - "server/src/workspace/git-diff.test.ts > missing defaults expose choices, including an empty unborn repository"
-  - "server/src/workspace/files.test.ts > commit history uses the workspace checkout and renders an unborn HEAD as empty"
-  - "server/src/workspace/files.test.ts > prefers pane cwd over an agent foreground directory for git operations"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]

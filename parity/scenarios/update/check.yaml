@@ -1,10 +1,5 @@
 name: the update check reads the mirror's manifest, caches it five minutes, and says what the browser may do
 family: update
-ledger:
-  - "server/src/http/update.test.ts > uses a configured release mirror"
-  - "server/src/http/update.test.ts > caches successful metadata checks across browser clients"
-  - "server/src/http/update.test.ts > checks for updates but refuses to replace a development runtime"
-  - "server/src/http/update.test.ts > Roamgate and legacy confirmation headers share the same update boundary"
 platforms: [linux, macos]
 description: >
   The mirror is fake-models serving a manifest per platform; the server runs

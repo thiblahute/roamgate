@@ -1,8 +1,5 @@
 name: an idle terminal Claude is handed to conversation mode, which sends a message and streams the turn
 family: agent_chat
-ledger:
-  - "server/src/conversation/service.test.ts > takes over, reports to Herdr, and warms the headless process"
-  - "server/src/conversation/service.test.ts > conversation mode takes it once Claude is up: /exit, then the holder in that pane"
 description: >
   The pane runs an idle Claude TUI (a fake Herdr terminal pane). The
   handover exits it, types the pane holder into the shell (it runs for real

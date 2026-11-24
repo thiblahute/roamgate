@@ -1,7 +1,5 @@
 name: Ranger resumes by itself after SIGKILL without replaying completed reads or pending actions
 family: assistant
-ledger:
-  - "server/src/assistant-recovery.integration.test.ts > Ranger automatically resumes after %s without replaying completed reads or pending actions"
 server:
   herdr: false
   start: false

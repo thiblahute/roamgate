@@ -1,7 +1,5 @@
 name: the Herdr status, info and setup routes with a running Herdr
 family: herdr
-ledger:
-  - "server/src/http/herdr-setup.test.ts > setup guard uses the configured profile even without a ready runtime"
 description: >
   The run's Herdr socket is named explicitly (HERDR_SOCKET_PATH), so managed
   setup is refused and nothing is ever downloaded or installed.

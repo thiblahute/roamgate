@@ -1,7 +1,5 @@
 name: "no key in the pane: no question, nothing written"
 family: agent_chat
-ledger:
-  - "server/src/conversation/holder-child.test.ts > no key in the pane: nothing to ask, nothing written"
 description: "no key in the pane: no question, nothing written"
 server:
   env:

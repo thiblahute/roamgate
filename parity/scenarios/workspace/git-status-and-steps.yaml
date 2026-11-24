@@ -6,9 +6,6 @@ description: >
   working-to-idle turn on a workspace's pane completes its last step
   (event workspace.last_step_completed), and git.diff_summary then offers
   the last step's changes.
-ledger:
-  - "server/src/workspace/status.test.ts > with no cold budget, the first list answers at once and pushes the result"
-  - "server/src/workspace/status.test.ts > invalidation refreshes immediately, even during a refresh"
 server:
   herdr:
     workspaces:

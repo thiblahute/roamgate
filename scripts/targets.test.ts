@@ -1,11 +1,10 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolveUpdateTarget } from "../server/src/http/update";
 import { releaseAssetNames } from "./check-release-assets.mjs";
 
 // targets.toml is the release targets' single list (`cargo xtask`, the Rust
-// CI). Until the cut-over the Bun build keeps its own lists; these tests pin
-// them to it.
+// CI, the release workflow, the installers); these tests pin the others to
+// it.
 
 const root = new URL("../", import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), "utf8");
@@ -39,50 +38,7 @@ test("targets.toml lists the seven release targets once", () => {
   ]);
 });
 
-test("the Bun build compiles every target", () => {
-  const scripts = JSON.parse(read("server/package.json")).scripts as Record<
-    string,
-    string
-  >;
-  const compiled = Object.entries(scripts)
-    .filter(
-      // compile:pi is the Pi sidecar for this machine (cargo xtask builds
-      // it per target for the Rust package).
-      ([name]) =>
-        /^compile:[a-z0-9-]+$/.test(name) &&
-        name !== "compile:all" &&
-        name !== "compile:pi",
-    )
-    .map(([name, command]) => ({
-      platform: name.slice("compile:".length),
-      bun: /--target=(\S+)/.exec(command)?.[1],
-    }));
-  expect(compiled).toEqual(
-    expect.arrayContaining(
-      targets.map((target) => ({ platform: target.platform, bun: target.bun })),
-    ),
-  );
-  expect(compiled.length).toBe(targets.length);
-});
-
-test("the updater serves exactly the update targets", () => {
-  for (const target of targets) {
-    const resolved = resolveUpdateTarget(target.os, target.arch);
-    if (target.update) {
-      expect(resolved?.platform as string | undefined).toBe(target.platform);
-      expect(resolved?.archiveName).toBe(`roamgate-${target.platform}.tar.xz`);
-    } else if (target.triple.endsWith("-musl")) {
-      // Node cannot tell musl apart: it is the glibc build's platform.
-      expect(resolved?.platform as string | undefined).not.toBe(
-        target.platform,
-      );
-    } else {
-      expect(resolved).toBeNull();
-    }
-  }
-});
-
-test("release.yml publishes every target of targets.toml; the Bun build packages the others", () => {
+test("release.yml publishes every target of targets.toml", () => {
   const release = Bun.YAML.parse(read(".github/workflows/release.yml")) as {
     jobs: Record<
       string,
@@ -111,13 +67,6 @@ test("release.yml publishes every target of targets.toml; the Bun build packages
     ),
   );
   expect([...published].sort()).toEqual([...platforms].sort());
-  // `bun run package:<target>` (the Bun build, local only) has no musl build.
-  const packaged = [
-    ...read("scripts/package-release.sh").matchAll(/^ {2}([a-z0-9-]+)\)$/gm),
-  ].map((match) => match[1]);
-  expect(platforms.filter((platform) => !packaged.includes(platform))).toEqual([
-    "linux-x64-musl",
-  ]);
 });
 
 test("the installers name targets.toml's platforms", () => {

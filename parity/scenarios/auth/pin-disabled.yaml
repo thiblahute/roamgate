@@ -1,7 +1,5 @@
 name: the PIN endpoint is disabled by default
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > PIN endpoint is disabled by default"
 server:
   env: { ROAMGATE_PIN: "", HERDR_GUI_PIN: "" }
 steps:

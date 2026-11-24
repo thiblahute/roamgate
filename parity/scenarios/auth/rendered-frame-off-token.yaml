@@ -1,7 +1,5 @@
 name: a rendered page's frame off its token gets an error page, never the login page or a route
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > a rendered page's frame off its token gets an error page, never the login page or a route"
 steps:
   - http: GET /documentation/installing/index.html
     headers:

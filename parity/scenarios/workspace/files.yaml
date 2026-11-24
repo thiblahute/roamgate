@@ -4,14 +4,6 @@ description: >
   A workspace whose focused pane is in a checkout: every file.* read and
   mutation from outside, the files they leave, and the refusals of a missing
   workspace id and of paths outside the checkout.
-ledger:
-  - "server/src/workspace/files.test.ts > falls back to focused pane cwd when workspace has no checkout path"
-  - "server/src/workspace/files.test.ts > resolves existing workspace-relative files and directories in one batch"
-  - "server/src/workspace/files.test.ts > validates required workspace ids"
-  - "server/src/workspace/file-mutations.test.ts > creates root/nested folders and preserves existing entries"
-  - "server/src/workspace/file-mutations.test.ts > moves files into folders and back to root without changing their contents"
-  - "server/src/workspace/file-mutations.test.ts > never overwrites a destination file, directory or symlink"
-  - "server/src/workspace/search.test.ts > searches unloaded checkout files and content while respecting ignores and binary files"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]

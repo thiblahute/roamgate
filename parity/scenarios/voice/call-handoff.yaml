@@ -8,11 +8,6 @@ description: >
   server (list, peerStatusChanged) reaches the app; the page's microphone
   is refused while the app carries it, the app's is taken; the app gives
   the call back, and the page resumes it on a new socket.
-ledger:
-  - "server/src/http/call-handoff.test.ts > only the owning page gets a handoff token, single use"
-  - "server/src/http/call-handoff.test.ts > the app carries the legs it says, and the page is told"
-  - "server/src/http/call-handoff.test.ts > the app's microphone is listened to, the page's no longer"
-  - "server/src/http/call-handoff.test.ts > outputs: the app's go to the page, the page's choice to the app"
 covers:
   - "ws:signalling upstream welcome"
   - "ws:signalling upstream list"

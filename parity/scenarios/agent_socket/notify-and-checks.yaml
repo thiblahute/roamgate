@@ -1,7 +1,5 @@
 name: an agent notifies the user, and asks which threads and items wait for it
 family: notifications
-ledger:
-  - "server/src/review/agent-server.test.ts > an agent tells the user they need to act"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]

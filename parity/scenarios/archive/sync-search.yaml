@@ -1,7 +1,5 @@
 name: archive sync copies this machine's sessions as zstd and indexes them; search, session, cat and health read them back
 family: archive
-ledger:
-  - "server/src/cli/archive.test.ts > sync writes the text repo; search, status and rebuild-text use it"
 description: >
   The text repo's own state is left loose: whether sync commits it or
   defers it follows GameMode, which the server asks the real host through

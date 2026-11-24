@@ -1,7 +1,5 @@
 name: conversation mode hands the session back to the terminal, and refuses what the pane cannot do
 family: agent_chat
-ledger:
-  - "server/src/conversation/service.test.ts > events reach only the pane's subscribers, until they go"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

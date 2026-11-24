@@ -8,7 +8,6 @@
   "files": {
     "includes": [
       "**",
-      "!server/src/public-files.gen.ts",
       "!contract/assets/**",
       "!contract/tools/catalog.json",
       "!contract/perf/baseline.json",

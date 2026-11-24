@@ -5,8 +5,6 @@ description: >
   download (whole, ranged, inline), upload into a directory, delete; the
   terminal upload staged in a private directory with its size limit
   (ROAMGATE_UPLOAD_MAX_BYTES); an image upload; and their refusals.
-ledger:
-  - "server/src/workspace/files.test.ts > returns download responses with safe headers"
 server:
   env: { ROAMGATE_UPLOAD_MAX_BYTES: "64", ROAMGATE_UPLOAD_RETENTION_HOURS: "2" }
   herdr:

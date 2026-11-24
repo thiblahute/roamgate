@@ -1,7 +1,5 @@
 name: a call's signalling upgrades for its owner in generated-token mode, and refusals are 403, never 303 or 429
 family: voice
-ledger:
-  - "server/src/http/auth-process.test.ts > a call's signalling upgrades for its owner in generated-token mode, and refusals are 403, never 303 or 429"
 server:
   password: null
   env:

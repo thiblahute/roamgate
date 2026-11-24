@@ -1,8 +1,5 @@
 name: a Claude Code config the holder cannot read is left as it is; the answer still holds for this start
 family: agent_chat
-ledger:
-  - server/src/conversation/holder-child.test.ts > a config it cannot read is left as it is; the answer
-    still holds for this start
 description:
   a Claude Code config the holder cannot read is left as it is; the answer still holds for
   this start

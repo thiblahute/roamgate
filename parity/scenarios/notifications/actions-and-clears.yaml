@@ -7,10 +7,6 @@ description: >
   without a permission prompt, or on an unknown id, answers error unknown;
   bad messages are ignored. The legacy HERDR_GUI_NOTIFICATION_SOURCE name
   is read when ROAMGATE_NOTIFICATION_SOURCE is not set.
-ledger:
-  - "server/src/notifications/notification-feed.test.ts > a clear goes out only for a notification still out"
-  - "server/src/notifications/notification-feed.test.ts > notifications without a prompt take no action"
-  - "server/src/notifications/notification-feed.test.ts > bad messages are ignored"
 server:
   env: { HERDR_GUI_NOTIFICATION_SOURCE: status }
 steps:

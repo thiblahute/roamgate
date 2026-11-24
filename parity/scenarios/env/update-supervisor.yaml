@@ -1,9 +1,5 @@
 name: the standalone binary offers to update itself only under a process supervisor
 family: env
-ledger:
-  - "server/src/config/environment.test.ts > new supervisor override takes precedence over legacy settings and detection"
-  - "server/src/http/update.test.ts > detects systemd and launchd while allowing explicit overrides"
-  - "server/src/http/update.test.ts > checks for updates but requires an external supervisor to install"
 tier: T2
 description: >
   /api/update/check of the release binary: a supervisor is ROAMGATE_RESTART_SUPERVISOR

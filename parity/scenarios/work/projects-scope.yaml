@@ -1,8 +1,5 @@
 name: a project with a branch rule is declared, items are scoped to it, and a parent's list holds its subprojects' items
 family: work
-ledger:
-  - "server/src/work/service.test.ts > declares a project with a branch rule and scopes items to it"
-  - "server/src/work/service.test.ts > a parent's list holds its subprojects' items; cycles are refused"
 steps:
   - login: {}
   - connect: {}

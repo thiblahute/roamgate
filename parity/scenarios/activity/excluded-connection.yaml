@@ -1,8 +1,5 @@
 name: an excluded connection is left out of the bridge's timeline and the CLI's days, not of its status
 family: activity
-ledger:
-  - "server/src/cli/activity.test.ts > excluded connections are left out; --json gives the timeline"
-  - "server/src/activity/timeline-rpc.test.ts > connections in exclude.connections are left out, as by the CLI"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work, focused: true }]

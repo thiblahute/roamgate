@@ -1,7 +1,5 @@
 name: "the chat's ! lines run in the pane's directory with the login shell, and go to claude with the next message"
 family: agent_chat
-ledger:
-  - "server/src/conversation/service.test.ts > a `!` line runs on the host and reaches Claude, in bash-mode format, with the next message only"
 server:
   env: { SHELL: /bin/sh }
   herdr:

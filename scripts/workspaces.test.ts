@@ -39,11 +39,10 @@ test("workspaces share one lockfile and root development tooling", () => {
 
 test("development bridge and Vite proxies stay off the production port", async () => {
   const requireRoot = createRequire(new URL("package.json", root));
-  const { scripts } = requireRoot("./server/package.json");
-  expect(scripts.dev).toBe(
-    "NODE_ENV=development HOST=127.0.0.1 PORT=8788 bun run --hot src/index.ts",
+  const { scripts } = requireRoot("./package.json");
+  expect(scripts["dev:server"]).toBe(
+    "NODE_ENV=development HOST=127.0.0.1 PORT=8788 cargo run -p roamgate --",
   );
-  expect(scripts.start).toBe("bun run src/index.ts");
 
   const { default: config } = await import("../web/vite.config");
   for (const path of ["/api", "/ws", "/login"]) {

@@ -1,7 +1,5 @@
 name: Ranger mention discovery is bridge-global, permission-bound and available before model setup
 family: assistant
-ledger:
-  - "server/src/assistant.integration.test.ts > Ranger mention discovery is bridge-global, permission-bound and available before model setup"
 server:
   herdr: false
   herdrs:

@@ -1,11 +1,11 @@
 name: Rust
 
 # The Cargo workspace: format, lints and tests (with the parity suite against
-# the Bun server), then every release target of targets.toml built, packaged
-# and verified (cargo xtask), run on a runner of its own platform, and
-# installed through a Bun-built roamgate's `roamgate update` where the
-# updater serves that platform. The packages are CI artifacts here; the
-# Release workflow builds the published ones the same way.
+# this checkout's server), then every release target of targets.toml built,
+# packaged and verified (cargo xtask), run on a runner of its own platform,
+# and installed through the last published release's `roamgate update`
+# where the updater serves that platform. The packages are CI artifacts
+# here; the Release workflow builds the published ones the same way.
 
 on:
   pull_request:
@@ -31,8 +31,8 @@ jobs:
           bun-version: "1.4.4"
           no-cache: true
       - run: bun install --frozen-lockfile
-      # The parity suite runs the Bun server's standalone build of this
-      # checkout, which embeds the web app.
+      # The server embeds the web app; the parity suite compiles the Pi
+      # sidecar with Bun.
       - run: bun run build:web
       - name: Install Rust
         run: |
@@ -55,8 +55,8 @@ jobs:
         with:
           persist-credentials: false
       - id: targets
-        # The packages carry a version above the Bun build's, so that the
-        # update proof has something to update to.
+        # The packages carry a version above the last release's, so that
+        # the update proof has something to update to.
         run: |
           echo "targets=$(cargo xtask targets --json)" >> "$GITHUB_OUTPUT"
           echo "version=$(cargo xtask version --next)" >> "$GITHUB_OUTPUT"
@@ -155,26 +155,34 @@ jobs:
           tar -xJf "target/dist/roamgate-v$version-$platform.tar.xz" -C "$dir"
           grep -Fx "roamgate $version $platform" "$dir/roamgate-$platform/VERSION"
           test "$("$dir/roamgate-$platform/${{ matrix.target.binary }}" --version | tr -d '\r')" = "roamgate $version"
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        if: matrix.target.update
-        with:
-          bun-version: "1.4.4"
-          no-cache: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: matrix.target.update
         with:
           name: web
           path: server/public
-      - name: Update a Bun-built roamgate to it
+      # Existing installs update in place: the last published release's
+      # binary updates itself to this package in a sandbox.
+      - name: Update the last release to it
         if: matrix.target.update
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           command -v cargo >/dev/null || {
             curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
             export PATH="$HOME/.cargo/bin:$PATH"
           }
-          bun install --frozen-lockfile
-          bun run --cwd server "compile:${{ matrix.target.platform }}"
-          cargo xtask update-proof "${{ matrix.target.platform }}" \
-            --from "server/roamgate-${{ matrix.target.platform }}" \
+          platform="${{ matrix.target.platform }}"
+          previous="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          if [ -z "$previous" ]; then
+            echo "No release to update from."
+            exit 0
+          fi
+          from="$RUNNER_TEMP/previous"
+          mkdir -p "$from"
+          gh release download "$previous" --repo "$GITHUB_REPOSITORY" \
+            --pattern "roamgate-$platform.tar.xz" --dir "$from"
+          tar -xJf "$from/roamgate-$platform.tar.xz" -C "$from" "roamgate-$platform/roamgate"
+          cargo xtask update-proof "$platform" \
+            --from "$from/roamgate-$platform/roamgate" \
             --version "${{ needs.targets.outputs.version }}"

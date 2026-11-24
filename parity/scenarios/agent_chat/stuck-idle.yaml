@@ -1,8 +1,5 @@
 name: "a turn silent for ten minutes is shown stuck, an idle conversation is put to sleep, and a spoken message wakes it"
 family: agent_chat
-ledger:
-  - "server/src/conversation/service.test.ts > nothing from Claude for 10 minutes: the chat says it seems stuck, until it says something"
-  - "server/src/conversation/service.test.ts > an idle process stops and starts again on the same session; a busy one is left"
 server:
   # After any real file time: the stuck watch takes the transcript's
   # modification time when it is later than the turn's last output.

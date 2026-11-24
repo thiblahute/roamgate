@@ -6,10 +6,6 @@ description: >
   remove), as Herdr does. The bridge syncs the base, creates the checkout,
   records the parent, opens it again, reads and changes the repository's
   worktree settings, then removes it.
-ledger:
-  - "server/src/worktree/create.test.ts > a worktree base without origin is the checked out commit, in any language"
-  - "server/src/worktree/create.test.ts > refuses a branch name with shell syntax before anything runs"
-  - "server/src/worktree/create.test.ts > a checkout already open in Herdr does not rerun its setup hook"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]

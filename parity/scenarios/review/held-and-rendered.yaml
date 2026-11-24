@@ -3,10 +3,6 @@ family: review
 covers:
   - "http:GET /rendered/{token}/{path}"
   - "http:HEAD /rendered/{token}/{path}"
-ledger:
-  - "server/src/review/rpc.test.ts > a branch (head, a work item's branch link) is reviewed against the default branch, in the checkout at the path"
-  - "server/src/review/rpc.test.ts > a page's storage write reaches the connection with its token, checked"
-  - "server/src/review/rpc.test.ts > a page asks for summaries: each review counted, its threads read only for what it shows"
 description: >
   A comment written held stays out of the agent's way until moved or let
   go (handed in one prompt). A rendered review's page is served under its

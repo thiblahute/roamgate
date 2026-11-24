@@ -1,9 +1,5 @@
 name: roamgate herdr prints its help, the state of Herdr and the managed service, and refuses setup on custom sockets
 family: herdr
-ledger:
-  - "server/src/herdr/cli.test.ts > prints help for bare or unknown herdr commands"
-  - "server/src/herdr/cli.test.ts > status reports a running server"
-  - "server/src/herdr/cli.test.ts > setup failures print the reason and exit 1"
 server:
   start: false
   fakes:

@@ -1,10 +1,5 @@
 name: provider errors and refused arguments are answers with a code, and nothing runs for a refused request
 family: time_report
-ledger:
-  - "server/src/time-report/rpc.test.ts > arguments are checked before anything runs"
-  - "server/src/time-report/provider.test.ts > errors carry the provider's message and code, and submit's partial result"
-  - "server/src/time-report/provider.test.ts > a missing command says so"
-  - "server/src/time-report/provider.test.ts > only a runnable command is a provider setting"
 server:
   files:
     .config/roamgate/settings.json:

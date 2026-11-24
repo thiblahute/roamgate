@@ -1,8 +1,5 @@
 name: the Work board's items are added, changed, done, reopened and removed from a browser, every page told
 family: work
-ledger:
-  - "server/src/work/service.test.ts > seeds the roamgate project and adds, moves, finishes and reopens items"
-  - "server/src/work/service.test.ts > the bridge RPCs route to the service and say who wrote"
 steps:
   - login: {}
   - connect: {}

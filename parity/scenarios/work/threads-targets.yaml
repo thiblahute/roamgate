@@ -1,8 +1,5 @@
 name: an item's threads, adopted and promoted threads, and where its owner, a session and a link are
 family: work
-ledger:
-  - "server/src/work/service.test.ts > adopts a thread into an existing item, once"
-  - "server/src/work/service.test.ts > an owner's session must be one Roamgate manages; its task is taken as given"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

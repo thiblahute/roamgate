@@ -5,10 +5,6 @@ description: >
   listen_ready reach the page as loading and ready (dictation mode only),
   its partials are what was heard so far, and finishing ends the dictation
   with the helper's final.
-ledger:
-  - "server/src/http/voice-socket.dictation.test.ts > partials show the whole dictation; finish gives the cleaned text with its timing"
-  - "server/src/http/voice-socket.dictation.test.ts > a helper loading its models hears the audio sent before, once ready"
-  - "server/src/http/voice-socket.dictation.test.ts > warm starts the dictation cleaner and says whether there is one"
 server:
   env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
   files:

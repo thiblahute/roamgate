@@ -1,7 +1,5 @@
 name: ROAMGATE_LOG_LEVEL=debug adds debug lines in the server's log format
 family: env
-ledger:
-  - "server/src/config/server-config.test.ts > uses the environment and defaults to info"
 server:
   env: { ROAMGATE_LOG_LEVEL: debug }
 steps:

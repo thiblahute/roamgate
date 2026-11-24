@@ -1,7 +1,5 @@
 name: a line of the headless claude past the agent socket's limit comes through whole, in pieces
 family: agent_chat
-ledger:
-  - server/src/conversation/holder-child.test.ts > a line past the socket's limit comes through, in pieces
 description:
   "A turn whose answer is one stream-json line of 1.3 MB (past the agent socket's 1 MiB body
   limit): the holder sends it in pieces under the limit, and the browser gets the whole text once."

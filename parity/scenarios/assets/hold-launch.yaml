@@ -5,11 +5,6 @@ description: >
   it sends, the program and environment come back (its removals applied),
   a session with no transcript is started by its id, an expired token runs
   nothing, and a hand-back resumes with the session's profile environment.
-ledger:
-  - "server/src/conversation/holder-script.test.ts > --launch trades its token for the program and environment"
-  - "server/src/conversation/holder-script.test.ts > --launch of a session with no transcript starts it by its id"
-  - "server/src/conversation/holder-script.test.ts > an expired launch says so and runs nothing"
-  - "server/src/conversation/holder-script.test.ts > a hand-back resumes with the session's profile environment"
 server:
   herdr: false
   files:

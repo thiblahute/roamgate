@@ -1,9 +1,5 @@
 name: connection settings answer, validate, persist and tell the browsers
 family: settings
-ledger:
-  - "server/src/bridge/settings-rpc.test.ts > terminal transport settings validate input, persist by connection, and reconnect only on change"
-  - "server/src/bridge/settings-rpc.test.ts > agent auto rename settings read and update successfully"
-  - "server/src/bridge/settings-rpc.test.ts > the claude start setting: validated, saved, and the change told"
 steps:
   - login: {}
   - connect: { name: main }

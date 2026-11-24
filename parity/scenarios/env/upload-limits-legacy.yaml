@@ -1,7 +1,5 @@
 name: HERDR_GUI_UPLOAD_MAX_BYTES bounds a terminal upload and HERDR_GUI_UPLOAD_RETENTION_HOURS how long it stays
 family: env
-ledger:
-  - "server/src/http/terminal-upload.test.ts > sweeps expired uploads at startup and without a later upload"
 description: >
   An upload past the limit is refused with 413. A staged upload stays for
   the retention hours: the cleanup runs on the server's clock (every hour at

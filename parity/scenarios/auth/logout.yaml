@@ -1,8 +1,5 @@
 name: logout after reauthentication closes earlier and later tabs, not other browsers, and ends the cookie for good
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > logout after reauthentication closes earlier and later tabs, not other browsers"
-  - "server/src/http/auth.test.ts > ends the cookie on the server too, across a restart"
 steps:
   - login: {}
   - login: { as: other }

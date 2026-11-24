@@ -5,14 +5,6 @@ description: >
   saved under settings.json `mr_reviews`, pushed to every browser with the
   order's new version, and taken back by undo; pinning a request no list has
   reads it once; nothing is ever written to a forge.
-ledger:
-  - "server/src/mr-reviews/inbox.pins.test.ts > pin by URL: read from the forge, listed as Pinned, kept in the settings"
-  - "server/src/mr-reviews/inbox.pins.test.ts > pin refuses other hosts, other text, and says when a request is not found"
-  - "server/src/mr-reviews/inbox.pins.test.ts > hide: out of the view until something happens on it, restorable"
-  - "server/src/mr-reviews/order.test.ts > an operation is applied, saved with a version and pushed"
-  - "server/src/mr-reviews/order.test.ts > undo takes the change back, on the latest order"
-  - "server/src/mr-reviews/order.test.ts > two clients follow the same order, by push or by the next poll"
-  - "server/src/mr-reviews/overrides.test.ts > fields are set, capped and cleared; an empty override goes"
 server:
   files:
     .config/gh/hosts.yml: "github.com:\n    user: me\n    git_protocol: https\n"

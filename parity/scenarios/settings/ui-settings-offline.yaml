@@ -1,7 +1,5 @@
 name: UI settings sync globally while the selected Herdr connection is offline
 family: settings
-ledger:
-  - "server/src/assistant.integration.test.ts > UI settings sync globally while the selected Herdr connection is offline"
 server:
   herdr: false
   herdrs:

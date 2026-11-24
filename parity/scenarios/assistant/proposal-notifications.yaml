@@ -1,7 +1,5 @@
 name: confirmed Ranger proposals schedule custom notifications and deduplicate them across a bridge restart
 family: assistant
-ledger:
-  - "server/src/assistant-recovery.integration.test.ts > confirmed Ranger proposals schedule custom notifications and deduplicate polling across bridge restart"
 server:
   herdr: false
   start: false

@@ -1,7 +1,5 @@
 name: an agent writes the Work board through the agent socket, its answers JSON after the untrusted line
 family: work
-ledger:
-  - "server/src/work/service.test.ts > the tools validate their parameters and answer JSON after the untrusted line"
 steps:
   - login: {}
   - connect: {}

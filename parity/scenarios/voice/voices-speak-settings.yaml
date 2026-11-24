@@ -7,12 +7,6 @@ description: >
   voices. Speech comes from the helper as Ogg; the reading speed, the
   longest pause and the front's mode are kept in voice.json. An image
   the companion names is served by its absolute path.
-ledger:
-  - "server/src/http/voice.test.ts > a recording is uploaded, cloned, then removed"
-  - "server/src/http/voice.test.ts > choose, rename, delete and hear voices"
-  - "server/src/http/voice.test.ts > a refused change says why, with its status"
-  - "server/src/http/voice.test.ts > keeps the longest pause, reported with the rest"
-  - "server/src/http/voice.test.ts > keeps what the front does with answers, reported with it"
 server:
   env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
   files:

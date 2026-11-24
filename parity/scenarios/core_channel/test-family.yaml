@@ -1,27 +1,21 @@
-name: The Bun server runs its Rust core and routes a family the owners table gives it
+name: The server's core serves the channel's test family
 family: core_channel
 description: >
-  With ROAMGATE_CORE_BIN the Bun server spawns the Rust core and serves
-  beside it over the internal channel (contract/wire/core-channel.md). The
-  channel's own test family (ROAMGATE_CORE_TEST, from source and a debug
-  core only), given to Rust by <data>/runtime/owners.json, answers a browser
-  call with what the front knew of it, calls back into Bun, and streams an
-  HTTP body both ways through the core; a method of no family stays with Bun.
+  The front runs its own executable as its core and serves beside it over
+  the internal channel (contract/wire/core-channel.md). The channel's own
+  test family (ROAMGATE_CORE_TEST, a debug core only) answers a browser
+  call with what the front knew of it, makes a reverse call answered in
+  the core, and streams an HTTP body both ways through the core; a method
+  of no family is the front family's.
 covers:
-  - env:ROAMGATE_CORE_BIN
   - env:ROAMGATE_CORE_TEST
-  - "exec:spawn core-channel/supervisor.ts#defaultSpawn"
+  - env:ROAMGATE_CORE_CHANNEL
+  - env:ROAMGATE_CORE_TOKEN
+  - env:ROAMGATE_CLI_EXEC
+  - env:ROAMGATE_CLI_STANDALONE
 server:
   env:
-    ROAMGATE_CORE_BIN: "${CORE}"
     ROAMGATE_CORE_TEST: "1"
-  files:
-    ".config/roamgate/runtime/owners.json":
-      mode: "0600"
-      json:
-        version: 1
-        owners: { test.echo: rust }
-        shadow: { enabled: false, rate: 0 }
 steps:
   - login: {}
   - connect: {}

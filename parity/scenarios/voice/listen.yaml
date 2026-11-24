@@ -6,10 +6,6 @@ description: >
   the helper's speech_start, partial and final come back to the page. A
   session resumes on another socket with its token only; release, finish
   and stop reach the helper.
-ledger:
-  - "server/src/http/voice-socket.test.ts > without a context, events pass as they are"
-  - "server/src/http/voice-socket.test.ts > a session outlives its socket: a new one resumes it, missing nothing"
-  - "server/src/http/voice-socket.test.ts > a resume with the wrong token is refused"
 server:
   env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
   files:

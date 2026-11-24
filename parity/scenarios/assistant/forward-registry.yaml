@@ -1,7 +1,5 @@
 name: a fresh socket receives the global forward registry before choosing any Herdr runtime
 family: forward
-ledger:
-  - "server/src/assistant.integration.test.ts > a fresh socket receives the global forward registry before choosing any Herdr runtime"
 server:
   herdr: false
   herdrs:

@@ -1,15 +1,2 @@
 # Rows of an existing crate that wait for a later subtask (parity/src/ledger.rs, Unported):
 # crate, file prefix, subtask. Remove an entry when its subtask ports those files.
-roamgate-connections	server/src/connections/http-routing	S18
-roamgate-connections	server/src/connections/protocol	S18
-roamgate-connections	server/src/connections/shutdown	S18
-roamgate-connections	server/src/connections/startup	S18
-
-roamgate-mr-reviews	server/src/mr-reviews/board-tools.test.ts	S20
-
-# roamgate-claude was made by S15 for the tool registry; the Claude driver,
-# the claude-mod hub comes with its subtask (S21 ported the conversation drivers).
-# profiles.test.ts checks each spawn site follows the profile: those rows go with the sites.
-roamgate-mr-reviews	server/src/profiles/	S20
-roamgate-voice-server	server/src/profiles/	S22
-# the conversation drivers come with their subtasks (S19 ported the claude-mod hub).

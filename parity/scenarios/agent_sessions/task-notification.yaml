@@ -5,8 +5,6 @@ description: >
   shell on endpoint generation 1 gets Herdr's SemanticNotification, and every
   browser socket gets a roamgate.task_notification (pages then leave their
   own tracker off).
-ledger:
-  - "server/src/connections/runtime.test.ts > herdr notification source relays SemanticNotification and silences the status tracker"
 server:
   env: { ROAMGATE_NOTIFICATION_SOURCE: herdr }
   herdr:

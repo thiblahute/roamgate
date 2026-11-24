@@ -6,8 +6,6 @@ description: >
   list's reuse window, the same GET carries If-None-Match; fake-gh answers
   304 with no body, and the session still names the request: the
   remembered body answered.
-ledger:
-  - "server/src/workspace/forge-calls.test.ts > GETs come back with If-None-Match; a 304 answers with what was known"
 server:
   files:
     .config/gh/hosts.yml: "github.com:\n    user: me\n"

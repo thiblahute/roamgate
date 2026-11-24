@@ -1,9 +1,5 @@
 name: the notification socket needs the login cookie, then replays and logs out
 family: notifications
-ledger:
-  - "server/src/http/auth-process.test.ts > the notification socket needs the login cookie, then replays and logs out"
-  - "server/src/notifications/notification-feed.test.ts > logging out closes that login's sockets"
-  - "server/src/notifications/notification-feed.test.ts > connections, hellos, sends and closes are logged"
 steps:
   - http: GET /api/notifications/ws
     headers:

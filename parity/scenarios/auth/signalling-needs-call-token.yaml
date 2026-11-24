@@ -1,7 +1,5 @@
 name: a call's signalling socket needs login, this site, and the call's own token
 family: voice
-ledger:
-  - "server/src/http/auth-process.test.ts > a call's signalling socket needs login, this site, and the call's own token"
 steps:
   - http: GET /api/voice/call/signalling?call=1&call_token=guess
     headers:

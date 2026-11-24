@@ -6,9 +6,6 @@ description: >
   voice library fail with the configuration's error, and every route that
   acts needs the x-roamgate-voice header (a custom header, so another site
   cannot send it without a preflight).
-ledger:
-  - "server/src/http/voice.test.ts > without a router, or the voice header, it is for the agent on screen"
-  - "server/src/voice/voice-helper.test.ts > speech rate > a voice.json kept before the setup answers with the settings it holds"
 server:
   env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
 steps:

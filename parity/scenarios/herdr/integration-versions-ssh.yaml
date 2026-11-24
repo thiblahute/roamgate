@@ -6,8 +6,6 @@ description: >
   strict host keys, `"$bin" --version && "$bin" integration status`; the
   local herdr CLI is never asked. An SSH failure or a version that is not
   the host's Herdr keeps Herdr's list.
-ledger:
-  - "server/src/herdr/integration-versions.test.ts > SSH lookups stay on their selected host and never fall back to the local CLI"
 server:
   herdr: false
   herdrs:

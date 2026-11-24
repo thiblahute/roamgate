@@ -10,19 +10,14 @@
  * Every run builds its own world (scratch HOME, two Herdr servers, fixture
  * repositories, copies of the user's review and work stores, fake ssh, glab
  * and gh) under ~/.claude/tmp, measures the server named by BENCH_SERVER_CMD
- * (default: this checkout's Bun server from source), and deletes the world.
- * The Rust server: BENCH_SERVER_CMD="<roamgate> front" (the CLI, for the
- * archive, is then the binary itself; BENCH_CLI_CMD overrides it), and
- * BENCH_TEST_CLOCK_SERVER_CMD the same release built with the
+ * (default: this checkout's release `roamgate`), and deletes the world. The
+ * CLI, for the archive, is the binary itself (BENCH_CLI_CMD overrides it),
+ * and BENCH_TEST_CLOCK_SERVER_CMD the same release built with the
  * `roamgate-base/test-clock` feature for the runs on the test clock (forge,
  * the voice helper's ping): a plain release refuses ROAMGATE_TEST_CLOCK.
  * On Linux it waits while GameMode reports a game (results would be noise).
- *
- * The hybrid (a Rust core behind the Bun front, contract/wire/
- * core-channel.md): ROAMGATE_CORE_BIN names the core binary, passed to the
- * server, and BENCH_RUST_FAMILIES (comma separated, families of
- * contract/owners/families.json) the families the world's owners table
- * gives to Rust. The run records both, and compare prints them.
+ * The stored baseline (contract/perf/baseline.json) is the Bun server's,
+ * measured before the cut-over: the gates hold the Rust server to it.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -31,12 +26,10 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import {
   cliCommand,
-  coreBin,
   createEnv,
   destroyEnv,
   FIXTURE_TAG,
   REPO,
-  rustFamilies,
   serverCommand,
   testClockServerCommand,
 } from "./env";
@@ -152,8 +145,6 @@ function machine() {
     source_commit: sh(["git", "-C", REPO, "rev-parse", "HEAD"]),
     source_dirty: sh(["git", "-C", REPO, "status", "--short"]) !== "",
     fixture: FIXTURE_TAG,
-    ...(coreBin() ? { core_bin: coreBin() } : {}),
-    rust_families: rustFamilies(),
     ...(platform() === "darwin"
       ? { power: sh(["pmset", "-g", "batt"]).split("\n")[0] ?? "" }
       : {}),
@@ -282,13 +273,13 @@ function storeBaseline(
   writeFileSync(path, `${JSON.stringify(baseline, null, 2)}\n`);
 }
 
-/** Which server a run measured: its command, and the families Rust owned. */
+/** Which server a run measured: its command, and the hybrid's families. */
 function describe(label: string, machine: Record<string, any> | undefined) {
   if (!machine) return `${label}: unknown server`;
   const core = machine.core_bin ? `, core ${machine.core_bin}` : "";
   const rust = machine.rust_families?.length
     ? `, Rust owns ${machine.rust_families.join(", ")}`
-    : ", every family Bun's";
+    : "";
   return `${label}: ${machine.server_command} on ${machine.hostname} (${machine.source_commit?.slice(0, 10) ?? "?"})${core}${rust}`;
 }
 

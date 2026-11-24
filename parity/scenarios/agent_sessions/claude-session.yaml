@@ -1,9 +1,5 @@
 name: a Claude pane's session is read from its transcript, history, tasks, artifacts, commands, images and downloads
 family: agent_sessions
-ledger:
-  - "server/src/agent/agent-sessions.test.ts > agent_commands.get lists the session's skills from its transcript"
-  - "server/src/agent/agent-sessions.test.ts > agent_artifacts.get lists the pages the session published"
-  - "server/src/agent/history-watch.test.ts > the default local watch sees appends to a real file"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

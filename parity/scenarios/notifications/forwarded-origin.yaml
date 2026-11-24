@@ -1,7 +1,5 @@
 name: the notification socket's links use the origin tailscale serve forwards
 family: notifications
-ledger:
-  - "server/src/http/auth-process.test.ts > the notification socket's links use the origin tailscale serve forwards"
 server:
   env: { ROAMGATE_NOTIFICATIONS_PATH: "${ROOT}/notifications.json" }
 steps:

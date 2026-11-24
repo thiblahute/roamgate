@@ -8,17 +8,6 @@ description:
   Herdr's (its ping): Herdr's own values win, unknown, malformed, duplicated or inconsistent records
   add nothing, a complete or uninstalled list never runs the CLI, and a failing or mismatched CLI leaves
   the list as Herdr gave it."
-ledger:
-  - server/src/herdr/integration-versions.test.ts > CLI supplements missing current/outdated versions without
-    leaking paths or adding targets
-  - server/src/herdr/integration-versions.test.ts > RPC values take precedence and partial fields must agree
-    with CLI metadata
-  - server/src/herdr/integration-versions.test.ts > unknown, malformed, duplicated, and inconsistent CLI
-    records do not fabricate versions
-  - server/src/herdr/integration-versions.test.ts > complete, uninstalled, and invalid RPC results do not
-    invoke the CLI
-  - server/src/herdr/integration-versions.test.ts > unavailable CLI, timeout, nonzero exit, ping failure,
-    and binary mismatch retain the RPC list
 server:
   herdr:
     version: 1.2.3

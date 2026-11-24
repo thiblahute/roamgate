@@ -1,9 +1,6 @@
 name: a decision link is done once its box is ticked on the project's branch, and a tick only in the working tree says uncommitted
 family: work
 tier: T2
-ledger:
-  - "server/src/work/service.test.ts > a decision link is done once its box is ticked on the project's branch"
-  - "server/src/work/service.test.ts > a tick in the working tree of the rule's checkout counts, said uncommitted; another branch checked out does not"
 steps:
   - sh: |
       set -e

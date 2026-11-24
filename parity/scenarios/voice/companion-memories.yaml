@@ -6,9 +6,6 @@ description: >
   index's titles first), DELETE /api/voice/companion/memories/<file>
   removes one and its index line, 404 for a name that is no memory, 405
   for any other method; both need the x-roamgate-voice header.
-ledger:
-  - "server/src/voice/voice-memory-files.test.ts > CompanionMemoryFiles > lists memories, never the index or stray names"
-  - "server/src/voice/voice-memory-files.test.ts > CompanionMemoryFiles > removes a memory and its index line only"
 server:
   env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
   files:

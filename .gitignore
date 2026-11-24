@@ -16,7 +16,6 @@ web/dist
 web/vite.config.d.ts
 web/vite.config.js
 server/public
-server/src/public-files.gen.ts
 server/herdr-gui
 server/herdr-gui-*
 server/roamgate

@@ -1,7 +1,5 @@
 name: task RPCs manage paused manual runs and keep a cancellation across a restart
 family: assistant
-ledger:
-  - "server/src/assistant-recovery.integration.test.ts > task RPCs manage paused manual runs and preserve cancellation across restart"
 server:
   herdr: false
   start: false

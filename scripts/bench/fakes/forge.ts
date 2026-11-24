@@ -1,15 +1,11 @@
 /**
- * The benchmark's forges, answered by the inbox tests' fake forge
- * (server/src/mr-reviews/own-forge.fixture.ts) from a fixed set of requests:
+ * The benchmark's forges, answered by its fake forge (own-forge.ts) from a
+ * fixed set of requests:
  * the same answers on every run and every server. Each call is logged to
  * BENCH_FORGE_LOG with its kind and bytes.
  */
 import { appendFileSync } from "node:fs";
-import {
-  createOwnForge,
-  type FakeRequest,
-  fakeRequests,
-} from "../../../server/src/mr-reviews/own-forge.fixture";
+import { createOwnForge, type FakeRequest, fakeRequests } from "./own-forge";
 
 const at = (base: string, step: number) => (index: number) =>
   new Date(Date.parse(base) - index * step).toISOString();

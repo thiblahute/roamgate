@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
-  buildCatalog,
   CATALOG_PATH,
   MOD_CATALOG_PATH,
   readCatalog,
@@ -14,10 +13,8 @@ import {
   ROAMGATE_TOOLS,
 } from "../../server/claude-mod/hooks/tools";
 
-test("the catalog holds the server's tool tables as its code makes them", () => {
-  expect(readFileSync(CATALOG_PATH, "utf8")).toBe(
-    renderCatalog(buildCatalog(readCatalog())),
-  );
+test("the catalog is written as the generator writes it", () => {
+  expect(readFileSync(CATALOG_PATH, "utf8")).toBe(renderCatalog(readCatalog()));
 });
 
 test("the mod's module is the catalog's claude-mod table", () => {

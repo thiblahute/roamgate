@@ -1,10 +1,13 @@
 /**
- * JSON Schemas (2020-12) of the wire and storage types, generated from the
- * TypeScript declarations by ts-json-schema-generator and reconciled by
- * hand through `contract/schemas/reconcile.json` (limits the server checks,
- * optional versus null, literal unions the types leave open).
+ * JSON Schemas (2020-12) of shared/'s wire and storage types, generated
+ * from the TypeScript declarations by ts-json-schema-generator and
+ * reconciled by hand through `contract/schemas/reconcile.json` (limits the
+ * server checks, optional versus null, literal unions the types leave
+ * open). `contract/schemas/server.schema.json`, the server's own types, is
+ * written by hand: roamgate-protocol's `contract_schemas` test holds the
+ * Rust types to it.
  *
- * `bun scripts/contract/schemas.ts --write` rewrites `contract/schemas/`;
+ * `bun scripts/contract/schemas.ts --write` rewrites the generated files;
  * `check.test.ts` regenerates and fails when the files differ, so a type
  * change reaches the contract in the same commit.
  */
@@ -16,9 +19,9 @@ import { REPO, source } from "./ast";
 import { formattedJson, writeContractFile } from "./write";
 
 const SCHEMAS = "contract/schemas";
-/** The server-local wire and storage types, exported for the generator. */
-const SERVER_TYPES = `${SCHEMAS}/server-types.ts`;
 const RECONCILE = `${SCHEMAS}/reconcile.json`;
+/** The schema files written by hand, not generated. */
+export const HELD_SCHEMAS = ["server.schema.json"];
 
 type Schema = Record<string, unknown>;
 
@@ -102,7 +105,7 @@ function rewriteRefs(
   return out;
 }
 
-/** One schema file per module of shared/, one for the server's own types. */
+/** One schema file per module of shared/. */
 export function generateSchemas(): Record<string, Schema> {
   const modules = sharedModules();
   const owner = new Map<string, string>();
@@ -117,32 +120,15 @@ export function generateSchemas(): Record<string, Schema> {
     }
     files.push({ file, source: path, types });
   }
-  const serverTypes = exportedTypes(SERVER_TYPES);
-  for (const name of serverTypes) {
-    if (owner.has(name))
-      throw new Error(`${name} is both a shared and a server type`);
-    owner.set(name, "server.schema.json");
-  }
-  files.push({
-    file: "server.schema.json",
-    source: SERVER_TYPES,
-    types: serverTypes,
-  });
-
   const shared = createGenerator({
     ...BASE_CONFIG,
     path: join(REPO, "shared/*.ts"),
     tsconfig: join(REPO, "tsconfig.json"),
   });
-  const server = createGenerator({
-    ...BASE_CONFIG,
-    path: join(REPO, SERVER_TYPES),
-    tsconfig: join(REPO, "server/tsconfig.json"),
-  });
 
   const out: Record<string, Schema> = {};
   for (const { file, source: from, types } of files) {
-    const generator = file === "server.schema.json" ? server : shared;
+    const generator = shared;
     const defs: Schema = {};
     for (const name of types) {
       const generated = { ...(generator.createSchema(name) as Schema) };
@@ -194,6 +180,7 @@ function applyReconciliations(
   schemas: Record<string, Schema>,
 ): Record<string, Schema> {
   for (const change of reconciliations()) {
+    if (HELD_SCHEMAS.includes(change.schema)) continue;
     const schema = schemas[change.schema];
     if (!schema) throw new Error(`reconcile.json: no schema ${change.schema}`);
     let target: Schema;
@@ -211,11 +198,13 @@ function applyReconciliations(
   return schemas;
 }
 
-/** The schema files in contract/schemas, relative to it, sorted. */
+/** The generated schema files in contract/schemas, relative to it, sorted. */
 export function schemaFilesOnDisk(): string[] {
   return [
     ...new Bun.Glob("**/*.schema.json").scanSync({ cwd: join(REPO, SCHEMAS) }),
-  ].sort();
+  ]
+    .filter((file) => !HELD_SCHEMAS.includes(file))
+    .sort();
 }
 
 /** Writes the generated schemas and deletes the ones no type makes any more. */
@@ -223,10 +212,7 @@ export function writeSchemas(schemas = generateSchemas()): void {
   for (const file of schemaFilesOnDisk())
     if (!(file in schemas)) rmSync(join(REPO, SCHEMAS, file));
   for (const [file, schema] of Object.entries(schemas)) {
-    writeContractFile(
-      join(REPO, SCHEMAS, file),
-      formattedJson(file, schema),
-    );
+    writeContractFile(join(REPO, SCHEMAS, file), formattedJson(file, schema));
   }
 }
 

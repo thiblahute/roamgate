@@ -1,7 +1,5 @@
 name: "the default local connection checks Herdr's protocol 22 (Welcome same) before any other request: accepted"
 family: connections
-ledger:
-  - 'server/src/connections/profile-process.test.ts > default local startup validates protocol ${JSON.stringify(protocol)} / Welcome ${welcomeProtocol ?? "same"} before background RPCs'
 server:
   env: { ROAMGATE_NOTIFICATION_SOURCE: herdr }
   herdr:

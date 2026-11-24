@@ -1,7 +1,5 @@
 name: submit needs the explicit confirmation and this bridge's own fresh preview, once
 family: time_report
-ledger:
-  - "server/src/time-report/rpc.test.ts > submit needs the explicit confirmation and this bridge's own fresh preview, once"
 server:
   files:
     .config/roamgate/settings.json:

@@ -2,12 +2,6 @@ name:
   with Roamgate away, Enter in the pane does not resume next to the headless claude; twice ends it
   and resumes
 family: agent_chat
-ledger:
-  - server/src/conversation/holder-child.test.ts > Roamgate away, Enter does not resume while its child
-    runs
-  - server/src/conversation/holder-child.test.ts > Roamgate away, Enter twice ends its child and resumes
-    claude
-  - server/src/conversation/holder-child.test.ts > an idle child runs on with nobody reading
 description:
   "The server goes away (killed) while conversation mode holds the pane: the headless claude
   runs on with nobody reading; Enter in the pane says the conversation process still runs there, a second

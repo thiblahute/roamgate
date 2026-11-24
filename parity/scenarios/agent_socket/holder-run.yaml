@@ -6,8 +6,6 @@ description: >
   on its input asks for the session back; Roamgate, knowing nothing to
   keep, says resume, and the holder resumes claude on its session in its
   directory (fake-claude records the argv).
-ledger:
-  - "server/src/conversation/holder-script.test.ts > execs claude --resume in the session's directory once Roamgate says so"
 server:
   herdr:
     workspaces: [{ workspace_id: w1 }]

@@ -1,8 +1,5 @@
 name: a browser registers and removes its Web Push device; the registry stays private
 family: notifications
-ledger:
-  - "server/src/notifications/web-push.test.ts > authenticated, non-CSRF device mutations persist privately across restart and revoke independently"
-  - "server/src/notifications/web-push.test.ts > rejects SSRF destinations, credentials, malformed keys and oversized endpoints"
 description: >
   Only registration: no task is notified here, so nothing is sent to the
   push provider (and HTTPS_PROXY points at a closed port, so a send could

@@ -1,9 +1,5 @@
 name: an agent opens reviews of each kind of target, and of several repositories at once
 family: review
-ledger:
-  - "server/src/review/agent-server.test.ts > open --repo takes each repository's own range"
-  - "server/src/review/agent-server.test.ts > --compare opens a tree-to-tree review of two versions"
-  - "server/src/review/agent-server.test.ts > --last-step opens the review of the workspace's last step; none known says so"
 description: >
   roamgate-review open's targets: the default branch range, a range, a
   comparison, the worktree's changes, a rendered file and site, a merge

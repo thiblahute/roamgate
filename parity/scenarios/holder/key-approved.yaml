@@ -1,7 +1,5 @@
 name: a pane key Claude Code approved stays with the headless claude
 family: agent_chat
-ledger:
-  - "server/src/conversation/holder-child.test.ts > approved in Claude Code: the headless claude keeps it"
 description: a pane key Claude Code approved stays with the headless claude
 server:
   env:

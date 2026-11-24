@@ -1,7 +1,5 @@
 name: instance name save failures preserve the current name and permit retry
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > instance name save failures preserve the current name and permit retry"
 server:
   env: { ROAMGATE_SETTINGS_PATH: "${ROOT}/blocked/settings.json" }
 steps:

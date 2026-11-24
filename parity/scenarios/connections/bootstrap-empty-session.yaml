@@ -6,8 +6,6 @@ description: >
   once it can, two browsers creating at once make one workspace, a
   missing directory is refused before Herdr is asked, ~ is the run's HOME,
   and a stale connection generation is refused.
-ledger:
-  - "server/src/connections/profile-process.test.ts > production routing bootstraps only a verified empty session and serializes competing browsers"
 server:
   herdr:
     responses:

@@ -1,7 +1,5 @@
 name: the test clock drives the server's time, a login cooldown ends when the harness advances
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > the test clock drives the server's time: a login cooldown ends when the harness advances"
 server:
   epoch: 1904281689000
 steps:

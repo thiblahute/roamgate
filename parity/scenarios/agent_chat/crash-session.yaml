@@ -1,8 +1,5 @@
 name: "a process that dies mid-turn leaves the turn marked interrupted, and a reset session moves the chat to the new one"
 family: agent_chat
-ledger:
-  - "server/src/conversation/service.test.ts > a process exiting mid-turn leaves a notice, until the next send"
-  - "server/src/conversation/service.test.ts > /clear moves the lease, the holder and Herdr's mapping"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

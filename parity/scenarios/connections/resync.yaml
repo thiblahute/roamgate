@@ -1,0 +1,23 @@
+name: a browser is told to read the session again once its connection's event subscription is ready
+family: connections
+description: >
+  Browser snapshots may start before Herdr acknowledges the event
+  subscription, so each acknowledgement (the first and every reconnect)
+  pushes session.resync_required with the connection and its generation;
+  the page reads the session again, and its calls go to that generation.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+steps:
+  - login: {}
+  - connect: {}
+  - expect_push: "event:session.resync_required"
+    message: { connection_id: legacy-default, connection_generation: 1 }
+  - call: connections.list
+    reply:
+      connections:
+        { $contains: [{ id: legacy-default, state: ready, generation: 1 }] }
+  - call: workspace.list
+    connection_id: legacy-default
+    connection_generation: 1
+    reply: { workspaces: [{ workspace_id: w1 }] }

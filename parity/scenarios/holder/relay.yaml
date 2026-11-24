@@ -1,8 +1,5 @@
 name: the pane holder starts the headless claude with its own environment and relays a turn
 family: agent_chat
-ledger:
-  - server/src/conversation/holder-child.test.ts > starts it with the headless environment and relays a
-    turn
 description:
   "After a handover, the holder Roamgate types in the pane starts the headless claude: marked
   headless, the pane given under Roamgate's names (not Herdr's, so Herdr's hook does not claim the

@@ -6,16 +6,6 @@ description: >
   takes a pane back on Enter alone, what it resumes and with which
   arguments and environment. A fake claude prints how it was started; a
   fake ps keeps the host's own processes out of it.
-ledger:
-  - "server/src/conversation/holder-script.test.ts > Enter asks for the session back, and a refusal keeps holding"
-  - "server/src/conversation/holder-script.test.ts > --socket names Roamgate's socket, and claude resumes with its flags"
-  - "server/src/conversation/holder-script.test.ts > a reply's full argv is what resumes, over claude's args alone"
-  - "server/src/conversation/holder-script.test.ts > text that reaches the pane is no hand-back; Enter alone is"
-  - "server/src/conversation/holder-script.test.ts > a Roamgate that cannot answer for the pane does not trap it"
-  - "server/src/conversation/holder-script.test.ts > needs a pane and a session"
-  - "server/src/conversation/holder-script.test.ts > a session with no transcript yet is started with its id, not resumed"
-  - "server/src/conversation/holder-script.test.ts > the claude it becomes is marked to stay in the terminal"
-  - "server/src/conversation/holder-script.test.ts > Roamgate gone, it will not resume next to a headless claude on an earlier id"
 server:
   herdr: false
   files:

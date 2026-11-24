@@ -17,7 +17,6 @@
     "server/herdr-gui*",
     "server/roamgate*",
     "server/public/**",
-    "server/src/public-files.gen.ts",
     "contract/assets/**",
     "server/claude-mod/hooks/catalog.gen.ts",
     "web/dist/**",

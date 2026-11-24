@@ -1,7 +1,5 @@
 name: an import keeps its dates and its source, and the same source changes the item
 family: work
-ledger:
-  - "server/src/work/service.test.ts > an import keeps its dates and its source, and the same source changes the item"
 steps:
   - login: {}
   - connect: {}

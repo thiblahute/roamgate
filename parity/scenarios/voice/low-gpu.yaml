@@ -3,10 +3,6 @@ family: voice
 description: >
   The profile's state, a holder turning it on and off (low-gpu.json), and
   its refusals. Without voice.json the models it would use are none.
-ledger:
-  - "server/src/http/voice-low-gpu.test.ts > GET says its status"
-  - "server/src/http/voice-low-gpu.test.ts > POST holds it or lets it go, with the voice header only"
-  - "server/src/http/voice-low-gpu.test.ts > refuses a bad request"
 server:
   env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
 steps:

@@ -5,9 +5,6 @@ description: >
   server's clock; once its answer has been quiet for 6 s it is the job's
   answer and is kept for the voice chats that have not heard it yet.
 family: voice
-ledger:
-  - "server/src/http/voice.test.ts > starts the companion's work on a session, its words as said"
-  - "server/src/http/voice.test.ts > keeps a job's answer that came while the user was away, mentioned once, read or dropped"
 server:
   env:
     {

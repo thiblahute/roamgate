@@ -1,8 +1,5 @@
 name: "an answer Claude Code filed while the question waited stands: nothing is written"
 family: agent_chat
-ledger:
-  - "server/src/conversation/holder-child.test.ts > an answer Claude Code filed meanwhile (in a terminal)
-    stands: nothing is written"
 description: "an answer Claude Code filed while the question waited stands: nothing is written"
 server:
   env:

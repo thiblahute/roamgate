@@ -1,7 +1,5 @@
 name: generated-token login takes only page openings, sockets and API requests with a token are never failed logins
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > generated-token login takes only page openings: sockets and API requests with a token are never failed logins"
 server:
   password: null
   env: { ROAMGATE_PASSWORD: "" }

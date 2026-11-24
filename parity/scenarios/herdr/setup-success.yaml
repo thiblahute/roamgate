@@ -7,10 +7,6 @@ description: >
   250 ms on the server's clock; the "service" comes up (a fake Herdr linked
   at the default socket) and setup answers started. Asked again, and from
   the CLI, it is already running. Nothing is downloaded.
-ledger:
-  - "server/src/herdr/bootstrap.test.ts > starts an installed binary as a service without downloading"
-  - "server/src/herdr/bootstrap.test.ts > does nothing when Herdr is already running"
-  - "server/src/herdr/cli.test.ts > setup prints the outcome"
 platforms: [linux]
 server:
   herdr: false

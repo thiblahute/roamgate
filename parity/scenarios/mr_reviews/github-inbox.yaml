@@ -5,11 +5,6 @@ description: >
   the requests waiting on the user and the user's own in one GraphQL query
   each, then the own request's details by repository. Claude infers whose
   move it is on the user's own request. Nothing is written to the forge.
-ledger:
-  - "server/src/mr-reviews/hosts.test.ts > gh: every host of hosts.yml"
-  - "server/src/mr-reviews/fetchers.test.ts > GitHub: one graphql read; its data even with errors"
-  - "server/src/mr-reviews/inbox.own.test.ts > GitHub searches the open ones paged, the first page with the latest closed"
-  - "server/src/mr-reviews/inbox.own.test.ts > GitHub: reviews, open threads and conflicts"
 server:
   files:
     .config/gh/hosts.yml: "github.com:\n    user: me\n    git_protocol: https\n"

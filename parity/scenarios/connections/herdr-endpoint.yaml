@@ -6,9 +6,6 @@ description: >
   snapshot, and Herdr's semantic notifications (Finished, NeedsAttention)
   reach the notification feed as completed and blocked tasks. The health
   check answers on the same socket.
-ledger:
-  - "server/src/notifications/herdr-notification-listener.test.ts > maps agent transitions onto completed/blocked preferences"
-  - "server/src/notifications/herdr-notification-listener.test.ts > forwards notifications and reconnects with capped backoff"
 server:
   herdr:
     endpoint: true

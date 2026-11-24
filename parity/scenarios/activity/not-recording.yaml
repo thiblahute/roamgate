@@ -1,8 +1,5 @@
 name: with the activity log off, the timeline and a presence say so, and the CLI finds no log
 family: activity
-ledger:
-  - "server/src/activity/timeline-rpc.test.ts > not recording: says so"
-  - "server/src/cli/activity.test.ts > errors: usage, a missing log, JSON errors for JSON readers"
 steps:
   - login: {}
   - connect: {}

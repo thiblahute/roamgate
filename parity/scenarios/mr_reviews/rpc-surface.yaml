@@ -7,8 +7,6 @@ description: >
   proposed yet refused, the checkout, clone, open and home refusals before
   a clone is known, and the reviews agent: a turn through fake-claude
   (ROAMGATE_REVIEWS_AGENT_COMMAND), unqueue, stop and reset.
-ledger:
-  - "server/src/mr-reviews/panel.test.ts > the panel's search and filter: kept in settings.json, pushed to every page, read back with the inbox, no new version"
 server:
   env:
     ROAMGATE_REVIEWS_AGENT_COMMAND: "${BIN}/claude"

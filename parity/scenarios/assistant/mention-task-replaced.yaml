@@ -1,7 +1,5 @@
 name: a confirmed task binds the mentioned session after a reconnect and refuses a replaced session
 family: assistant
-ledger:
-  - "server/src/assistant/mention-task.integration.test.ts > confirmed task binds the selected session after reconnect and blocks replacement notifications (replaced: %s)"
 server:
   herdr: false
   start: false

@@ -1,9 +1,5 @@
 name: an agent opens a review of its branch and works its threads through the agent socket
 family: review
-ledger:
-  - "server/src/review/agent-server.test.ts > the agent loop: open, discuss, watch, reply, resolve"
-  - "server/src/review/agent-server.test.ts > unknown commands and bad JSON are refused"
-  - "server/src/review/agent-server.test.ts > installs the client and links the well-known socket"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]

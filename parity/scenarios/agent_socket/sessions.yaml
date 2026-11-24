@@ -1,8 +1,5 @@
 name: agent sessions list each other and send messages through the agent socket
 family: agent
-ledger:
-  - "server/src/review/agent-messages.test.ts > sessions lists every connection's agents, the caller's own marked"
-  - "server/src/review/agent-messages.test.ts > an unknown address is refused, and nothing is sent"
 server:
   herdr:
     workspaces:

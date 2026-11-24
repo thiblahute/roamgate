@@ -1,9 +1,5 @@
 name: an agent's permission and question hooks wait for the browser's answer
 family: review
-ledger:
-  - "server/src/review/prompts.test.ts > a prompt waits for the browser's answer"
-  - "server/src/review/prompts.test.ts > Claude's questions are answered with the chosen options"
-  - "server/src/review/prompts.test.ts > In the terminal hands a prompt back unanswered"
 description: >
   With a browser open, a permission prompt and a question wait on the
   agent socket until answered through review.prompts and

@@ -1,7 +1,5 @@
 name: a hung provider is killed at its timeout, on the bridge's clock
 family: time_report
-ledger:
-  - "server/src/time-report/provider.test.ts > a hung provider is killed at the timeout"
 server:
   files:
     .config/roamgate/settings.json:

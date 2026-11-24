@@ -2,9 +2,6 @@ name:
   with CLAUDE_CONFIG_DIR, the holder reads and files the answer in that directory's config, the home's
   left alone
 family: agent_chat
-ledger:
-  - server/src/conversation/holder-child.test.ts > a host's own config directory ($CLAUDE_CONFIG_DIR) is
-    the one read and written
 description:
   with CLAUDE_CONFIG_DIR, the holder reads and files the answer in that directory's config,
   the home's left alone

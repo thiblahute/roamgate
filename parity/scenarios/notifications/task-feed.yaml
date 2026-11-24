@@ -1,10 +1,5 @@
 name: an agent finishing or blocking notifies the feed, numbered across a restart and replayed from since
 family: notifications
-ledger:
-  - "server/src/notifications/notification-feed.test.ts > hello replays what came after a numeric `since`, clears included"
-  - "server/src/notifications/notification-feed.test.ts > the feed and its ids live through a restart"
-  - "server/src/notifications/notification-feed.test.ts > status lists the open sockets: kind, address, since and last seen"
-  - "server/src/notifications/task-events.test.ts > initial snapshots seed, transitions notify once, and stale snapshots cannot replay events"
 description: >
   Roamgate's own status tracker (ROAMGATE_NOTIFICATION_SOURCE=status) turns
   Herdr's pane.agent_status_changed events (working, then idle or blocked)

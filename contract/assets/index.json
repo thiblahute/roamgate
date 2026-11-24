@@ -2,8 +2,7 @@
   "data/voice-models.json": {
     "kind": "data, read as JSON",
     "used_by": [
-      "server/src/voice/voice-model-files.ts",
-      "server/src/voice/voice-models.ts"
+      "crates/roamgate-voice-server/src/models.rs"
     ]
   },
   "html/login.html": {
@@ -15,14 +14,14 @@
       "token_command"
     ],
     "used_by": [
-      "server/src/http/login-page.ts"
+      "crates/roamgate-http/src/login_page.rs"
     ]
   },
   "js/rendered-helper.js": {
     "kind": "page script, built from web/src (bun run build:assets)",
     "tags": [],
     "used_by": [
-      "server/src/http/rendered-helper.ts"
+      "crates/roamgate-http/src/rendered_pages/html.rs"
     ]
   },
   "ps1/herdr-bridge.ps1": {
@@ -32,7 +31,7 @@
       "path"
     ],
     "used_by": [
-      "server/src/bridge/ssh-windows.ts"
+      "crates/roamgate-exec/src/ssh/windows.rs"
     ]
   },
   "ps1/herdr-probe.ps1": {
@@ -43,7 +42,7 @@
       "session"
     ],
     "used_by": [
-      "server/src/bridge/ssh-windows.ts"
+      "crates/roamgate-exec/src/ssh/windows.rs"
     ]
   },
   "ps1/list-directory.ps1": {
@@ -54,7 +53,7 @@
       "suggestions"
     ],
     "used_by": [
-      "server/src/workspace/path.ts"
+      "crates/roamgate-workspace/src/path.rs"
     ]
   },
   "ps1/task-status.ps1": {
@@ -65,7 +64,7 @@
       "task"
     ],
     "used_by": [
-      "server/src/config/service-manager.ts"
+      "crates/roamgate-exec/src/service.rs"
     ]
   },
   "ps1/task-wait-stopped.ps1": {
@@ -74,49 +73,50 @@
       "task"
     ],
     "used_by": [
-      "server/src/config/service-manager.ts"
+      "crates/roamgate-exec/src/service.rs"
     ]
   },
   "python/claude-start-hook-install.py": {
     "kind": "Python 3 run on a host (the clients are installed there as files)",
     "tags": [],
     "used_by": [
-      "server/src/conversation/claude-start-hook.ts"
+      "crates/roamgate-conversation/src/claude_start_hook.rs"
     ]
   },
   "python/codex-session-find.py": {
     "kind": "Python 3 run on a host (the clients are installed there as files)",
     "tags": [],
     "used_by": [
-      "server/src/agent/session-file-access.ts"
+      "crates/roamgate-agents/src/files.rs"
     ]
   },
   "python/exclusive-rename.py": {
     "kind": "Python 3 run on a host (the clients are installed there as files)",
     "tags": [],
     "used_by": [
-      "server/src/workspace/atomic-file-move.ts"
+      "crates/roamgate-workspace/src/atomic_move.rs"
     ]
   },
   "python/herdr-relay.py": {
     "kind": "Python 3 run on a host (the clients are installed there as files)",
     "tags": [],
     "used_by": [
-      "server/src/bridge/herdr-relay.ts"
+      "crates/roamgate-exec/src/ssh/herdr_relay.rs"
     ]
   },
   "python/roamgate-hold.py": {
     "kind": "Python 3 run on a host (the clients are installed there as files)",
     "tags": [],
     "used_by": [
-      "server/src/conversation/holder-script.ts"
+      "crates/roamgate-conversation/src/holder_script.rs",
+      "crates/roamgate-review/src/agent_socket/texts.rs"
     ]
   },
   "python/roamgate-review.py": {
     "kind": "Python 3 run on a host (the clients are installed there as files)",
     "tags": [],
     "used_by": [
-      "server/src/review/agent-client.ts"
+      "crates/roamgate-review/src/agent_socket/texts.rs"
     ]
   },
   "sh/batch-block.sh": {
@@ -126,7 +126,7 @@
       "script"
     ],
     "used_by": [
-      "server/src/workspace/git-diff.ts"
+      "crates/roamgate-git/src/diff.rs"
     ]
   },
   "sh/batch.sh": {
@@ -136,7 +136,7 @@
       "marker"
     ],
     "used_by": [
-      "server/src/workspace/git-diff.ts"
+      "crates/roamgate-git/src/diff.rs"
     ]
   },
   "sh/capped-diff.sh": {
@@ -149,14 +149,14 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/git-diff.ts"
+      "crates/roamgate-git/src/diff.rs"
     ]
   },
   "sh/claude-successor.sh": {
     "kind": "POSIX shell run on a host, a template when it has tags",
     "tags": [],
     "used_by": [
-      "server/src/agent/session-file-access.ts"
+      "crates/roamgate-agents/src/files.rs"
     ]
   },
   "sh/combined-diff.sh": {
@@ -174,7 +174,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/git-combined.ts"
+      "crates/roamgate-git/src/combined.rs"
     ]
   },
   "sh/compare-refs.sh": {
@@ -186,7 +186,7 @@
       "tags_listed"
     ],
     "used_by": [
-      "server/src/workspace/diff-base.ts"
+      "crates/roamgate-git/src/compare.rs"
     ]
   },
   "sh/delete-file.sh": {
@@ -196,7 +196,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/remote-files.ts"
+      "crates/roamgate-workspace/src/remote_files.rs"
     ]
   },
   "sh/delete-untracked.sh": {
@@ -207,7 +207,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/git-actions.ts"
+      "crates/roamgate-git/src/actions.rs"
     ]
   },
   "sh/diff-base-refs.sh": {
@@ -216,7 +216,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/diff-base.ts"
+      "crates/roamgate-git/src/diff_base.rs"
     ]
   },
   "sh/diff-base-relation.sh": {
@@ -227,7 +227,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/diff-base.ts"
+      "crates/roamgate-git/src/diff_base.rs"
     ]
   },
   "sh/download-file.sh": {
@@ -251,7 +251,7 @@
       "stream_size"
     ],
     "used_by": [
-      "server/src/workspace/remote-files.ts"
+      "crates/roamgate-workspace/src/remote_files.rs"
     ]
   },
   "sh/find-session.sh": {
@@ -262,7 +262,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/agent/session-file-access.ts"
+      "crates/roamgate-agents/src/files.rs"
     ]
   },
   "sh/git-status-block.sh": {
@@ -273,7 +273,7 @@
       "path"
     ],
     "used_by": [
-      "server/src/workspace/status.ts"
+      "crates/roamgate-workspace/src/status.rs"
     ]
   },
   "sh/html-preview-files.sh": {
@@ -285,7 +285,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/html-preview-files.ts"
+      "crates/roamgate-workspace/src/html_preview_files.rs"
     ]
   },
   "sh/last-step-refs.sh": {
@@ -304,7 +304,7 @@
       "skipped_ref"
     ],
     "used_by": [
-      "server/src/workspace/git-diff.ts"
+      "crates/roamgate-git/src/diff.rs"
     ]
   },
   "sh/list-directory.sh": {
@@ -315,7 +315,7 @@
       "suggestions"
     ],
     "used_by": [
-      "server/src/workspace/path.ts"
+      "crates/roamgate-workspace/src/path.rs"
     ]
   },
   "sh/list-files.sh": {
@@ -327,7 +327,7 @@
       "show_hidden"
     ],
     "used_by": [
-      "server/src/workspace/remote-files.ts"
+      "crates/roamgate-workspace/src/remote_files.rs"
     ]
   },
   "sh/mutate-file.sh": {
@@ -341,14 +341,14 @@
       "source_directory"
     ],
     "used_by": [
-      "server/src/workspace/remote-files.ts"
+      "crates/roamgate-workspace/src/remote_files.rs"
     ]
   },
   "sh/process-cwds.sh": {
     "kind": "POSIX shell run on a host, a template when it has tags",
     "tags": [],
     "used_by": [
-      "server/src/worktree/remove.ts"
+      "crates/roamgate-workspace/src/worktree/remove.rs"
     ]
   },
   "sh/read-file.sh": {
@@ -362,7 +362,7 @@
       "text_limit"
     ],
     "used_by": [
-      "server/src/workspace/remote-files.ts"
+      "crates/roamgate-workspace/src/remote_files.rs"
     ]
   },
   "sh/read-session-tail.sh": {
@@ -375,7 +375,7 @@
       "tail_from"
     ],
     "used_by": [
-      "server/src/agent/session-file-access.ts"
+      "crates/roamgate-agents/src/files.rs"
     ]
   },
   "sh/repo-info-block.sh": {
@@ -386,7 +386,7 @@
       "path"
     ],
     "used_by": [
-      "server/src/activity/repo-info.ts"
+      "crates/roamgate-activity/src/repo_info.rs"
     ]
   },
   "sh/resolve-files.sh": {
@@ -396,14 +396,14 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/remote-files.ts"
+      "crates/roamgate-workspace/src/remote_files.rs"
     ]
   },
   "sh/shell-job.sh": {
     "kind": "POSIX shell run on a host, a template when it has tags",
     "tags": [],
     "used_by": [
-      "server/src/conversation/shell.ts"
+      "crates/roamgate-conversation/src/shell.rs"
     ]
   },
   "sh/site-root.sh": {
@@ -414,14 +414,14 @@
       "rel"
     ],
     "used_by": [
-      "server/src/http/rendered-pages.ts"
+      "crates/roamgate-http/src/rendered_pages/files.rs"
     ]
   },
   "sh/stat-batch.sh": {
     "kind": "POSIX shell run on a host, a template when it has tags",
     "tags": [],
     "used_by": [
-      "server/src/agent/session-file-access.ts"
+      "crates/roamgate-agents/src/files.rs"
     ]
   },
   "sh/stat-file.sh": {
@@ -431,14 +431,14 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/remote-files.ts"
+      "crates/roamgate-workspace/src/remote_files.rs"
     ]
   },
   "sh/stat-loop.sh": {
     "kind": "POSIX shell run on a host, a template when it has tags",
     "tags": [],
     "used_by": [
-      "server/src/agent/history-watch.ts"
+      "crates/roamgate/src/families/standalone/connections.rs"
     ]
   },
   "sh/step-snapshot.sh": {
@@ -447,7 +447,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/git-snapshot.ts"
+      "crates/roamgate-git/src/snapshot.rs"
     ]
   },
   "sh/untracked-numstat.sh": {
@@ -457,7 +457,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/git-diff.ts"
+      "crates/roamgate-git/src/diff.rs"
     ]
   },
   "sh/untracked-stats.sh": {
@@ -467,7 +467,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/git-actions.ts"
+      "crates/roamgate-git/src/actions.rs"
     ]
   },
   "sh/update-install.sh": {
@@ -485,7 +485,7 @@
       "version_file"
     ],
     "used_by": [
-      "server/src/http/update.ts"
+      "crates/roamgate-cli/src/update.rs"
     ]
   },
   "sh/upload-cleanup.sh": {
@@ -494,7 +494,7 @@
       "retention_minutes"
     ],
     "used_by": [
-      "server/src/http/terminal-upload.ts"
+      "crates/roamgate-http/src/terminal_upload.rs"
     ]
   },
   "sh/upload-file.sh": {
@@ -505,7 +505,7 @@
       "root"
     ],
     "used_by": [
-      "server/src/workspace/remote-files.ts"
+      "crates/roamgate-workspace/src/remote_files.rs"
     ]
   },
   "sh/upload-write.sh": {
@@ -515,7 +515,7 @@
       "name"
     ],
     "used_by": [
-      "server/src/http/terminal-upload.ts"
+      "crates/roamgate-http/src/terminal_upload.rs"
     ]
   },
   "sh/worktree-state.sh": {
@@ -524,14 +524,14 @@
       "path"
     ],
     "used_by": [
-      "server/src/worktree/remove.ts"
+      "crates/roamgate-workspace/src/worktree/remove.rs"
     ]
   },
   "skill/SKILL.md": {
     "kind": "installed on hosts beside roamgate-review",
     "tags": [],
     "used_by": [
-      "server/src/review/agent-skill.ts"
+      "crates/roamgate-review/src/agent_socket/texts.rs"
     ]
   }
 }

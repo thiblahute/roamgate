@@ -1,9 +1,5 @@
 name: the activity log records Herdr's focus and a browser's presence, and reads back as a timeline and through the CLI
 family: activity
-ledger:
-  - "server/src/activity/timeline-rpc.test.ts > today by default, from the day start setting"
-  - "server/src/cli/activity.test.ts > events page in id order and resume after an id"
-  - "server/src/cli/activity.test.ts > status reports the recorder and the connections"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work, focused: true }]

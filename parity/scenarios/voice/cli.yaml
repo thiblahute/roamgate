@@ -1,0 +1,39 @@
+name: roamgate voice and roamgate setup voice run the voice family's code, and setup's other words do not
+family: voice
+description: >
+  `roamgate voice ...` and `roamgate setup voice ...` run the voice
+  family's code in the binary, each noted in the served log; `roamgate
+  setup` with another word, or none, is refused by the CLI's own router.
+server:
+  start: false
+  herdr: false
+steps:
+  - cli: [setup, voice, --tier, bogus]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect:
+      {
+        exit: 2,
+        stderr_contains:
+          [
+            "roamgate setup: --tier is heavy or light",
+            "Run `roamgate setup --help` for usage.",
+          ],
+      }
+  - cli: [setup, voice, remove-unused]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect:
+      { exit: 0, stdout_contains: Nothing unused in the models directory. }
+  - cli: [voice, profile, low-gpu, status, --json]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect: { exit: 0, stdout_json: { active: false, holders: [] } }
+  # Setup's other words, and none, are the CLI router's.
+  - cli: [setup, herdr]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect: { exit: 2, stderr_contains: "roamgate setup: unknown setup: herdr" }
+  - cli: [setup]
+    env: { ROAMGATE_CORE_SERVED_LOG: "${ROOT}/core-served.log" }
+    expect:
+      { exit: 2, stderr_contains: "roamgate setup: what to set up: voice" }
+  - assert_file:
+      path: "${ROOT}/core-served.log"
+      text: "voice cli setup voice\nvoice cli setup voice\nvoice cli voice\n"

@@ -1,7 +1,5 @@
 name: a scheduled question starts without a browser and resumes its own run after SIGKILL
 family: assistant
-ledger:
-  - "server/src/assistant-recovery.integration.test.ts > a scheduled question starts without a browser and resumes its independent run after SIGKILL"
 server:
   herdr: false
   start: false

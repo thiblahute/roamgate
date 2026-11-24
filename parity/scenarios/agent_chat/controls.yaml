@@ -1,8 +1,5 @@
 name: "the chat's controls reach the running claude: models, MCP servers, background work"
 family: agent_chat
-ledger:
-  - "server/src/conversation/service.test.ts > lists the session's servers and signs in to one over the RPC"
-  - "server/src/conversation/service.test.ts > a refusal is an answer, not an error"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

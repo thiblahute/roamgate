@@ -8,7 +8,6 @@ description: >
   detaches it. claude_mod.status, install and uninstall run Claude Code's
   plugin commands (fake-claude).
 ledger:
-  - "server/src/review/agent-server.claude-mod.test.ts > a message reaches the mod over the socket, once, and leaves the inbox"
   - "server/src/agent/claude-mod-client.test.ts > messages are submitted one at a time, in order, each once"
   - "server/src/agent/claude-mod-client.test.ts > events and the goodbye carry the session"
 server:

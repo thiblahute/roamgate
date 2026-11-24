@@ -1,7 +1,5 @@
 name: instance naming is authenticated and persistent
 family: auth
-ledger:
-  - "server/src/http/auth-process.test.ts > instance naming is authenticated, persistent, and isolated from other instances"
 server:
   env: { ROAMGATE_SETTINGS_PATH: "${ROOT}/settings.json" }
 steps:

@@ -1,7 +1,5 @@
 name: bridge-global Ranger routes keep their global replies and pushes without a selected connection
 family: assistant
-ledger:
-  - "server/src/assistant.integration.test.ts > authenticated bridge-global assistant routes preserve global replies and pushes without a selected connection"
 server:
   herdr: false
   herdrs:

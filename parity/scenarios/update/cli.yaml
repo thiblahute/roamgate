@@ -1,8 +1,5 @@
 name: roamgate update --check reports the mirror's release, and rollback refuses without a previous executable
 family: update
-ledger:
-  - "server/src/cli/update.test.ts > --check compares against the latest manifest"
-  - "server/src/cli/update.test.ts > reports installer failures and refuses source checkouts"
 platforms: [linux, macos]
 server:
   start: false

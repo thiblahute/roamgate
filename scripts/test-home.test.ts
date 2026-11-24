@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { homedir, userInfo } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
-import { guiSettingsPath } from "../server/src/config/gui-settings";
 import { dataRoot } from "../server/src/config/data-paths";
 
 const userHome = userInfo().homedir;
@@ -23,7 +22,7 @@ test("a store whose variable a test restored falls back into that home, not the 
   delete process.env.ROAMGATE_SETTINGS_PATH;
   delete process.env.HERDR_GUI_SETTINGS_PATH;
   try {
-    const path = guiSettingsPath();
+    const path = join(dataRoot(), "settings.json");
     expect(path).toBe(join(homedir(), ".config", "roamgate", "settings.json"));
     expect(inside(path, userHome)).toBe(false);
   } finally {

@@ -7,15 +7,6 @@ description: >
   tools), one that starts a tool job (companion_mcp), the NDJSON stream of
   a route, an event told to it, the companion reset, and the debug-only
   timing and trace lines.
-ledger:
-  - "server/src/http/voice.test.ts > a general question is answered by the front itself, nothing started"
-  - "server/src/http/voice.test.ts > fresh information starts a search at once, said in one line"
-  - "server/src/http/voice.test.ts > a search is followed to its result, or cancelled"
-  - "server/src/http/voice.test.ts > streamed, the front's words come first, then the route"
-  - "server/src/http/voice.test.ts > gives a page of an older build only routes it knows"
-  - "server/src/http/voice.test.ts > tells an event, and stays quiet without a front"
-  - "server/src/http/voice.test.ts > the button resets, only with the voice header"
-  - "server/src/http/voice.test.ts > the status tells the epoch, for a page to forget its call"
 server:
   env:
     {
