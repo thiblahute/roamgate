@@ -27,6 +27,8 @@
 //!   `voice.session_cookie`, `notifications.*`.
 //! - [`feed`]: the notification feed's sockets (`/api/notifications/ws`),
 //!   with `notifications.feed` and `.clients`.
+//! - [`forwards`]: the port forwards' registry and `forward.*`.
+//! - [`uploads`]: a connection's uploads and their sweeper.
 //! - [`browser`]: the browser RPCs Bun answered with its own code
 //!   (`agent.list`, `workspace.*`, Herdr's pass-through with its overlays,
 //!   `connections.agent_sessions`, `.agent_tasks`).
@@ -57,6 +59,7 @@ mod connections;
 mod conversation;
 pub(crate) mod feed;
 mod forge;
+pub(crate) mod forwards;
 mod mr_reviews;
 mod others;
 mod profiles;
@@ -84,6 +87,8 @@ pub(crate) struct FrontConfig {
     pub auth_required: bool,
     /// The front serves HTTPS: the scheme of the URLs it was reached on.
     pub tls: bool,
+    /// The port the front listens on (never exposed by a remote forward).
+    pub port: u16,
 }
 
 /// A ready runtime, leased for one request (Bun's `readyRuntimeLease`).

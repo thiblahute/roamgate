@@ -69,7 +69,7 @@ const SETTLE_WAIT: Duration = Duration::from_secs(10);
 /// The methods the Bun server answered with its own code that no family
 /// declares and the standalone core does not serve yet (S25 step 1,
 /// item 2): exact names, or prefixes ending in a dot.
-const UNPORTED: &[&str] = &["forward.", "terminal."];
+const UNPORTED: &[&str] = &["terminal."];
 
 fn unported(method: &str) -> bool {
     UNPORTED.iter().any(|entry| {
@@ -285,6 +285,11 @@ impl Inner {
             task_notification_source: text("task_notification_source").unwrap_or_default(),
             auth_required: flag("auth_required"),
             tls: flag("tls"),
+            port: params
+                .get("port")
+                .and_then(Value::as_u64)
+                .and_then(|port| u16::try_from(port).ok())
+                .unwrap_or(0),
         };
         let explicit_legacy_override = flag("has_explicit_socket_path")
             || flag("has_explicit_client_socket_path")
@@ -428,13 +433,11 @@ impl Inner {
             herdr_task_notifications: config.task_notification_source == "herdr",
         };
         clients.send(open.socket_id, hello.line(), "hello", None);
-        // The forwards registry is the composition root's: none yet.
-        clients.send(
-            open.socket_id,
-            json!({"forwards": []}).to_string(),
-            "forwards",
-            None,
-        );
+        let forwards = match self.layer.get() {
+            Some(layer) => super::standalone::forwards::hello(layer),
+            None => json!({"forwards": []}),
+        };
+        clients.send(open.socket_id, forwards.to_string(), "forwards", None);
         json!({"accepted": true, "transport": "ws"})
     }
 
@@ -1036,11 +1039,10 @@ mod tests {
 
     #[test]
     fn the_methods_bun_answered_itself_are_named() {
-        for method in ["terminal.attach", "forward.open"] {
-            assert!(unported(method), "{method}");
-        }
+        assert!(unported("terminal.attach"));
         for method in [
             "agent.list",
+            "forward.open",
             "settings.profiles.get",
             "pane.list",
             "tab.list",

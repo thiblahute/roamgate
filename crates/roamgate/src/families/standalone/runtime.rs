@@ -76,6 +76,8 @@ struct Generation {
     lists: HashMap<i64, i64>,
     /// Its uploads, swept while it runs.
     uploads: Arc<super::uploads::Uploads>,
+    /// Its `forward.*` handler.
+    forwards: roamgate_http::forward_rpc::ForwardRpc,
 }
 
 impl Runtimes {
@@ -91,6 +93,20 @@ impl Runtimes {
             .get(id)
             .filter(|each| each.generation == generation)
             .map(|each| each.uploads.clone())
+    }
+
+    /// The `forward.*` handler of `id`'s generation `generation`.
+    pub(crate) fn forwards(
+        &self,
+        id: &str,
+        generation: u64,
+    ) -> Option<roamgate_http::forward_rpc::ForwardRpc> {
+        self.current
+            .lock()
+            .unwrap()
+            .get(id)
+            .filter(|each| each.generation == generation)
+            .map(|each| each.forwards.clone())
     }
 }
 
@@ -177,7 +193,7 @@ async fn workspace_part(
 /// `host.runtime_start`: the generation's layer. The core's conversation
 /// mode reads again what the holders run; the workspace family takes the
 /// runtime (startBackground's `workspaceLink.ready()`).
-fn runtime_start(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Value, RpcError> {
+fn runtime_start(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result<Value, RpcError> {
     let (id, generation) = ids(args)?;
     let config = args.get("config").filter(|config| config.is_object());
     if args
@@ -211,6 +227,15 @@ fn runtime_start(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Valu
         start,
         ops,
     ));
+    let forwards = super::forwards::rpc(
+        layer,
+        &id,
+        generation,
+        config
+            .get("sshHost")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    );
     let uploads = Arc::new(super::uploads::start(
         cx,
         &id,
@@ -227,6 +252,7 @@ fn runtime_start(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Valu
             workspace: sender,
             lists: HashMap::new(),
             uploads,
+            forwards,
         },
     );
     if let Some(previous) = previous {
@@ -238,7 +264,11 @@ fn runtime_start(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Valu
 
 /// `host.runtime_stop`: the generation's layer goes, the core's workspace
 /// part of it with it (5 s at most).
-async fn runtime_stop(layer: &Layer, _cx: &FamilyContext, args: &Value) -> Result<Value, RpcError> {
+async fn runtime_stop(
+    layer: &Arc<Layer>,
+    _cx: &FamilyContext,
+    args: &Value,
+) -> Result<Value, RpcError> {
     let (id, generation) = ids(args)?;
     let gone = {
         let mut current = layer.runtimes.current.lock().unwrap();
@@ -247,6 +277,11 @@ async fn runtime_stop(layer: &Layer, _cx: &FamilyContext, args: &Value) -> Resul
             _ => None,
         }
     };
+    if gone.is_some() {
+        // Its forwards are marked lost, so a reconnect does not make them
+        // vanish unexplained.
+        super::forwards::lose_connection(layer, &id);
+    }
     if let Some(gone) = gone {
         let (done, stopped) = oneshot::channel();
         if gone.workspace.send(WorkspaceOp::Stop(done)).is_ok() {

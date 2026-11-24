@@ -225,7 +225,7 @@ Bun core runs never takes it from the front's environment).
   `client_socket_path`, `ssh_host`, `session`, `has_explicit_socket_path`,
   `has_explicit_client_socket_path`, `task_notification_source`,
   `auth_required`, `tls`: whether the front serves HTTPS, the scheme of the
-  URLs it was reached on, `generations`); the core starts its connections from it
+  URLs it was reached on, `port`: the port it listens on, `generations`); the core starts its connections from it
   (the host family's `internal.host.start`) and answers at once. At its
   shutdown the front calls `internal.front.stop` (the connections stop,
   at most 10 s) before `bye`.
@@ -246,7 +246,9 @@ Bun core runs never takes it from the front's environment).
   own code are answered with what Bun added over Herdr (overlays, agent
   activity and seen marks, worktree parents, git status, integration
   versions, `connections.agent_sessions` as changes from the version the
-  socket holds, the agent profiles' settings). A method Bun answered with
+  socket holds, the agent profiles' settings, the forge chips and
+  sessions, the port forwards with their registry's push and the hello's
+  list). A method Bun answered with
   its own code that the core does not serve yet (the terminal bridge's
   `terminal.*`, creation from a browser terminal) fails with code
   `standalone_unported`.

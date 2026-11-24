@@ -167,6 +167,19 @@ pub(crate) async fn connection(
             Err(error) => Reply::error(error, "forge-error"),
         };
     }
+    if method.starts_with("forward.") {
+        let Some(forwards) = layer
+            .runtimes
+            .forwards(&lease.connection_id, lease.generation)
+        else {
+            return Reply::error(
+                RpcError::new(CONNECTION_CHANGED_DURING_REQUEST),
+                format!("{method}-error"),
+            );
+        };
+        return super::forwards::call(&forwards, &method, &request.params, &request.is_current)
+            .await;
+    }
     if method.starts_with("settings.") {
         return settings(cx, &method, &request.params, &request.is_current).await;
     }
