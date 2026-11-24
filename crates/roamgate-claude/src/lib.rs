@@ -9,6 +9,7 @@
 //! and its plugin, written as a marketplace on each host and installed
 //! through Claude Code's own plugin command ([`plugin`]).
 
+pub mod background;
 pub mod catalog;
 pub mod conversation;
 pub mod driver;

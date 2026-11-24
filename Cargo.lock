@@ -7567,6 +7567,7 @@ dependencies = [
  "roamgate-agents",
  "roamgate-base",
  "roamgate-claude",
+ "roamgate-conversation",
  "roamgate-protocol",
  "roamgate-review",
  "roamgate-work",

@@ -1297,7 +1297,7 @@ pub fn with_answer_files(launch: Option<&MemoryLaunch>, dir: &Path) -> MemoryLau
             Some(launch) if !launch.tools.is_empty() => format!("{},Read", launch.tools),
             _ => "Read".into(),
         },
-        cwd: Some(dir.to_owned()),
+        cwd: Some(dir.to_string_lossy().into_owned()),
     }
 }
 

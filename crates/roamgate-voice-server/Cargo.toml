@@ -21,6 +21,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-claude = { path = "../roamgate-claude" }
+roamgate-conversation = { path = "../roamgate-conversation" }
 roamgate-protocol = { path = "../roamgate-protocol" }
 roamgate-review = { path = "../roamgate-review" }
 roamgate-work = { path = "../roamgate-work" }

@@ -4,19 +4,22 @@
 //! each request costs only the model's answer.
 //!
 //! A session is a [`ClaudeProcess`]: lines in, lines out, a kill. The
-//! production one is [`spawn_claude`] (a local process); tests give fakes.
-//!
-//! TODO(S22, after S23's ClaudeProcess lands on rust/main): move
-//! `spawn_claude`, `spawn_process` and the argv and environment helpers to
-//! `roamgate-claude`, and build sessions from its process through
-//! [`ClaudeProcess::from_parts`]: one Claude runner in the workspace.
+//! production one is [`spawn_claude`], roamgate-claude's background session
+//! on its Claude Code process (one Claude runner in the workspace, with
+//! the companion's own arguments and environment); tests give fakes
+//! through [`ClaudeProcess::from_parts`].
 
 use std::future::Future;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+pub use roamgate_claude::background::{
+    BackgroundOptions as SpawnOptions, LineSession as ClaudeProcess, background_claude_env,
+    spawn_background as spawn_claude, spawn_lines as spawn_process,
+};
+pub use roamgate_claude::driver::ClaudeCommand;
+pub use roamgate_conversation::driver::BackgroundMemoryLaunch as MemoryLaunch;
+use roamgate_conversation::driver::CompanionMemoryDriver;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::js;
@@ -60,211 +63,18 @@ pub fn user_message_line(prompt: &str, images: &[PromptImage]) -> String {
     )
 }
 
-/// The environment of a background Claude Code session: without the Herdr
-/// pane variables of a bridge started from a pane, whose hooks would
-/// otherwise re-point that pane's agent session at this one, nor Claude
-/// Code's own marker of running inside it.
-pub fn background_claude_env(
-    env: impl IntoIterator<Item = (String, String)>,
-) -> Vec<(String, String)> {
-    env.into_iter()
-        .filter(|(name, _)| !name.starts_with("HERDR_") && name != "CLAUDECODE")
-        .collect()
-}
-
-/// The Claude Code command a helper runs (`AgentCommand` of
-/// profiles/profiles.ts, as `helperCommand` resolves it): a program, with
-/// the variables its profile sets and unsets.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaudeCommand {
-    pub program: String,
-    pub env: Vec<(String, String)>,
-    pub unset: Vec<String>,
-    /// A profile's command rather than a bare program (`commandKey`
-    /// hashes those).
-    pub profile: bool,
-}
-
-impl ClaudeCommand {
-    /// A bare program (voice.json `claude_command`, or plain `claude`).
-    pub fn program(program: impl Into<String>) -> Self {
-        Self {
-            program: program.into(),
-            env: Vec::new(),
-            unset: Vec::new(),
-            profile: false,
-        }
-    }
-
-    /// Tells two commands apart (`commandKey`): a warm session restarts
-    /// when it changes.
-    pub fn key(&self) -> String {
-        if !self.profile {
-            return self.program.clone();
-        }
-        let env: serde_json::Map<String, Value> = self
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), Value::String(v.clone())))
-            .collect();
-        let text = js::stringify(&json!([self.program, env, self.unset]));
-        hex::encode(Sha256::digest(text.as_bytes()))[..16].to_owned()
-    }
-
-    /// `commandEnv`: `base` without what it unsets, with what it sets.
-    pub fn env_over(&self, base: Vec<(String, String)>) -> Vec<(String, String)> {
-        let mut env: Vec<(String, String)> = base
-            .into_iter()
-            .filter(|(name, _)| !self.unset.contains(name))
-            .collect();
-        for (name, value) in &self.env {
-            env.retain(|(n, _)| n != name);
-            env.push((name.clone(), value.clone()));
-        }
-        env
-    }
-}
-
-impl Default for ClaudeCommand {
-    fn default() -> Self {
-        Self::program("claude")
-    }
-}
-
-/// How a headless background session is started around the companion's
-/// memory directory (`BackgroundMemoryLaunch` of conversation/drivers).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct MemoryLaunch {
-    /// What to add to its launch.
-    pub args: Vec<String>,
-    /// Its tools: "" for none.
-    pub tools: String,
-    /// Instead of the system's temporary directory.
-    pub cwd: Option<PathBuf>,
-}
-
-/// How Claude Code reaches the companion's memory directory
-/// (`claudeMemoryDriver` of conversation/drivers/claude-memory.ts): it
-/// reads the directory by itself once told where it is.
-fn memory_settings(dir: &str, extra: Option<Value>) -> String {
-    let mut settings = serde_json::Map::new();
-    settings.insert("autoMemoryDirectory".into(), Value::String(dir.to_owned()));
-    settings.insert("disableAllHooks".into(), Value::Bool(true));
-    if let Some(Value::Object(extra)) = extra {
-        settings.extend(extra);
-    }
-    js::stringify(&Value::Object(settings))
-}
-
-/// The front's launch: it loads the directory's index by itself.
+/// The front's launch: it loads the directory's index by itself
+/// (`claudeMemoryDriver.reader`).
 pub fn claude_memory_reader(dir: &str) -> MemoryLaunch {
-    MemoryLaunch {
-        args: vec![
-            "--setting-sources".into(),
-            String::new(),
-            "--settings".into(),
-            memory_settings(dir, None),
-        ],
-        tools: String::new(),
-        cwd: None,
-    }
+    roamgate_claude::conversation::memory::ClaudeMemoryDriver
+        .reader(dir)
+        .unwrap_or_default()
 }
 
-/// A session with the file tools limited to `dir`, and nothing else.
+/// A session with the file tools limited to `dir`, and nothing else
+/// (`claudeMemoryDriver.writer`).
 pub fn claude_memory_writer(dir: &str) -> MemoryLaunch {
-    MemoryLaunch {
-        args: vec![
-            "--setting-sources".into(),
-            String::new(),
-            "--permission-mode".into(),
-            "dontAsk".into(),
-            "--settings".into(),
-            memory_settings(
-                dir,
-                Some(json!({"permissions": {"allow": [
-                    format!("Read({dir}/**)"),
-                    format!("Write({dir}/**)"),
-                    format!("Edit({dir}/**)"),
-                    "Glob",
-                ]}})),
-            ),
-        ],
-        tools: "Read,Write,Edit,Glob".into(),
-        cwd: Some(PathBuf::from(dir)),
-    }
-}
-
-/// How a background session is started (`spawnClaude`'s options).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct SpawnOptions {
-    /// The answer's text as it is written, too (`--include-partial-messages`):
-    /// the front's words are said before its JSON object is over.
-    pub partial: bool,
-    /// With the companion's memory, instead of a bare model.
-    pub launch: Option<MemoryLaunch>,
-}
-
-/// `spawnClaude`'s arguments after the program.
-pub fn claude_args(model: &str, system_prompt: &str, options: &SpawnOptions) -> Vec<String> {
-    let mut args: Vec<String> = [
-        "-p",
-        "--input-format",
-        "stream-json",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-    ]
-    .map(String::from)
-    .to_vec();
-    if options.partial {
-        args.push("--include-partial-messages".into());
-    }
-    args.extend(["--model".into(), model.to_owned()]);
-    // The user waits for each answer, a short JSON object: at its default
-    // effort, Opus thinks for seconds before it.
-    args.extend(["--effort".into(), "low".into()]);
-    args.extend([
-        "--tools".into(),
-        options
-            .launch
-            .as_ref()
-            .map(|l| l.tools.clone())
-            .unwrap_or_default(),
-    ]);
-    // No hooks, plugins, MCP servers or CLAUDE.md: a bare model.
-    match &options.launch {
-        Some(launch) => args.extend(launch.args.iter().cloned()),
-        None => args.push("--safe-mode".into()),
-    }
-    args.extend([
-        "--strict-mcp-config".into(),
-        "--no-session-persistence".into(),
-        "--system-prompt".into(),
-        system_prompt.to_owned(),
-    ]);
-    args
-}
-
-/// One background session: lines to write, the lines it writes (the
-/// channel closes once it exited), and a kill.
-pub struct ClaudeProcess {
-    pub input: mpsc::UnboundedSender<String>,
-    pub lines: mpsc::UnboundedReceiver<String>,
-    pub kill: Box<dyn FnOnce() + Send>,
-}
-
-impl ClaudeProcess {
-    pub fn from_parts(
-        input: mpsc::UnboundedSender<String>,
-        lines: mpsc::UnboundedReceiver<String>,
-        kill: impl FnOnce() + Send + 'static,
-    ) -> Self {
-        Self {
-            input,
-            lines,
-            kill: Box::new(kill),
-        }
-    }
+    roamgate_claude::conversation::memory::ClaudeMemoryDriver.writer(dir)
 }
 
 /// Resolves voice.json's `claude_command` to the command a helper runs
@@ -274,80 +84,6 @@ pub type ResolveCommand = Arc<dyn Fn(Option<&str>) -> ClaudeCommand + Send + Syn
 
 /// Starts a session.
 pub type SpawnProcess = Arc<dyn Fn() -> ClaudeProcess + Send + Sync>;
-
-/// `spawnClaude`: `claude -p` in stream-json, reading what it is sent. A
-/// process that cannot start is one whose output ends at once.
-pub fn spawn_claude(
-    model: &str,
-    command: &ClaudeCommand,
-    system_prompt: &str,
-    options: &SpawnOptions,
-) -> ClaudeProcess {
-    let cwd = options
-        .launch
-        .as_ref()
-        .and_then(|l| l.cwd.clone())
-        .unwrap_or_else(std::env::temp_dir);
-    spawn_process(command, claude_args(model, system_prompt, options), cwd)
-}
-
-/// A local Claude Code process: `command` with `args`, in `cwd`, in a
-/// background session's environment; its stdin written line by line
-/// (closed once `input` is dropped), its stdout read line by line.
-pub fn spawn_process(command: &ClaudeCommand, args: Vec<String>, cwd: PathBuf) -> ClaudeProcess {
-    use std::process::Stdio;
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
-    let (input, mut to_write) = mpsc::unbounded_channel::<String>();
-    let (lines_tx, lines) = mpsc::unbounded_channel::<String>();
-    let (kill_tx, kill_rx) = oneshot::channel::<()>();
-    let mut child = tokio::process::Command::new(&command.program);
-    child
-        .args(args)
-        .current_dir(cwd)
-        .env_clear()
-        .envs(command.env_over(background_claude_env(std::env::vars())))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    if let Ok(mut child) = child.spawn() {
-        let stdin = child.stdin.take();
-        let stdout = child.stdout.take();
-        tokio::spawn(async move {
-            if let Some(mut stdin) = stdin {
-                while let Some(line) = to_write.recv().await {
-                    if stdin.write_all(line.as_bytes()).await.is_err()
-                        || stdin.flush().await.is_err()
-                    {
-                        break;
-                    }
-                }
-            }
-        });
-        tokio::spawn(async move {
-            let reader = async {
-                if let Some(stdout) = stdout {
-                    let mut stdout = BufReader::new(stdout).lines();
-                    while let Ok(Some(line)) = stdout.next_line().await {
-                        if lines_tx.send(line).is_err() {
-                            break;
-                        }
-                    }
-                }
-            };
-            tokio::select! {
-                () = reader => {}
-                _ = kill_rx => {}
-            }
-            let _ = child.start_kill();
-            let _ = child.wait().await;
-        });
-    }
-    ClaudeProcess::from_parts(input, lines, move || {
-        let _ = kill_tx.send(());
-    })
-}
 
 /// Hears the answer as it is written, whole so far.
 pub type OnText = Arc<dyn Fn(&str) + Send + Sync>;
@@ -693,6 +429,3 @@ pub(crate) mod fake {
         })
     }
 }
-
-#[cfg(test)]
-mod tests;

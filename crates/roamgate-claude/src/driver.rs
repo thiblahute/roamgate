@@ -75,7 +75,8 @@ pub fn claude_code_pointer(session: &str) -> Value {
 // ------------------------------------------------------------ the command
 
 /// The program and environment of a Claude Code command (`AgentCommand`
-/// of `profiles.ts`, what the driver uses of it).
+/// of `profiles.ts`, what the driver and the background sessions use of
+/// it).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeCommand {
     pub program: String,
@@ -83,6 +84,9 @@ pub struct ClaudeCommand {
     pub env: Vec<(String, String)>,
     /// Removed from the base environment.
     pub unset: Vec<String>,
+    /// A profile's command rather than a bare program (`commandKey`
+    /// hashes those).
+    pub profile: bool,
 }
 
 impl ClaudeCommand {
@@ -97,7 +101,30 @@ impl ClaudeCommand {
             program: program.into(),
             env: Vec::new(),
             unset: Vec::new(),
+            profile: false,
         }
+    }
+
+    /// Tells two commands apart (`commandKey`): a warm session restarts
+    /// when it changes.
+    pub fn key(&self) -> String {
+        use sha2::{Digest, Sha256};
+        if !self.profile {
+            return self.program.clone();
+        }
+        let env: serde_json::Map<String, Value> = self
+            .env
+            .iter()
+            .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+            .collect();
+        let text = js::stringify(&json!([self.program, env, self.unset]));
+        hex::encode(Sha256::digest(text.as_bytes()))[..16].to_owned()
+    }
+}
+
+impl Default for ClaudeCommand {
+    fn default() -> Self {
+        Self::plain()
     }
 }
 
@@ -267,6 +294,14 @@ pub fn spawn_claude_process(options: SpawnOptions) -> Result<LocalClaudeProcess,
 }
 
 impl LocalClaudeProcess {
+    pub(crate) fn take_stdin(&mut self) -> Option<tokio::process::ChildStdin> {
+        self.stdin.take()
+    }
+
+    pub(crate) fn take_stdout(&mut self) -> Option<BufReader<tokio::process::ChildStdout>> {
+        self.stdout.take()
+    }
+
     fn exited(&mut self) {
         if let Some(on_exit) = self.on_exit.take() {
             on_exit();

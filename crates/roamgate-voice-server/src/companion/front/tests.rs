@@ -910,7 +910,7 @@ async fn its_sessions_may_read_the_long_answers_files_and_nothing_else() {
             .map(String::from)
             .to_vec(),
             tools: "Read".into(),
-            cwd: Some(answers.clone()),
+            cwd: Some(answers.to_string_lossy().into_owned()),
         }]
     );
     #[cfg(unix)]
@@ -945,7 +945,7 @@ async fn its_sessions_may_read_the_long_answers_files_and_nothing_else() {
             .map(String::from)
             .to_vec(),
             tools: "Read".into(),
-            cwd: Some(answers),
+            cwd: Some(answers.to_string_lossy().into_owned()),
         }
     );
 }

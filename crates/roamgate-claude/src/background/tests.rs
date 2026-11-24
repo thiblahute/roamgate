@@ -1,4 +1,6 @@
 use super::*;
+use crate::conversation::memory::ClaudeMemoryDriver;
+use roamgate_conversation::driver::CompanionMemoryDriver;
 
 #[test]
 fn drops_the_herdr_pane_and_claude_code_variables_keeps_the_rest() {
@@ -25,7 +27,7 @@ fn drops_the_herdr_pane_and_claude_code_variables_keeps_the_rest() {
 /// echoing its `--effort`: the argv says it, without a process.
 #[test]
 fn the_background_sessions_answer_at_low_effort_not_thinking_for_seconds() {
-    let args = claude_args("opus", "system", &SpawnOptions::default());
+    let args = background_args("opus", "system", &BackgroundOptions::default());
     let effort = args.iter().position(|a| a == "--effort").unwrap();
     assert_eq!(args[effort + 1], "low");
     assert_eq!(
@@ -50,12 +52,12 @@ fn the_background_sessions_answer_at_low_effort_not_thinking_for_seconds() {
             "system",
         ]
     );
-    let partial = claude_args(
+    let partial = background_args(
         "haiku",
         "s",
-        &SpawnOptions {
+        &BackgroundOptions {
             partial: true,
-            launch: Some(claude_memory_reader("/x/memories")),
+            launch: ClaudeMemoryDriver.reader("/x/memories"),
         },
     );
     assert_eq!(partial[6], "--include-partial-messages");
