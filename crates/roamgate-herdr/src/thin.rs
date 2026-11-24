@@ -761,7 +761,7 @@ type Stream = tokio::net::UnixStream;
 #[cfg(windows)]
 type Stream = tokio::net::windows::named_pipe::NamedPipeClient;
 
-async fn connect_stream(path: &str) -> std::io::Result<Stream> {
+pub(crate) async fn connect_stream(path: &str) -> std::io::Result<Stream> {
     #[cfg(unix)]
     {
         tokio::net::UnixStream::connect(path).await

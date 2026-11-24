@@ -624,13 +624,26 @@ impl LaunchRegistry {
     }
 
     pub fn register(&self, connection_id: &str, pane_id: &str, spec: LaunchSpec) -> String {
-        let mut launches = self.launches.lock().unwrap_or_else(|e| e.into_inner());
-        self.sweep(&mut launches);
         let mut bytes = [0u8; 16];
         rand::rng().fill_bytes(&mut bytes);
         let token = hex::encode(bytes);
+        self.register_token(connection_id, pane_id, spec, &token);
+        token
+    }
+
+    /// [`Self::register`] with the token another process made (the core's
+    /// conversation mode types its own).
+    pub fn register_token(
+        &self,
+        connection_id: &str,
+        pane_id: &str,
+        spec: LaunchSpec,
+        token: &str,
+    ) {
+        let mut launches = self.launches.lock().unwrap_or_else(|e| e.into_inner());
+        self.sweep(&mut launches);
         launches.insert(
-            token.clone(),
+            token.to_owned(),
             Launch {
                 connection_id: connection_id.into(),
                 pane_id: pane_id.into(),
@@ -638,7 +651,6 @@ impl LaunchRegistry {
                 until: (self.now)() + self.ttl_ms,
             },
         );
-        token
     }
 
     pub fn take(&self, connection_id: &str, pane_id: &str, token: &str) -> Option<LaunchSpec> {

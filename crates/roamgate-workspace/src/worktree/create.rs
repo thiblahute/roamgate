@@ -331,8 +331,9 @@ pub struct CreateOptions {
     pub fresh_path: Option<String>,
     /// Told why the parent could not be recorded.
     pub parent_warning: Option<ParentWarning>,
-    /// Runs just before anything reaches the host or Herdr.
-    pub before_dispatch: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Runs just before anything reaches the host or Herdr; its error
+    /// (the action no longer allowed) stops the creation there.
+    pub before_dispatch: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
     pub sync_base: Option<SyncBase>,
 }
 
@@ -386,7 +387,7 @@ pub async fn create_workspace_worktree(
     let before_send = || {
         assert_current()?;
         if let Some(before) = &options.before_dispatch {
-            before();
+            before().map_err(WorkspaceError::new)?;
         }
         Ok::<(), WorkspaceError>(())
     };
@@ -492,7 +493,7 @@ pub async fn create_workspace_worktree(
                     return Err(TARGET_CHANGED.into());
                 }
                 if let Some(dispatch) = &dispatch {
-                    dispatch();
+                    dispatch()?;
                 }
                 Ok(())
             }),

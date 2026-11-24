@@ -26,6 +26,7 @@ pub mod images;
 pub mod index_store;
 pub mod messages;
 pub mod messenger;
+pub mod owned_panes;
 pub mod paths;
 pub mod projection;
 pub mod registry;

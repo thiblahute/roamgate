@@ -625,6 +625,14 @@ impl<R: ConnectionRuntime> ConnectionProfileService<R> {
             .collect()
     }
 
+    /// A connection's profile, as the service holds it.
+    pub fn profile(&self, connection_id: &str) -> Option<ManagedConnectionProfile> {
+        self.lock()
+            .profiles
+            .get(connection_id)
+            .map(|entry| entry.profile.clone())
+    }
+
     /// Whether supervision retries this failure of the connection.
     pub fn will_retry(&self, connection_id: &str, error: &RuntimeError) -> bool {
         let state = self.lock();

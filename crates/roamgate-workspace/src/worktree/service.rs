@@ -183,6 +183,21 @@ impl Worktrees {
         is_current: &Guard,
         callbacks: &WorktreeCallbacks,
     ) -> RpcResult {
+        self.create_dispatched(conn, params, is_current, callbacks, None)
+            .await
+    }
+
+    /// `worktree.create` as Ranger's confirmed operation runs it:
+    /// `before_dispatch` runs just before anything reaches the host or
+    /// Herdr, and its error stops the creation.
+    pub async fn create_dispatched(
+        &self,
+        conn: &WorkspaceConnection,
+        params: &Value,
+        is_current: &Guard,
+        callbacks: &WorktreeCallbacks,
+        before_dispatch: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
+    ) -> RpcResult {
         let runtime = ConnectionCreate {
             conn,
             worktrees: self,
@@ -195,6 +210,7 @@ impl Worktrees {
                     tracing::warn!(scope = "bridge", connection = %connection, error, "unable to persist worktree parent");
                 }
             })),
+            before_dispatch,
             ..CreateOptions::default()
         };
         let result = create_workspace_worktree(&runtime, params, is_current, &options).await?;

@@ -11,6 +11,7 @@
 //! | [`http`] | the status, setup and info answers | http/herdr-setup, http/herdr-info |
 //! | [`client`] | the control socket's one-shot request (ping) | bridge/herdr-client `request` |
 //! | [`control`] | the control client: shared and reused reads, subscriptions | bridge/herdr-client |
+//! | [`endpoint`] | the endpoint's boot id, read by a passive handshake | bridge/endpoint-client (connect, its welcome and first snapshot) |
 //! | [`thin`] | the client socket: bincode, Hello/Welcome, attach, input | bridge/thin-client, bridge/bincode |
 //! | [`protocol`] | the supported Herdr protocols | bridge/protocol-compat |
 
@@ -20,6 +21,7 @@ use std::pin::Pin;
 pub mod bootstrap;
 pub mod client;
 pub mod control;
+pub mod endpoint;
 pub mod http;
 pub mod protocol;
 pub mod release;
