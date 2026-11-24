@@ -193,6 +193,40 @@ test.skipIf(process.platform !== "win32")(
         "Selected release: https://github.com/powerfooI/roamgate/releases/download/v9.8.7/",
       );
       expect(readdirSync(join(root, "server"))).toEqual(["roamgate.exe"]);
+
+      // A release with the Pi sidecar installs roamgate-pi.exe beside it.
+      copyFileSync(
+        join(packagePath, "roamgate.exe"),
+        join(packagePath, "roamgate-pi.exe"),
+      );
+      failure = "pi-sidecar";
+      packageArchive("9.8.7");
+      writeFileSync(
+        `${archive}.sha256`,
+        `${createHash("sha256").update(readFileSync(archive)).digest("hex")}  ${archiveName}\n`,
+      );
+      const withPi = Bun.spawnSync(
+        [
+          powershell,
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          join(root, "scripts/install-plugin.ps1"),
+        ],
+        {
+          env: {
+            ...installerEnv,
+            ROAMGATE_RELEASE_BASE_URL: `http://127.0.0.1:${host.port}`,
+          },
+        },
+      );
+      expect(withPi.exitCode, withPi.stderr.toString()).toBe(0);
+      expect(readdirSync(join(root, "server")).sort()).toEqual([
+        "roamgate-pi.exe",
+        "roamgate.exe",
+      ]);
     } finally {
       host?.stop(true);
       rmSync(root, { recursive: true, force: true });

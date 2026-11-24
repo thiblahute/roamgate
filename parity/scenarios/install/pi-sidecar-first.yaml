@@ -1,0 +1,23 @@
+name: a previous release without roamgate-pi leaves no previous one
+ledger:
+  - "scripts/install-roamgate.test.ts > a previous release without roamgate-pi leaves no previous one"
+family: install
+tier: T2
+description: >
+  The release installer with the Pi sidecar over an install without it: a
+  stale roamgate-pi.previous goes, since roamgate.previous had none.
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+    env: { PI_SIDECAR: "1" }
+  - sh: mkdir -p install && printf 'previous binary\n' > install/roamgate && printf 'stale pi\n' > install/roamgate-pi.previous
+  - sh: sh "${REPO}/scripts/install-roamgate.sh"
+    env:
+      ROAMGATE_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      ROAMGATE_INSTALL_DIR: "${ROOT}/install"
+    expect: { exit: 0, stderr: "" }
+  - sh: ./install/roamgate-pi
+    expect: { exit: 0, stdout: "pi 9.8.7\n" }
+  - assert_absent: "${ROOT}/install/roamgate-pi.previous"

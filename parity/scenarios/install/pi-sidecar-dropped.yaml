@@ -1,0 +1,24 @@
+name: a release without roamgate-pi leaves none, its previous one kept
+ledger:
+  - "scripts/install-roamgate.test.ts > a release without roamgate-pi leaves none, its previous one kept"
+family: install
+tier: T2
+description: >
+  The release installer over an install that has roamgate-pi, from a release
+  without it (one before the Rust build): roamgate-pi becomes
+  roamgate-pi.previous, beside roamgate.previous, so a rollback restores the
+  pair.
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+  - sh: mkdir -p install && printf 'previous binary\n' > install/roamgate && printf 'previous pi\n' > install/roamgate-pi
+  - sh: sh "${REPO}/scripts/install-roamgate.sh"
+    env:
+      ROAMGATE_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      ROAMGATE_INSTALL_DIR: "${ROOT}/install"
+    expect: { exit: 0, stderr: "" }
+  - assert_absent: "${ROOT}/install/roamgate-pi"
+  - assert_file:
+      { path: "${ROOT}/install/roamgate-pi.previous", text: "previous pi\n" }

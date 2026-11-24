@@ -45,12 +45,21 @@ try {
   if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $digest.Groups[1].Value) {
     throw 'Package checksum mismatch'
   }
-  & tar.exe -xJf $archive -C $staging "$packageDir/VERSION" "$packageDir/roamgate.exe"
+  # The Pi sidecar beside the binary; releases before the Rust build have none.
+  $members = @(& tar.exe -tJf $archive)
+  if ($LASTEXITCODE -ne 0) { throw 'Could not read the Roamgate package' }
+  $hasPi = $members -contains "$packageDir/roamgate-pi.exe"
+  $wanted = @("$packageDir/VERSION", "$packageDir/roamgate.exe")
+  if ($hasPi) { $wanted += "$packageDir/roamgate-pi.exe" }
+  & tar.exe -xJf $archive -C $staging @wanted
   if ($LASTEXITCODE -ne 0) { throw 'Could not extract the Roamgate package' }
   $extracted = Join-Path $staging $packageDir
   $binary = Join-Path $extracted 'roamgate.exe'
+  $pi = Join-Path $extracted 'roamgate-pi.exe'
   $versionFile = Join-Path $extracted 'VERSION'
-  foreach ($path in @($extracted, $binary, $versionFile)) {
+  $packaged = @($extracted, $binary, $versionFile)
+  if ($hasPi) { $packaged += $pi }
+  foreach ($path in $packaged) {
     if ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint) {
       throw 'Invalid package layout'
     }
@@ -65,11 +74,25 @@ try {
     throw 'This release has no native plugin commands. Build an unreleased checkout with `bun scripts/studio-plugin.ts build-source`, then `herdr plugin link .`, or select a published tag that includes native plugin support.'
   }
   $target = Join-Path $serverDir 'roamgate.exe'
-  if (Test-Path -LiteralPath $target) {
-    $existing = Get-Item -LiteralPath $target
-    if ($existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-      throw 'Install target is not a regular file'
+  $piTarget = Join-Path $serverDir 'roamgate-pi.exe'
+  foreach ($path in @($target, $piTarget)) {
+    if (Test-Path -LiteralPath $path) {
+      $existing = Get-Item -LiteralPath $path -Force
+      if ($existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Install target is not a regular file'
+      }
     }
+  }
+  if ($hasPi) {
+    if (Test-Path -LiteralPath $piTarget) {
+      [IO.File]::Replace($pi, $piTarget, (Join-Path $staging 'previous-roamgate-pi.exe'))
+    } else {
+      [IO.File]::Move($pi, $piTarget)
+    }
+  } elseif (Test-Path -LiteralPath $piTarget) {
+    Remove-Item -LiteralPath $piTarget -Force
+  }
+  if (Test-Path -LiteralPath $target) {
     [IO.File]::Replace($binary, $target, (Join-Path $staging 'previous-roamgate.exe'))
   } else {
     [IO.File]::Move($binary, $target)

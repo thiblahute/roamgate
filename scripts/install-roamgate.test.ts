@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -36,6 +37,7 @@ function currentReleasePlatform(): string {
 function createInstallerFixture(
   checksumName?: string,
   product: "roamgate" | "herdr-gui" = "roamgate",
+  piSidecar = false,
 ) {
   const root = mkdtempSync(join(tmpdir(), "roamgate-installer-test-"));
   temporaryRoots.push(root);
@@ -56,6 +58,11 @@ function createInstallerFixture(
     { mode: 0o755 },
   );
   writeFileSync(join(packagePath, "VERSION"), `${product} 9.8.7 ${platform}\n`);
+  if (piSidecar) {
+    writeFileSync(join(packagePath, "roamgate-pi"), "pi 9.8.7\n", {
+      mode: 0o755,
+    });
+  }
 
   const archive = join(assets, archiveName);
   const packaged = Bun.spawnSync(
@@ -235,6 +242,74 @@ describe("release installer", () => {
     expect(readFileSync(join(fixture.installDir, "herdr-studio"), "utf8")).toBe(
       "legacy Studio binary\n",
     );
+  });
+
+  test("installs roamgate-pi beside roamgate and keeps the previous one", () => {
+    const fixture = createInstallerFixture(undefined, "roamgate", true);
+    mkdirSync(fixture.installDir, { recursive: true });
+    writeFileSync(join(fixture.installDir, "roamgate"), "previous binary\n");
+    writeFileSync(join(fixture.installDir, "roamgate-pi"), "previous pi\n");
+    const result = runInstaller(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(readFileSync(join(fixture.installDir, "roamgate-pi"), "utf8")).toBe(
+      "pi 9.8.7\n",
+    );
+    expect(statSync(join(fixture.installDir, "roamgate-pi")).mode & 0o777).toBe(
+      0o755,
+    );
+    expect(
+      readFileSync(join(fixture.installDir, "roamgate-pi.previous"), "utf8"),
+    ).toBe("previous pi\n");
+    expect(
+      readFileSync(join(fixture.installDir, "roamgate.previous"), "utf8"),
+    ).toBe("previous binary\n");
+  });
+
+  test("a release without roamgate-pi leaves none, its previous one kept", () => {
+    const fixture = createInstallerFixture();
+    mkdirSync(fixture.installDir, { recursive: true });
+    writeFileSync(join(fixture.installDir, "roamgate"), "previous binary\n");
+    writeFileSync(join(fixture.installDir, "roamgate-pi"), "previous pi\n");
+    const result = runInstaller(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(fixture.installDir, "roamgate-pi"))).toBe(false);
+    expect(
+      readFileSync(join(fixture.installDir, "roamgate-pi.previous"), "utf8"),
+    ).toBe("previous pi\n");
+  });
+
+  test("a previous release without roamgate-pi leaves no previous one", () => {
+    const fixture = createInstallerFixture(undefined, "roamgate", true);
+    mkdirSync(fixture.installDir, { recursive: true });
+    writeFileSync(join(fixture.installDir, "roamgate"), "previous binary\n");
+    writeFileSync(
+      join(fixture.installDir, "roamgate-pi.previous"),
+      "stale pi\n",
+    );
+    const result = runInstaller(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(readFileSync(join(fixture.installDir, "roamgate-pi"), "utf8")).toBe(
+      "pi 9.8.7\n",
+    );
+    expect(existsSync(join(fixture.installDir, "roamgate-pi.previous"))).toBe(
+      false,
+    );
+  });
+
+  test("refuses to replace a symlinked roamgate-pi", () => {
+    const fixture = createInstallerFixture(undefined, "roamgate", true);
+    mkdirSync(fixture.installDir, { recursive: true });
+    const outside = join(fixture.root, "outside-pi");
+    writeFileSync(outside, "outside\n", { mode: 0o755 });
+    symlinkSync(outside, join(fixture.installDir, "roamgate-pi"));
+    const result = runInstaller(fixture);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr.toString()).toContain(
+      "install target exists but is not a regular file",
+    );
+    expect(readFileSync(outside, "utf8")).toBe("outside\n");
+    expect(existsSync(join(fixture.installDir, "roamgate"))).toBe(false);
   });
 
   test("rejects filenames supplied by an untrusted checksum file", () => {

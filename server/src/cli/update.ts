@@ -48,8 +48,10 @@ Options:
 
 The release manifest, archive checksum, package VERSION and binary version are
 verified before the executable is replaced in place. The previous executable is
-kept as roamgate.previous; \`roamgate rollback\` restores it. A running managed
-service that uses this executable is restarted afterwards.
+kept as roamgate.previous, and the Pi sidecar roamgate-pi beside it as
+roamgate-pi.previous; \`roamgate rollback\` restores them. When the executable is
+already the latest release but its roamgate-pi is missing, update installs it.
+A running managed service that uses this executable is restarted afterwards.
 
 ROAMGATE_UPDATE_BASE_URL selects a mirror (from the shell, else the service
 config). To install a specific version, rerun the installer with
@@ -64,7 +66,8 @@ Usage:
   roamgate rollback
 
 The update command and installer keep the replaced executable as
-roamgate.previous. Rollback swaps the two files, so running it again undoes the
+roamgate.previous, and the replaced Pi sidecar roamgate-pi as
+roamgate-pi.previous. Rollback swaps each pair, so running it again undoes the
 rollback. A running managed service that uses this executable is restarted.
 `;
 }
@@ -141,7 +144,14 @@ export function createUpdateCommand(
         target,
         runProcessWithCodeTimeout: runProcess,
       });
-      const available = compareVersion(manifest.version, context.version) > 0;
+      const order = compareVersion(manifest.version, context.version);
+      const available = order > 0;
+      // The latest release already, but without the Pi sidecar beside it:
+      // the same installer adds it and keeps the executable.
+      const sidecarMissing =
+        order === 0 &&
+        isStandaloneBinary(runtime) &&
+        !regularFile(piSidecarPath(runtime.execPath));
 
       if (values.check) {
         if (values.json) {
@@ -162,7 +172,7 @@ export function createUpdateCommand(
         }
         return EXIT_OK;
       }
-      if (!available) {
+      if (!available && !sidecarMissing) {
         context.log(`roamgate ${context.version} is up to date.`);
         return EXIT_OK;
       }
@@ -173,9 +183,11 @@ export function createUpdateCommand(
         return EXIT_FAILURE;
       }
 
-      context.log(
-        `Updating roamgate ${context.version} -> ${manifest.version}...`,
-      );
+      if (available) {
+        context.log(
+          `Updating roamgate ${context.version} -> ${manifest.version}...`,
+        );
+      }
       const script = renderUpdateInstallScript({
         targetPath: runtime.execPath,
         target,
@@ -194,6 +206,15 @@ export function createUpdateCommand(
         );
         return EXIT_FAILURE;
       }
+      if (!available) {
+        const sidecar = piSidecarPath(runtime.execPath);
+        if (!regularFile(sidecar)) {
+          context.log(`roamgate ${context.version} is up to date.`);
+          return EXIT_OK;
+        }
+        context.log(`Installed roamgate-pi ${manifest.version} at ${sidecar}.`);
+        return restartServiceUsing(context, runtime.execPath);
+      }
       context.log(
         `Installed roamgate ${manifest.version} at ${runtime.execPath}.`,
       );
@@ -201,6 +222,39 @@ export function createUpdateCommand(
       return restartServiceUsing(context, runtime.execPath);
     },
   };
+}
+
+/** The Pi sidecar beside the executable (Linux and macOS). */
+function piSidecarPath(executable: string): string {
+  return join(dirname(executable), "roamgate-pi");
+}
+
+function exists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Swaps two files through a parked name; a missing side stays missing. */
+function swap(current: string, previous: string): void {
+  const parked = join(
+    dirname(current),
+    `.${basename(current)}.rollback-${process.pid}`,
+  );
+  const hadCurrent = exists(current);
+  if (hadCurrent) renameSync(current, parked);
+  if (exists(previous)) {
+    try {
+      renameSync(previous, current);
+    } catch (error) {
+      if (hadCurrent) renameSync(parked, current);
+      throw error;
+    }
+  }
+  if (hadCurrent) renameSync(parked, previous);
 }
 
 function regularFile(path: string): boolean {
@@ -246,18 +300,19 @@ export const rollbackCommand: CliCommand = {
       );
       return EXIT_FAILURE;
     }
-    const parked = join(
-      dirname(current),
-      `.${basename(current)}.rollback-${process.pid}`,
-    );
-    renameSync(current, parked);
-    try {
-      renameSync(previous, current);
-    } catch (error) {
-      renameSync(parked, current);
-      throw error;
+    // roamgate-pi and roamgate-pi.previous swap with the executables;
+    // either may be missing, never something else.
+    const pi = piSidecarPath(current);
+    for (const path of [pi, `${pi}.previous`]) {
+      if (exists(path) && !regularFile(path)) {
+        context.error(
+          `roamgate rollback: ${path} is not a regular file; nothing changed.`,
+        );
+        return EXIT_FAILURE;
+      }
     }
-    renameSync(parked, previous);
+    swap(current, previous);
+    swap(pi, `${pi}.previous`);
     context.log(
       `Rolled back roamgate ${context.version} -> ${previousVersion.slice("roamgate ".length)}.`,
     );

@@ -11,6 +11,7 @@
 #   VERSION_FIELD  the version VERSION says (default 9.8.7)
 #   PLUGIN_FAILURE the plugin binary's failure (none, native-command,
 #                  native-exit)
+#   PI_SIDECAR     1: the package has roamgate-pi beside the binary
 set -eu
 product=$1
 os=$(uname -s)
@@ -37,6 +38,10 @@ exit 1
 SCRIPT
 chmod 755 "$assets/$package_dir/$product"
 printf '%s %s %s\n' "$product" "${VERSION_FIELD:-9.8.7}" "$platform" >"$assets/$package_dir/VERSION"
+if [ "${PI_SIDECAR:-}" = 1 ]; then
+  printf '#!/bin/sh\necho pi 9.8.7\n' >"$assets/$package_dir/roamgate-pi"
+  chmod 755 "$assets/$package_dir/roamgate-pi"
+fi
 COPYFILE_DISABLE=1 tar -C "$assets" -cJf "$assets/$archive_name" "$package_dir"
 if command -v sha256sum >/dev/null; then
   digest=$(sha256sum "$assets/$archive_name" | cut -d' ' -f1)

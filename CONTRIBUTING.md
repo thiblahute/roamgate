@@ -129,17 +129,21 @@ the Bun build's platform lists in line with it. `cargo xtask` reads it:
 
 - `cargo xtask package <platform...|all> [--version X.Y.Z]` builds `roamgate`
   for each target with the web app in `server/public` embedded
-  (`bun run build:web` first), packages it in the release layout (versioned
+  (`bun run build:web` first) and compiles the Pi sidecar `roamgate-pi` for
+  it with Bun, packages both in the release layout (versioned
   and latest `tar.xz`, `.sha256`, `.update.json`) in `target/dist`, and
   verifies the package, running the binary when this machine can. Linux and
   macOS targets build with cargo-zigbuild off their OS, Windows targets with
   cargo-xwin.
-- `cargo xtask update-proof <platform> --from <Bun-built roamgate>` installs
-  the Bun build in a sandbox (its own HOME, XDG directories and TMPDIR), lets
-  its `roamgate update` install the package from a loopback mirror, and checks
-  the new binary, `roamgate.previous` and the served web app. Package with
-  `--version "$(cargo xtask version --next)"` so there is something to update
-  to. `--exec-prefix` runs the sandbox through an emulated container, such as
+- `cargo xtask update-proof <platform> --from <earlier roamgate>` installs
+  an earlier build (a Bun build of this checkout, or the last release's
+  binary) in a sandbox (its own HOME, XDG directories and TMPDIR), lets its
+  `roamgate update` install the package from a loopback mirror, and checks
+  the new binary, `roamgate.previous`, the package's `roamgate-pi` beside it
+  (added by a second `roamgate update` when the earlier updater left it
+  out), the served web app, and that `roamgate rollback` swaps both back.
+  Package with `--version "$(cargo xtask version --next)"` so there is
+  something to update to. `--exec-prefix` runs the sandbox through an emulated container, such as
   linux-arm64 with `xtask/proof/Containerfile`.
 
 ### Manual browser checks

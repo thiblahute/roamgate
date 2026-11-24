@@ -25,9 +25,10 @@ Commands:
   package <platform...|all>           build, package and verify targets
   verify <platform...|all>            check packaged targets
   update-proof <platform> --from <roamgate>
-                                      install a packaged target through a
-                                      Bun-built roamgate's `roamgate update`
-                                      in a sandbox, then serve with it
+                                      install a packaged target through an
+                                      earlier roamgate's `roamgate update`
+                                      in a sandbox (roamgate-pi beside it),
+                                      serve with it, then roll back
   version [--next]                    print the workspace version (--next:
                                       the next patch, as a prerelease above
                                       the current one, for update proofs)

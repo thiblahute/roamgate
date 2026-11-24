@@ -1,0 +1,26 @@
+name: a symlinked roamgate-pi is not replaced
+ledger:
+  - "scripts/install-roamgate.test.ts > refuses to replace a symlinked roamgate-pi"
+family: install
+tier: T2
+description: >
+  The release installer refuses an install directory whose roamgate-pi is a
+  symlink, before it changes anything.
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+    env: { PI_SIDECAR: "1" }
+  - sh: mkdir -p install && printf 'outside\n' > outside-pi && chmod 755 outside-pi && ln -s ../outside-pi install/roamgate-pi
+  - sh: sh "${REPO}/scripts/install-roamgate.sh"
+    env:
+      ROAMGATE_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      ROAMGATE_INSTALL_DIR: "${ROOT}/install"
+    expect:
+      {
+        exit_not: 0,
+        stderr_contains: install target exists but is not a regular file,
+      }
+  - assert_file: { path: "${ROOT}/outside-pi", text: "outside\n" }
+  - assert_absent: "${ROOT}/install/roamgate"

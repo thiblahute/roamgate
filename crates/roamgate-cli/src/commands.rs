@@ -32,8 +32,10 @@ Options:
 
 The release manifest, archive checksum, package VERSION and binary version are
 verified before the executable is replaced in place. The previous executable is
-kept as roamgate.previous; `roamgate rollback` restores it. A running managed
-service that uses this executable is restarted afterwards.
+kept as roamgate.previous, and the Pi sidecar roamgate-pi beside it as
+roamgate-pi.previous; `roamgate rollback` restores them. When the executable is
+already the latest release but its roamgate-pi is missing, update installs it.
+A running managed service that uses this executable is restarted afterwards.
 
 ROAMGATE_UPDATE_BASE_URL selects a mirror (from the shell, else the service
 config). To install a specific version, rerun the installer with
@@ -48,7 +50,8 @@ Usage:
   roamgate rollback
 
 The update command and installer keep the replaced executable as
-roamgate.previous. Rollback swaps the two files, so running it again undoes the
+roamgate.previous, and the replaced Pi sidecar roamgate-pi as
+roamgate-pi.previous. Rollback swaps each pair, so running it again undoes the
 rollback. A running managed service that uses this executable is restarted.
 "
 }
@@ -193,9 +196,8 @@ async fn update_inner(
     let manifest = fetch_latest_update_manifest(&base, &target, &effects.run_process)
         .await
         .map_err(Failure::Failed)?;
-    let available = compare_version(&manifest.version, &runtime.version)
-        .map_err(Failure::Failed)?
-        == Ordering::Greater;
+    let order = compare_version(&manifest.version, &runtime.version).map_err(Failure::Failed)?;
+    let available = order == Ordering::Greater;
     if check {
         if json {
             let body = serde_json::json!({
@@ -221,7 +223,13 @@ async fn update_inner(
         }
         return Ok(0);
     }
-    if !available {
+    // The latest release already, but without the Pi sidecar beside it (an
+    // update by a release whose installer left roamgate-pi out): the same
+    // installer adds it and keeps the executable.
+    let sidecar_missing = order == Ordering::Equal
+        && runtime.standalone
+        && !regular_file(&pi_sidecar_path(&runtime.exec_path));
+    if !available && !sidecar_missing {
         printed.log(&format!("roamgate {} is up to date.", runtime.version));
         return Ok(0);
     }
@@ -229,10 +237,12 @@ async fn update_inner(
         printed.error("roamgate update: only the standalone binary can update itself; pull and rebuild source checkouts.");
         return Ok(1);
     }
-    printed.log(&format!(
-        "Updating roamgate {} -> {}...",
-        runtime.version, manifest.version
-    ));
+    if available {
+        printed.log(&format!(
+            "Updating roamgate {} -> {}...",
+            runtime.version, manifest.version
+        ));
+    }
     let target_path = runtime.exec_path.display().to_string();
     let script = render_update_install_script(
         &target_path,
@@ -254,6 +264,19 @@ async fn update_inner(
         ));
         return Ok(1);
     }
+    if !available {
+        let sidecar = pi_sidecar_path(&runtime.exec_path);
+        if !regular_file(&sidecar) {
+            printed.log(&format!("roamgate {} is up to date.", runtime.version));
+            return Ok(0);
+        }
+        printed.log(&format!(
+            "Installed roamgate-pi {} at {}.",
+            manifest.version,
+            sidecar.display()
+        ));
+        return restart_service_using(runtime, effects, &runtime.exec_path, printed);
+    }
     printed.log(&format!(
         "Installed roamgate {} at {target_path}.",
         manifest.version
@@ -265,6 +288,24 @@ async fn update_inner(
 /// A regular file, not a symlink.
 fn regular_file(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+}
+
+/// Nothing there, not even a dangling symlink.
+fn absent(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_err()
+}
+
+/// The Pi sidecar `roamgate-pi` beside `executable` (Linux and macOS, the
+/// platforms update and rollback serve).
+pub fn pi_sidecar_path(executable: &Path) -> PathBuf {
+    executable
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("roamgate-pi")
+}
+
+fn with_previous(path: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.previous", path.display()))
 }
 
 /// `roamgate rollback <args>`.
@@ -299,11 +340,23 @@ fn rollback_inner(
         ));
         return Ok(1);
     }
-    let probe = std::process::Command::new(&previous)
-        .arg("--version")
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output();
+    // A file just written may be busy for an instant (ETXTBSY while another
+    // thread's fork still holds it open): try again then.
+    let mut tries = 0;
+    let probe = loop {
+        let probe = std::process::Command::new(&previous)
+            .arg("--version")
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output();
+        match &probe {
+            Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 20 => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            _ => break probe,
+        }
+    };
     let previous_version = probe
         .as_ref()
         .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
@@ -319,6 +372,34 @@ fn rollback_inner(
         ));
         return Ok(1);
     }
+    // roamgate-pi and roamgate-pi.previous swap with the executables; either
+    // may be missing (a release without the sidecar), never something else.
+    let pi = pi_sidecar_path(&current);
+    let pi_previous = with_previous(&pi);
+    for path in [&pi, &pi_previous] {
+        if !absent(path) && !regular_file(path) {
+            printed.error(&format!(
+                "roamgate rollback: {} is not a regular file; nothing changed.",
+                path.display()
+            ));
+            return Ok(1);
+        }
+    }
+    let io = |error: std::io::Error| Failure::Failed(error.to_string());
+    swap(&current, &previous).map_err(io)?;
+    swap(&pi, &pi_previous).map_err(io)?;
+    printed.log(&format!(
+        "Rolled back roamgate {} -> {}.",
+        runtime.version,
+        &previous_version["roamgate ".len()..]
+    ));
+    printed.log("Run `roamgate rollback` again to undo.");
+    restart_service_using(runtime, effects, &current, printed)
+}
+
+/// Swaps `current` and `previous` through a parked name beside them; a
+/// missing side stays missing on the other.
+fn swap(current: &Path, previous: &Path) -> std::io::Result<()> {
     let name = current
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -327,20 +408,22 @@ fn rollback_inner(
         .parent()
         .unwrap_or(Path::new("."))
         .join(format!(".{name}.rollback-{}", std::process::id()));
-    let io = |error: std::io::Error| Failure::Failed(error.to_string());
-    std::fs::rename(&current, &parked).map_err(io)?;
-    if let Err(error) = std::fs::rename(&previous, &current) {
-        let _ = std::fs::rename(&parked, &current);
-        return Err(io(error));
+    let had_current = !absent(current);
+    if had_current {
+        std::fs::rename(current, &parked)?;
     }
-    std::fs::rename(&parked, &previous).map_err(io)?;
-    printed.log(&format!(
-        "Rolled back roamgate {} -> {}.",
-        runtime.version,
-        &previous_version["roamgate ".len()..]
-    ));
-    printed.log("Run `roamgate rollback` again to undo.");
-    restart_service_using(runtime, effects, &current, printed)
+    if !absent(previous)
+        && let Err(error) = std::fs::rename(previous, current)
+    {
+        if had_current {
+            let _ = std::fs::rename(&parked, current);
+        }
+        return Err(error);
+    }
+    if had_current {
+        std::fs::rename(&parked, previous)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -595,5 +678,108 @@ mod tests {
                 .unwrap()
                 .contains("roamgate 1.2.3")
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn swaps_roamgate_pi_with_its_previous_copy_too() {
+        let test = test("linux");
+        let current = test.runtime.exec_path.clone();
+        std::fs::create_dir_all(current.parent().unwrap()).unwrap();
+        executable(&current, "1.2.3");
+        executable(&with_previous(&current), "1.1.0");
+        let pi = pi_sidecar_path(&current);
+        executable(&pi, "pi 1.2.3");
+        let effects = effects(&test, "1.3.0", 0);
+        // 1.1.0 had no roamgate-pi: rolled back, it has none.
+        let printed = rollback(&test.runtime, &effects, &[]).await;
+        assert_eq!(printed.code, 0, "{printed:?}");
+        assert!(absent(&pi));
+        assert!(
+            std::fs::read_to_string(with_previous(&pi))
+                .unwrap()
+                .contains("pi 1.2.3")
+        );
+        assert_eq!(rollback(&test.runtime, &effects, &[]).await.code, 0);
+        assert!(std::fs::read_to_string(&pi).unwrap().contains("pi 1.2.3"));
+        assert!(absent(&with_previous(&pi)));
+        // Both there: they swap.
+        executable(&with_previous(&pi), "pi 1.1.0");
+        assert_eq!(rollback(&test.runtime, &effects, &[]).await.code, 0);
+        assert!(std::fs::read_to_string(&pi).unwrap().contains("pi 1.1.0"));
+        assert!(
+            std::fs::read_to_string(with_previous(&pi))
+                .unwrap()
+                .contains("pi 1.2.3")
+        );
+        assert!(
+            std::fs::read_to_string(&current)
+                .unwrap()
+                .contains("roamgate 1.1.0")
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn refuses_to_roll_back_over_a_roamgate_pi_that_is_not_a_file() {
+        let test = test("linux");
+        let current = test.runtime.exec_path.clone();
+        std::fs::create_dir_all(current.parent().unwrap()).unwrap();
+        executable(&current, "1.2.3");
+        executable(&with_previous(&current), "1.1.0");
+        std::fs::create_dir(pi_sidecar_path(&current)).unwrap();
+        let printed = rollback(&test.runtime, &effects(&test, "1.3.0", 0), &[]).await;
+        assert_eq!(printed.code, 1);
+        assert!(
+            printed
+                .stderr
+                .contains("is not a regular file; nothing changed.")
+        );
+        assert!(
+            std::fs::read_to_string(&current)
+                .unwrap()
+                .contains("roamgate 1.2.3")
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn installs_a_missing_roamgate_pi_of_the_current_release() {
+        let test = test("linux");
+        let current = test.runtime.exec_path.clone();
+        std::fs::create_dir_all(current.parent().unwrap()).unwrap();
+        executable(&current, "1.2.3");
+        let pi = pi_sidecar_path(&current);
+        let calls = test.calls.clone();
+        let installed = pi.clone();
+        let effects = Effects {
+            run_process: Arc::new(move |argv, _| {
+                calls.lock().unwrap().push(argv.clone());
+                let installed = installed.clone();
+                Box::pin(async move {
+                    if argv[0] == "curl" {
+                        return Ok(Ran {
+                            code: 0,
+                            stdout: manifest("1.2.3"),
+                            stderr: String::new(),
+                        });
+                    }
+                    std::fs::write(&installed, "pi").unwrap();
+                    Ok(Ran::default())
+                })
+            }),
+            run: Arc::new(Recorder::new(|_| 4)),
+        };
+        let printed = update(&test.runtime, &effects, &[]).await;
+        assert_eq!(printed.code, 0, "{printed:?}");
+        assert_eq!(test.calls.lock().unwrap()[1][..2], args(&["sh", "-c"])[..]);
+        assert!(printed.stdout.starts_with(&format!(
+            "Installed roamgate-pi 1.2.3 at {}.\n",
+            pi.display()
+        )));
+        // There now: up to date, nothing run.
+        let printed = update(&test.runtime, &effects, &[]).await;
+        assert_eq!(printed.stdout, "roamgate 1.2.3 is up to date.\n");
+        assert_eq!(test.calls.lock().unwrap().len(), 3);
     }
 }

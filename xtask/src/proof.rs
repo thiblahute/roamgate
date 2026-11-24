@@ -1,7 +1,11 @@
-//! The update proof: a Bun-built roamgate, installed in a sandbox (its own
-//! HOME, XDG directories and TMPDIR, no service, no user bus), updates itself
-//! with `roamgate update` from a loopback mirror of a packaged target, and
-//! the installed binary then serves its embedded web app.
+//! The update proof: a roamgate of an earlier build (a Bun-built one, or a
+//! published release), installed in a sandbox (its own HOME, XDG
+//! directories and TMPDIR, no service, no user bus), updates itself with
+//! `roamgate update` from a loopback mirror of a packaged target; the
+//! package's Pi sidecar `roamgate-pi` lands beside it (the new binary's
+//! `roamgate update` adds it when the old updater left it out), the
+//! installed binary serves its embedded web app, and `roamgate rollback`
+//! swaps both back.
 //!
 //! `--exec-prefix` runs every sandbox command through a prefix, such as an
 //! arm64 container sharing the network and the sandbox's path: the proof of
@@ -19,7 +23,7 @@ use anyhow::{Context, Result, bail, ensure};
 use crate::targets::Target;
 
 pub struct Proof<'a> {
-    /// The Bun-built roamgate the sandbox starts from.
+    /// The earlier roamgate the sandbox starts from.
     pub from: &'a Path,
     /// The directory holding the target's package.
     pub dist: &'a Path,
@@ -317,6 +321,51 @@ pub fn run(proof: &Proof) -> Result<()> {
         sandbox.version(&previous)? == old,
         "roamgate.previous is not {old}"
     );
+
+    // The package's roamgate-pi beside the binary. An updater before the
+    // Rust build extracts roamgate only: the new binary's `roamgate update`
+    // then adds roamgate-pi and keeps roamgate.previous.
+    let archive = std::fs::read(proof.dist.join(target.latest_archive()))?;
+    let pi_member = format!("{}/{}", target.package_dir(), target.pi_binary());
+    let pi_bytes = crate::package::read_archive(&archive)?
+        .into_iter()
+        .find(|entry| entry.path == pi_member)
+        .map(|entry| entry.data)
+        .with_context(|| format!("the package has no {pi_member}"))?;
+    let pi = bin.with_file_name("roamgate-pi");
+    let pi_previous = bin.with_file_name("roamgate-pi.previous");
+    if !pi.exists() {
+        eprintln!("xtask: the {old} updater left roamgate-pi out; updating again adds it");
+        let again = sandbox.run(&bin, &["update"])?;
+        let said = String::from_utf8_lossy(&again.stdout);
+        ensure!(
+            again.status.success()
+                && said.contains(&format!(
+                    "Installed roamgate-pi {} at {}",
+                    proof.version,
+                    pi.display()
+                )),
+            "the second roamgate update said {said:?}"
+        );
+        ensure!(
+            sandbox.version(&previous)? == old,
+            "adding roamgate-pi replaced roamgate.previous"
+        );
+    }
+    ensure!(
+        std::fs::read(&pi).ok() == Some(pi_bytes.clone()),
+        "roamgate-pi beside the binary is not the package's"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&pi)?.permissions().mode() & 0o777;
+        ensure!(mode == 0o755, "roamgate-pi has mode {mode:o}");
+    }
+    ensure!(
+        !pi_previous.exists(),
+        "roamgate-pi.previous exists though {old} had no roamgate-pi"
+    );
     let port = free_port()?;
     let port_text = port.to_string();
     let serve = ["--host", "127.0.0.1", "--port", &port_text];
@@ -375,8 +424,26 @@ pub fn run(proof: &Proof) -> Result<()> {
     );
     drop(server);
 
+    // Rollback swaps the pair: {old} again, with no roamgate-pi, and the
+    // package's roamgate-pi kept as roamgate-pi.previous.
+    let rollback = sandbox.run(&bin, &["rollback"])?;
+    ensure!(rollback.status.success(), "roamgate rollback failed");
+    ensure!(
+        sandbox.version(&bin)? == old,
+        "roamgate rollback did not restore {old}"
+    );
+    ensure!(
+        sandbox.version(&previous)? == proof.version,
+        "roamgate rollback did not keep {} as roamgate.previous",
+        proof.version
+    );
+    ensure!(
+        !pi.exists() && std::fs::read(&pi_previous).ok() == Some(pi_bytes),
+        "roamgate rollback did not move roamgate-pi to roamgate-pi.previous"
+    );
+
     eprintln!(
-        "xtask: update proof for {}: roamgate {old} updated itself to {} from {}, kept {old} as roamgate.previous, and served the web app",
+        "xtask: update proof for {}: roamgate {old} updated itself to {} from {}, kept {old} as roamgate.previous, installed roamgate-pi beside it, served the web app, and rolled both back",
         target.platform, proof.version, mirror_address
     );
     Ok(())

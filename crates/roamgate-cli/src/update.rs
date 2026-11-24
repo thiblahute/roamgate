@@ -485,4 +485,215 @@ mod tests {
             "1"
         )])));
     }
+
+    /// The installer run for real (sh, tar, curl over file://) against a
+    /// package of `files` (name, version it prints) for linux-x64.
+    #[cfg(unix)]
+    struct Installed {
+        dir: tempfile::TempDir,
+    }
+
+    #[cfg(unix)]
+    impl Installed {
+        fn bin(&self) -> std::path::PathBuf {
+            self.dir.path().join("bin")
+        }
+
+        fn read(&self, name: &str) -> Option<String> {
+            std::fs::read_to_string(self.bin().join(name)).ok()
+        }
+
+        fn script(text: &str) -> String {
+            format!("#!/bin/sh\necho '{text}'\n")
+        }
+
+        fn put(path: &std::path::Path, text: &str) {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, Self::script(text)).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        fn new() -> Self {
+            Self {
+                dir: tempfile::tempdir().unwrap(),
+            }
+        }
+
+        /// Installs `version` from a package with or without roamgate-pi.
+        fn run(&self, version: &str, with_pi: bool) -> std::process::Output {
+            let target = resolve_update_target("linux", "x64").unwrap();
+            let dist = self.dir.path().join(format!("dist-{version}-{with_pi}"));
+            let package = dist.join(&target.package_dir);
+            Self::put(&package.join("roamgate"), &format!("roamgate {version}"));
+            if with_pi {
+                Self::put(&package.join("roamgate-pi"), &format!("pi {version}"));
+            }
+            std::fs::write(
+                package.join("VERSION"),
+                format!("roamgate {version} linux-x64\n"),
+            )
+            .unwrap();
+            let archive = dist.join(&target.archive_name);
+            let packed = std::process::Command::new("tar")
+                .arg("-C")
+                .arg(&dist)
+                .arg("-cJf")
+                .arg(&archive)
+                .arg(&target.package_dir)
+                .status()
+                .unwrap();
+            assert!(packed.success());
+            let digest = std::process::Command::new("sha256sum")
+                .arg(&archive)
+                .output()
+                .unwrap();
+            let sha256 = String::from_utf8_lossy(&digest.stdout)
+                .split_whitespace()
+                .next()
+                .unwrap()
+                .to_owned();
+            let manifest = UpdateManifest {
+                version: version.into(),
+                platform: "linux-x64".into(),
+                archive: target.archive_name.clone(),
+                sha256,
+            };
+            let script = render_update_install_script(
+                &self.bin().join("roamgate").display().to_string(),
+                &target,
+                &manifest,
+                &format!("file://{}", archive.display()),
+                "",
+            );
+            std::process::Command::new("sh")
+                .arg("-c")
+                .arg(script)
+                .env("TMPDIR", self.dir.path())
+                .output()
+                .unwrap()
+        }
+
+        fn names(&self) -> Vec<String> {
+            let mut names: Vec<String> = std::fs::read_dir(self.bin())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            names.sort();
+            names
+        }
+    }
+
+    #[cfg(unix)]
+    fn script_tools() -> bool {
+        ["tar", "xz", "curl", "sha256sum"].iter().all(|tool| {
+            std::process::Command::new("sh")
+                .args(["-c", &format!("command -v {tool}")])
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_installer_installs_and_backs_up_roamgate_pi_with_the_executable() {
+        if !script_tools() {
+            return;
+        }
+        let installed = Installed::new();
+        Installed::put(&installed.bin().join("roamgate"), "roamgate 1.0.0");
+        // From a release without roamgate-pi: none to keep, and a stale
+        // roamgate-pi.previous goes.
+        Installed::put(&installed.bin().join("roamgate-pi.previous"), "pi stale");
+        let ran = installed.run("1.1.0", true);
+        assert!(ran.status.success(), "{ran:?}");
+        assert_eq!(
+            installed.names(),
+            ["roamgate", "roamgate-pi", "roamgate.previous"]
+        );
+        assert_eq!(
+            installed.read("roamgate-pi"),
+            Some(Installed::script("pi 1.1.0"))
+        );
+        // Between two releases with it: both previous copies kept.
+        let ran = installed.run("1.2.0", true);
+        assert!(ran.status.success(), "{ran:?}");
+        assert_eq!(
+            installed.names(),
+            [
+                "roamgate",
+                "roamgate-pi",
+                "roamgate-pi.previous",
+                "roamgate.previous"
+            ]
+        );
+        assert_eq!(
+            installed.read("roamgate-pi.previous"),
+            Some(Installed::script("pi 1.1.0"))
+        );
+        assert_eq!(
+            installed.read("roamgate.previous"),
+            Some(Installed::script("roamgate 1.1.0"))
+        );
+        // To a release without it: roamgate-pi becomes the previous one.
+        let ran = installed.run("1.3.0", false);
+        assert!(ran.status.success(), "{ran:?}");
+        assert_eq!(
+            installed.names(),
+            ["roamgate", "roamgate-pi.previous", "roamgate.previous"]
+        );
+        assert_eq!(
+            installed.read("roamgate-pi.previous"),
+            Some(Installed::script("pi 1.2.0"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_installer_adds_a_missing_roamgate_pi_without_replacing_the_executable() {
+        if !script_tools() {
+            return;
+        }
+        let installed = Installed::new();
+        Installed::put(&installed.bin().join("roamgate"), "roamgate 1.1.0");
+        Installed::put(&installed.bin().join("roamgate.previous"), "roamgate 1.0.0");
+        let ran = installed.run("1.1.0", true);
+        assert!(ran.status.success(), "{ran:?}");
+        assert_eq!(
+            installed.names(),
+            ["roamgate", "roamgate-pi", "roamgate.previous"]
+        );
+        assert_eq!(
+            installed.read("roamgate.previous"),
+            Some(Installed::script("roamgate 1.0.0"))
+        );
+        assert_eq!(
+            installed.read("roamgate-pi"),
+            Some(Installed::script("pi 1.1.0"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_installer_refuses_a_roamgate_pi_that_is_not_a_regular_file() {
+        if !script_tools() {
+            return;
+        }
+        let installed = Installed::new();
+        Installed::put(&installed.bin().join("roamgate"), "roamgate 1.0.0");
+        let outside = installed.dir.path().join("outside");
+        Installed::put(&outside, "outside");
+        std::os::unix::fs::symlink(&outside, installed.bin().join("roamgate-pi")).unwrap();
+        let ran = installed.run("1.1.0", true);
+        assert!(!ran.status.success());
+        assert!(
+            String::from_utf8_lossy(&ran.stderr)
+                .contains("roamgate-pi beside the executable is not a regular file")
+        );
+        assert_eq!(
+            installed.read("roamgate"),
+            Some(Installed::script("roamgate 1.0.0"))
+        );
+        assert_eq!(installed.names(), ["roamgate", "roamgate-pi"]);
+    }
 }

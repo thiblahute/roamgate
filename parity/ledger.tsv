@@ -1417,6 +1417,7 @@ server/src/cli/update.test.ts	installs over the running executable with the shar
 server/src/cli/update.test.ts	reports installer failures and refuses source checkouts	scenario:parity/scenarios/update/cli.yaml	
 server/src/cli/update.test.ts	explains platforms without update packages	rust-unit:roamgate-cli:commands::tests::explains_platforms_without_update_packages	CLI internals beyond its help and outputs
 server/src/cli/update.test.ts	swaps the executable with roamgate.previous and back	rust-unit:roamgate-cli:commands::tests::swaps_the_executable_with_roamgate_previous_and_back	CLI internals beyond its help and outputs
+server/src/cli/update.test.ts	swaps roamgate-pi with its previous copy too	rust-unit:roamgate-cli:commands::tests::swaps_roamgate_pi_with_its_previous_copy_too	CLI internals beyond its help and outputs
 server/src/cli/update.test.ts	leaves files alone when the previous executable is unusable	rust-unit:roamgate-cli:commands::tests::leaves_files_alone_when_the_previous_executable_is_unusable	CLI internals beyond its help and outputs
 server/src/cli/url.test.ts	draws exactly the library's modules with a quiet zone	rust-unit:roamgate-cli:qr::tests::draws_exactly_the_library_s_modules_with_a_quiet_zone	CLI internals beyond its help and outputs
 server/src/cli/url.test.ts	prints tokenized local and LAN URLs from the service config	rust-unit:roamgate-cli:url::tests::prints_tokenized_local_and_lan_urls_from_the_service_config	CLI internals beyond its help and outputs
@@ -4788,13 +4789,17 @@ scripts/contract/write.test.ts	JSON is written as the formatter writes it	intern
 scripts/deploy-templates.test.ts	renamed systemd template runs Roamgate and uses the Roamgate environment file	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/deploy-templates.test.ts	launchd template executes the installed Roamgate binary with Roamgate identities and state paths	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/install-plugin.test.ts	plugin manifest runs system installers and the native executable	scenario:parity/scenarios/install/plugin-manifest.yaml	
-scripts/install-plugin.test.ts	plugin installer stages a matching native release without Bun: ${failure}	scenario:parity/scenarios/install/plugin-checksum.yaml,scenario:parity/scenarios/install/plugin-download.yaml,scenario:parity/scenarios/install/plugin-metadata.yaml,scenario:parity/scenarios/install/plugin-native-command.yaml,scenario:parity/scenarios/install/plugin-native-exit.yaml,scenario:parity/scenarios/install/plugin-none.yaml	
+scripts/install-plugin.test.ts	plugin installer stages a matching native release without Bun: ${failure}	scenario:parity/scenarios/install/plugin-checksum.yaml,scenario:parity/scenarios/install/plugin-download.yaml,scenario:parity/scenarios/install/plugin-metadata.yaml,scenario:parity/scenarios/install/plugin-native-command.yaml,scenario:parity/scenarios/install/plugin-native-exit.yaml,scenario:parity/scenarios/install/plugin-none.yaml,scenario:parity/scenarios/install/plugin-pi-sidecar.yaml	
 scripts/install-plugin.windows.test.ts	Windows plugin installer verifies and stages releases without Bun on PATH	pending:windows-runner	Windows runner: install-plugin.ps1 under PowerShell (plan 5.10)
 scripts/install-roamgate.test.ts	retains the legacy installer without replacing Roamgate	scenario:parity/scenarios/install/legacy-installer.yaml	
 scripts/install-roamgate.test.ts	legacy checksum failure preserves the existing binary	scenario:parity/scenarios/install/legacy-checksum-failure.yaml	
 scripts/install-roamgate.test.ts	prefers Roamgate variables, including empty VERSION for latest	scenario:parity/scenarios/install/roamgate-variables-win.yaml	
 scripts/install-roamgate.test.ts	rejects an explicitly empty Roamgate installation directory	scenario:parity/scenarios/install/empty-install-dir.yaml	
 scripts/install-roamgate.test.ts	verifies, backs up, and installs the expected platform package	scenario:parity/scenarios/install/install-and-back-up.yaml	
+scripts/install-roamgate.test.ts	installs roamgate-pi beside roamgate and keeps the previous one	scenario:parity/scenarios/install/pi-sidecar.yaml	
+scripts/install-roamgate.test.ts	a release without roamgate-pi leaves none, its previous one kept	scenario:parity/scenarios/install/pi-sidecar-dropped.yaml	
+scripts/install-roamgate.test.ts	a previous release without roamgate-pi leaves no previous one	scenario:parity/scenarios/install/pi-sidecar-first.yaml	
+scripts/install-roamgate.test.ts	refuses to replace a symlinked roamgate-pi	scenario:parity/scenarios/install/symlinked-pi-sidecar.yaml	
 scripts/install-roamgate.test.ts	rejects filenames supplied by an untrusted checksum file	scenario:parity/scenarios/install/untrusted-checksum-name.yaml	
 scripts/install-roamgate.test.ts	refuses to replace a symlinked install target	scenario:parity/scenarios/install/symlinked-target.yaml	
 scripts/install-roamgate.test.ts	rejects unauthenticated non-loopback release mirrors	scenario:parity/scenarios/install/insecure-mirror.yaml	

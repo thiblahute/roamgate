@@ -14,7 +14,7 @@ fail() {
 
 [ -n "$install_dir" ] || fail "install directory must not be empty"
 
-for command in curl tar install uname awk cat mktemp; do
+for command in curl tar install uname awk cat mktemp grep; do
   command -v "$command" >/dev/null 2>&1 ||
     fail "required command not found: $command"
 done
@@ -94,13 +94,20 @@ esac
 package_dir="roamgate-${platform}"
 mkdir -p "$install_dir"
 target="$install_dir/roamgate"
-if { [ -e "$target" ] || [ -L "$target" ]; } &&
-  { [ ! -f "$target" ] || [ -L "$target" ]; }; then
-  fail "install target exists but is not a regular file"
-fi
+# The Pi sidecar Ranger runs for models other than Claude Code, beside
+# roamgate; releases before the Rust build have none.
+pi_target="$install_dir/roamgate-pi"
+for path in "$target" "$pi_target"; do
+  if { [ -e "$path" ] || [ -L "$path" ]; } &&
+    { [ ! -f "$path" ] || [ -L "$path" ]; }; then
+    fail "install target exists but is not a regular file"
+  fi
+done
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/roamgate-install.XXXXXX")"
 target_tmp=""
 backup_tmp=""
+pi_tmp=""
+pi_backup_tmp=""
 
 cleanup() {
   rm -rf "$tmp"
@@ -109,6 +116,12 @@ cleanup() {
   fi
   if [ -n "${backup_tmp:-}" ]; then
     rm -f "$backup_tmp"
+  fi
+  if [ -n "${pi_tmp:-}" ]; then
+    rm -f "$pi_tmp"
+  fi
+  if [ -n "${pi_backup_tmp:-}" ]; then
+    rm -f "$pi_backup_tmp"
   fi
 }
 trap cleanup EXIT
@@ -142,19 +155,31 @@ else
 fi
 [ "$actual_checksum" = "$expected_checksum" ] || fail "package checksum mismatch"
 
-tar -xJf "$archive" -C "$tmp" \
-  "$package_dir/VERSION" \
-  "$package_dir/roamgate"
+has_pi=""
+if tar -tJf "$archive" | grep -Fqx "$package_dir/roamgate-pi"; then
+  has_pi=1
+  tar -xJf "$archive" -C "$tmp" \
+    "$package_dir/VERSION" \
+    "$package_dir/roamgate" \
+    "$package_dir/roamgate-pi"
+else
+  tar -xJf "$archive" -C "$tmp" \
+    "$package_dir/VERSION" \
+    "$package_dir/roamgate"
+fi
 
 extracted_package_dir="$tmp/$package_dir"
 version_file="$extracted_package_dir/VERSION"
 binary="$extracted_package_dir/roamgate"
+pi="$extracted_package_dir/roamgate-pi"
 [ -d "$extracted_package_dir" ] && [ ! -L "$extracted_package_dir" ] ||
   fail "package directory is invalid"
 [ -f "$version_file" ] && [ ! -L "$version_file" ] ||
   fail "package VERSION file is missing or invalid"
 [ -f "$binary" ] && [ ! -L "$binary" ] && [ -x "$binary" ] ||
   fail "package binary is missing, invalid, or not executable"
+[ -z "$has_pi" ] || { [ -f "$pi" ] && [ ! -L "$pi" ] && [ -x "$pi" ]; } ||
+  fail "package roamgate-pi is invalid or not executable"
 
 package_name=""
 package_version=""
@@ -174,12 +199,18 @@ binary_version="$("$binary" --version)"
 [ "$binary_version" = "roamgate $package_version" ] ||
   fail "binary version does not match package VERSION"
 
-if { [ -e "$target" ] || [ -L "$target" ]; } &&
-  { [ ! -f "$target" ] || [ -L "$target" ]; }; then
-  fail "install target changed during installation"
-fi
+for path in "$target" "$pi_target"; do
+  if { [ -e "$path" ] || [ -L "$path" ]; } &&
+    { [ ! -f "$path" ] || [ -L "$path" ]; }; then
+    fail "install target changed during installation"
+  fi
+done
 target_tmp="$(mktemp "$install_dir/.roamgate.new.XXXXXX")"
 install -m 0755 "$binary" "$target_tmp"
+if [ -n "$has_pi" ]; then
+  pi_tmp="$(mktemp "$install_dir/.roamgate-pi.new.XXXXXX")"
+  install -m 0755 "$pi" "$pi_tmp"
+fi
 backup=""
 if [ -f "$target" ] && [ ! -L "$target" ]; then
   backup="$target.previous"
@@ -187,11 +218,29 @@ if [ -f "$target" ] && [ ! -L "$target" ]; then
   install -m 0755 "$target" "$backup_tmp"
   mv -f "$backup_tmp" "$backup"
   backup_tmp=""
+  # roamgate-pi.previous goes with roamgate.previous: none when the
+  # replaced release had no roamgate-pi.
+  if [ -f "$pi_target" ] && [ ! -L "$pi_target" ]; then
+    pi_backup_tmp="$(mktemp "$install_dir/.roamgate-pi.previous.XXXXXX")"
+    install -m 0755 "$pi_target" "$pi_backup_tmp"
+    mv -f "$pi_backup_tmp" "$pi_target.previous"
+    pi_backup_tmp=""
+  else
+    rm -f "$pi_target.previous"
+  fi
+  [ -n "$has_pi" ] || rm -f "$pi_target"
+fi
+if [ -n "$has_pi" ]; then
+  mv -f "$pi_tmp" "$pi_target"
+  pi_tmp=""
 fi
 mv -f "$target_tmp" "$target"
 target_tmp=""
 
 printf 'Installed roamgate %s to %s\n' "$package_version" "$target"
+if [ -n "$has_pi" ]; then
+  printf 'Installed its Pi sidecar to %s\n' "$pi_target"
+fi
 if [ -n "$backup" ]; then
   printf 'Previous binary saved to %s\n' "$backup"
 fi

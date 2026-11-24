@@ -4,6 +4,7 @@ Usage:
   roamgate rollback
 
 The update command and installer keep the replaced executable as
-roamgate.previous. Rollback swaps the two files, so running it again undoes the
+roamgate.previous, and the replaced Pi sidecar roamgate-pi as
+roamgate-pi.previous. Rollback swaps each pair, so running it again undoes the
 rollback. A running managed service that uses this executable is restarted.
 

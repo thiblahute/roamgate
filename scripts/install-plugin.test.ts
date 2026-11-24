@@ -39,6 +39,7 @@ test("plugin manifest runs system installers and the native executable", () => {
 
 for (const failure of [
   "none",
+  "pi-sidecar",
   "checksum",
   "metadata",
   "native-command",
@@ -69,6 +70,8 @@ exit 2
 `,
       { mode: 0o755 },
     );
+    if (failure === "pi-sidecar")
+      writeFileSync(join(packagePath, "roamgate-pi"), "pi\n", { mode: 0o755 });
     writeFileSync(
       join(packagePath, "VERSION"),
       `roamgate ${failure === "metadata" ? "9.8.6" : "9.8.7"} ${platform}\n`,
@@ -108,10 +111,11 @@ cp "$FIXTURE_ASSETS/\${url##*/}" "$out"
         ROAMGATE_INSTALL_DIR: join(root, "ignored"),
       },
     });
+    const installs = failure === "none" || failure === "pi-sidecar";
     expect(result.exitCode, result.stderr.toString()).toBe(
-      failure === "none" ? 0 : failure === "download" ? 22 : 1,
+      installs ? 0 : failure === "download" ? 22 : 1,
     );
-    if (failure === "none")
+    if (installs)
       expect(
         Bun.spawnSync([join(server, "roamgate"), "plugin", "version"])
           .stdout.toString()
@@ -121,7 +125,11 @@ cp "$FIXTURE_ASSETS/\${url##*/}" "$out"
       expect(readFileSync(join(server, "roamgate"), "utf8")).toBe(
         "previous binary",
       );
-    expect(readdirSync(server)).toEqual(["roamgate"]);
+    expect(readdirSync(server).sort()).toEqual(
+      failure === "pi-sidecar" ? ["roamgate", "roamgate-pi"] : ["roamgate"],
+    );
+    if (failure === "pi-sidecar")
+      expect(readFileSync(join(server, "roamgate-pi"), "utf8")).toBe("pi\n");
     expect(existsSync(join(root, "ignored"))).toBe(false);
   });
 }

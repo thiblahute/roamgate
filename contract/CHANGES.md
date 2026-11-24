@@ -6,6 +6,26 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.39
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+The Pi sidecar in installs and updates (S25 cut-over, WP8; family update,
+cli/help/update.txt and rollback.txt, assets/sh/update-install.sh): the
+installers (scripts/install-roamgate.sh, install-plugin.sh and .ps1) and
+the update installer put the package's `roamgate-pi` (`roamgate-pi.exe` on
+Windows) beside `roamgate` when the archive has one, with the binary's
+checks (regular files, mode 0755, rename into place); an archive without
+it is still accepted. The replaced `roamgate-pi` is kept as
+`roamgate-pi.previous` beside `roamgate.previous` (none when the replaced
+release had none), and `roamgate rollback` swaps that pair with the
+executables; a `roamgate-pi` or `roamgate-pi.previous` that is not a
+regular file makes it refuse before changing anything. `roamgate update`
+on the latest release whose `roamgate-pi` is missing runs the update
+installer, which then keeps the executable and `roamgate.previous` and adds
+`roamgate-pi` (`Installed roamgate-pi <version> at <path>.`). The
+inventory is unchanged.
+
 ## 1.38
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

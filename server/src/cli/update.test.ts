@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { EXIT_FAILURE, EXIT_OK } from "./command";
 import { createUpdateCommand, rollbackCommand } from "./update";
@@ -123,6 +129,23 @@ describe("roamgate rollback", () => {
     expect(cli.output[0]).toBe("Rolled back roamgate 1.2.3 -> 1.1.0.");
     expect(await rollbackCommand.run([], cli.context)).toBe(EXIT_OK);
     expect(readFileSync(current, "utf8")).toContain("roamgate 1.2.3");
+  });
+
+  test("swaps roamgate-pi with its previous copy too", async () => {
+    cli = createTestCli();
+    const current = cli.context.runtime.execPath;
+    mkdirSync(join(cli.home, "bin"));
+    executable(current, "1.2.3");
+    executable(`${current}.previous`, "1.1.0");
+    const pi = join(cli.home, "bin", "roamgate-pi");
+    executable(pi, "pi 1.2.3");
+    // 1.1.0 had no roamgate-pi: rolled back, it has none.
+    expect(await rollbackCommand.run([], cli.context)).toBe(EXIT_OK);
+    expect(existsSync(pi)).toBe(false);
+    expect(readFileSync(`${pi}.previous`, "utf8")).toContain("pi 1.2.3");
+    expect(await rollbackCommand.run([], cli.context)).toBe(EXIT_OK);
+    expect(readFileSync(pi, "utf8")).toContain("pi 1.2.3");
+    expect(existsSync(`${pi}.previous`)).toBe(false);
   });
 
   test("leaves files alone when the previous executable is unusable", async () => {

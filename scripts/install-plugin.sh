@@ -21,10 +21,19 @@ if ! native_version="$("$staging/roamgate" plugin version)" ||
   exit 1
 fi
 target="$plugin_root/server/roamgate"
-if { [ -e "$target" ] || [ -L "$target" ]; } &&
-  { [ ! -f "$target" ] || [ -L "$target" ]; }; then
-  printf 'Roamgate plugin: install target is not a regular file\n' >&2
-  exit 1
+# The Pi sidecar beside the binary, when the release has one.
+pi_target="$plugin_root/server/roamgate-pi"
+for path in "$target" "$pi_target"; do
+  if { [ -e "$path" ] || [ -L "$path" ]; } &&
+    { [ ! -f "$path" ] || [ -L "$path" ]; }; then
+    printf 'Roamgate plugin: install target is not a regular file\n' >&2
+    exit 1
+  fi
+done
+if [ -f "$staging/roamgate-pi" ]; then
+  mv -f "$staging/roamgate-pi" "$pi_target"
+else
+  rm -f "$pi_target"
 fi
 mv -f "$staging/roamgate" "$target"
 printf 'Installed Roamgate plugin binary %s\n' "$version"
