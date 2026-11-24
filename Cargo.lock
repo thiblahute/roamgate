@@ -6975,7 +6975,9 @@ version = "0.8.15"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "bytes",
  "futures-util",
+ "http 1.5.0",
  "indexmap",
  "roamgate-activity",
  "roamgate-agents",
@@ -6990,6 +6992,7 @@ dependencies = [
  "roamgate-forge",
  "roamgate-git",
  "roamgate-herdr",
+ "roamgate-history",
  "roamgate-http",
  "roamgate-mr-reviews",
  "roamgate-notify",
@@ -7179,6 +7182,7 @@ dependencies = [
  "roamgate-connections",
  "roamgate-exec",
  "roamgate-herdr",
+ "roamgate-history",
  "roamgate-mr-reviews",
  "roamgate-notify",
  "roamgate-voice-server",
@@ -7321,6 +7325,27 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "roamgate-history"
+version = "0.0.0"
+dependencies = [
+ "futures-util",
+ "regex",
+ "roamgate-agents",
+ "roamgate-base",
+ "roamgate-exec",
+ "roamgate-mr-reviews",
+ "roamgate-work",
+ "rusqlite",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

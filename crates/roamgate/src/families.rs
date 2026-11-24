@@ -15,6 +15,7 @@ pub mod assistant;
 pub mod claude_mod;
 pub mod conversation;
 pub mod herdr;
+pub mod history;
 pub mod host;
 pub mod limit_resume;
 pub mod mr_cache;
@@ -52,6 +53,7 @@ pub fn core_families() -> Families {
         conversation::family(),
         workspace::family(),
         review::family(),
+        history::family(),
     ]
     .into_iter()
     .flatten()

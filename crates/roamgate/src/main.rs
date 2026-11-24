@@ -44,6 +44,7 @@ async fn main() -> ExitCode {
             "push" => roamgate::families::notifications::cli(&args).await,
             "activity" => roamgate::families::activity::cli(&args),
             "archive" => roamgate::families::archive::cli(&args).await,
+            "history" => roamgate::families::history::cli(&args),
             "reviews" => roamgate::reviews_cmd::cli(&args),
             "voice" => roamgate::families::voice::cli(&args),
             "setup" => roamgate::families::voice::setup_cli(&args).await,

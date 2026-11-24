@@ -1,0 +1,98 @@
+name: the local history commits a Work change as its author and every area in one pass; the status, the CLI and Settings follow
+family: history
+description: >
+  The history family's surface on whichever side owns it (run it with
+  PARITY_RUST_OWNERS=history for the core's): a Work change is its own
+  commit, the areas go in one Roamgate commit with the host's trailer, the
+  status says so on the route and in `roamgate history`, a pass with nothing
+  new commits nothing, Settings turn it off and move it.
+server:
+  env:
+    ROAMGATE_HISTORY: ""
+steps:
+  - login: {}
+  - connect: {}
+  - http: GET /api/history
+    expect:
+      status: 200
+      json:
+        enabled: true
+        location: "${DATA}/history"
+        defaultLocation: "${DATA}/history"
+        exists: false
+        lastCommit: null
+        commits: 0
+        pending: []
+        running: false
+        deferred: null
+  - call: bridge.work.add
+    params: { title: Keep history, tags: [history], state: open }
+    save: { item: /result/item/id }
+  - http: POST /api/history/commit
+    headers: { x-roamgate-settings: "1" }
+    body: {}
+    expect:
+      status: 200
+      json:
+        enabled: true
+        exists: true
+        commits: 3
+        lastCommit: { author: Roamgate }
+        files: { FORMAT: 1, README.md: 1, work: "{{number}}" }
+        lastPass: { commits: 2 }
+        blocked: []
+        errors: []
+        pending: []
+        running: false
+        deferred: null
+  - assert_file:
+      path: "${DATA}/history/work/items/${item}.md"
+      text_contains: '"title":"Keep history"'
+  - sh: git -C ${DATA}/history log --format='%an <%ae>|%s%n%b' --reverse
+    expect:
+      exit: 0
+      stdout_contains:
+        - "Roamgate <roamgate@"
+        - "|Start the Roamgate history"
+        - ' "Keep history"'
+        - "By the user."
+        - ': state open, title, tags "Keep history"'
+        - "; work: 1 project, its history"
+        - "- work/history.jsonl"
+        - "Roamgate-Host: "
+  - cli: [history, status, --json]
+    expect:
+      exit: 0
+      stdout_json: { enabled: true, exists: true, commits: 3, pending: [], running: false }
+  - cli: [history, commit]
+    expect:
+      exit: 0
+      stdout: "Nothing changed in ~/.config/roamgate/history.\n"
+  - http: PUT /api/history
+    headers: { x-roamgate-settings: "1" }
+    body: { location: relative/dir }
+    expect:
+      status: 400
+      json: { error: the history location must be an absolute path }
+  - http: PUT /api/history
+    headers: { x-roamgate-settings: "1" }
+    body: { enabled: false }
+    expect: { status: 200, json: { enabled: false, commits: 3 } }
+  - assert_file:
+      path: "${DATA}/settings.json"
+      json: { history: { enabled: false } }
+  - http: PUT /api/history
+    headers: { x-roamgate-settings: "1" }
+    body: { enabled: true, location: "${ROOT}/elsewhere" }
+    expect:
+      status: 200
+      json: { enabled: true, location: "${ROOT}/elsewhere", exists: false }
+  - http: POST /api/history/commit
+    headers: { x-roamgate-settings: "1" }
+    body: {}
+    expect:
+      status: 200
+      json: { location: "${ROOT}/elsewhere", exists: true, commits: 2, errors: [] }
+  - assert_file:
+      path: "${ROOT}/elsewhere/work/items/${item}.md"
+      text_contains: "Keep history"

@@ -407,6 +407,10 @@ struct ReverseHistory(Arc<ReverseDeps>);
 
 impl HistorySink for ReverseHistory {
     fn changed(&self, area: &str, id: Option<&str>) {
+        // The core's own history while it owns it, else Bun's.
+        if self.0.owned && super::history::tell_area(&self.0.cx, area, id) {
+            return;
+        }
         self.0
             .tell("history.changed", json!({"area": area, "id": id}));
     }
@@ -419,10 +423,14 @@ impl HistorySink for ReverseHistory {
         actor: &WorkActor,
         at: &str,
     ) {
-        self.0.tell(
-            "history.work_changed",
-            json!({"item": item, "id": id, "change": change, "actor": actor, "at": at}),
-        );
+        let args = json!({"item": item, "id": id, "change": change, "actor": actor, "at": at});
+        if self.0.owned
+            && let Ok(change) = serde_json::from_value(args.clone())
+            && super::history::tell_work(&self.0.cx, change)
+        {
+            return;
+        }
+        self.0.tell("history.work_changed", args);
     }
 }
 

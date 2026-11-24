@@ -290,8 +290,10 @@ import { enrichIntegrationVersions } from "./herdr/integration-versions";
 import { historyPaths, type ReviewSource } from "./history/area";
 import { stableJson } from "./history/format";
 import {
+  type HistorySink,
   historyChanged,
   historyWorkChanged,
+  setHistorySink,
   type WorkChange,
 } from "./history/hooks";
 import { expandLocation, historyAreas, historyPlace } from "./history/place";
@@ -2158,6 +2160,31 @@ const coreReverseTargets = {
     historyWorkChanged(args as WorkChange);
     return { ok: true };
   },
+  // The core takes the history: Bun's runtime stops, its last pass written.
+  "history.release": async () => {
+    await releaseBunHistory();
+    return {};
+  },
+  // Its route's settings change while Bun owns settings.json.
+  "history.configure": async (args: unknown) => {
+    const { location, enabled } = (args ?? {}) as {
+      location?: unknown;
+      enabled?: unknown;
+    };
+    if (
+      location !== undefined &&
+      location !== null &&
+      typeof location !== "string"
+    )
+      throw new Error("history.configure: location is a path or null");
+    if (enabled !== undefined && typeof enabled !== "boolean")
+      throw new Error("history.configure: enabled is true or false");
+    await configureHistory({
+      ...(location !== undefined ? { location } : {}),
+      ...(enabled !== undefined ? { enabled } : {}),
+    });
+    return {};
+  },
   // The mr_reviews family: what the reviews module asks of this server,
   // through the same code Bun's own module uses (mrReviewsHost).
   "mr_reviews.connections": async () => {
@@ -3519,37 +3546,106 @@ function mrReviewConnections(): MrConnection[] {
 let reviewStorageForHistory: ReviewSource | null = null;
 
 /** Local history (server/src/history): a git repo of what was authored. */
-const historyRuntime = new HistoryRuntime({
-  areas: historyAreas(historyPaths(), () => {
-    // While the core owns the reviews, the file read as it writes it.
-    if (!reviewStorageForHistory)
-      if (reviewsOnCore())
-        reviewStorageForHistory = openReviewStorage(reviewDirectory());
-      else getReviewService();
-    return reviewStorageForHistory;
-  }),
-  place: async () => historyPlace(await readGuiSettings(), dataRoot()),
-  reviews: () => reviewStorageForHistory,
-  gameMode: () => gameModeActive(),
-  log: logger.child("history"),
+function createHistoryRuntime(): HistoryRuntime {
+  return new HistoryRuntime({
+    areas: historyAreas(historyPaths(), () => {
+      // While the core owns the reviews, the file read as it writes it.
+      if (!reviewStorageForHistory)
+        if (reviewsOnCore())
+          reviewStorageForHistory = openReviewStorage(reviewDirectory());
+        else getReviewService();
+      return reviewStorageForHistory;
+    }),
+    place: async () => historyPlace(await readGuiSettings(), dataRoot()),
+    reviews: () => reviewStorageForHistory,
+    gameMode: () => gameModeActive(),
+    log: logger.child("history"),
+  });
+}
+let historyRuntime = createHistoryRuntime();
+
+// The history family: while the Rust core owns it, its runtime is the
+// repo's one writer. Bun's stops first (the core asks `history.release`,
+// answered once Bun's last pass is written) and the stores Bun still owns
+// tell the core their writes (`internal.history.changed` and
+// `.work_changed`, one at a time, in order). Back to Bun: the front asks
+// `internal.history.release` (the core's last pass) and Bun's runs again.
+let historyOnCore = false;
+/** The server stops: the history stays where it is. */
+let historyStopping = false;
+let historyRelease: Promise<void> | null = null;
+let historyForwarded: Promise<void> = Promise.resolve();
+function forwardHistory(op: "changed" | "work_changed", params: unknown) {
+  const front = coreFront;
+  historyForwarded = historyForwarded.then(() =>
+    front
+      ?.callInternal("history", op, params)
+      .then(() => undefined)
+      .catch((error: unknown) =>
+        logger.child("history").warn("a change did not reach the Rust core", {
+          op,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      ),
+  );
+}
+const historyToCore: HistorySink = {
+  changed: (area, id) =>
+    forwardHistory("changed", id === undefined ? { area } : { area, id }),
+  workChanged: (change) => forwardHistory("work_changed", change),
+};
+function releaseBunHistory(): Promise<void> {
+  if (historyOnCore && historyRelease) return historyRelease;
+  historyOnCore = true;
+  historyRelease = (async () => {
+    await historyRuntime.stop();
+    setHistorySink(historyToCore);
+    logger.child("history").info("local history handed to the Rust core");
+  })();
+  return historyRelease;
+}
+onOwnershipChanged(() => {
+  if (!bunOwns("history") || !historyOnCore || historyStopping) return;
+  const front = coreFront;
+  void (
+    front
+      ? front.callInternal("history", "release", {}).catch(() => undefined)
+      : Promise.resolve()
+  ).then(async () => {
+    if (!bunOwns("history") || !historyOnCore || historyStopping) return;
+    await historyRelease;
+    historyOnCore = false;
+    historyRelease = null;
+    historyRuntime = createHistoryRuntime();
+    historyRuntime.start();
+    logger.child("history").info("local history written by Bun again");
+  });
 });
+/** Settings' History and backup: where the repo is and whether it is on. */
+async function configureHistory({
+  location,
+  enabled,
+}: {
+  location?: string | null;
+  enabled?: boolean;
+}): Promise<void> {
+  const expanded =
+    typeof location === "string" ? expandLocation(location) : location;
+  await updateGuiSettings((current) => {
+    const history = { ...current.history };
+    if (expanded === null) delete history.location;
+    else if (expanded !== undefined) history.location = expanded;
+    if (enabled !== undefined) history.enabled = enabled;
+    const next = { ...current };
+    if (Object.keys(history).length) next.history = history;
+    else delete next.history;
+    return next;
+  });
+}
 const handleHistory = createHistoryRoute({
   status: () => historyRuntime.status(),
   commit: () => historyRuntime.commitNow(),
-  configure: async ({ location, enabled }) => {
-    const expanded =
-      typeof location === "string" ? expandLocation(location) : location;
-    await updateGuiSettings((current) => {
-      const history = { ...current.history };
-      if (expanded === null) delete history.location;
-      else if (expanded !== undefined) history.location = expanded;
-      if (enabled !== undefined) history.enabled = enabled;
-      const next = { ...current };
-      if (Object.keys(history).length) next.history = history;
-      else delete next.history;
-      return next;
-    });
-  },
+  configure: configureHistory,
 });
 
 let workService: WorkService | null = null;
@@ -8964,6 +9060,13 @@ function stopManagerOnce(): Promise<void> {
       await coreFront!
         .callInternal("conversation", "stop", {})
         .catch(() => undefined);
+    // The core's last history pass, its changes committed (5 s at most).
+    if (historyOnCore) {
+      historyStopping = true;
+      await coreFront
+        ?.callInternal("history", "release", {})
+        .catch(() => undefined);
+    }
     // The core: what it owns stops writing before Bun's own goes.
     await coreFront?.stop();
     // Pause the harness before taking away the runtimes its reads depend on.

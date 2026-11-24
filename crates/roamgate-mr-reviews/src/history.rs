@@ -62,16 +62,22 @@ fn utf16_cmp(a: &str, b: &str) -> Ordering {
     a.encode_utf16().cmp(b.encode_utf16())
 }
 
-/// A copy of a value with every object's keys sorted (`sortedKeys`).
+/// A copy of a value with every object's keys sorted (`sortedKeys`), in
+/// the order JavaScript then holds them: integer-like keys first, by
+/// number (`Object.fromEntries` puts them there), the others sorted.
 pub fn sorted_keys(value: &Value) -> Value {
+    roamgate_base::json_store::js_key_order(sorted_by_name(value))
+}
+
+fn sorted_by_name(value: &Value) -> Value {
     match value {
-        Value::Array(items) => Value::Array(items.iter().map(sorted_keys).collect()),
+        Value::Array(items) => Value::Array(items.iter().map(sorted_by_name).collect()),
         Value::Object(map) => {
             let mut keys: Vec<&String> = map.keys().collect();
             keys.sort_by(|a, b| utf16_cmp(a, b));
             Value::Object(
                 keys.into_iter()
-                    .map(|key| (key.clone(), sorted_keys(&map[key])))
+                    .map(|key| (key.clone(), sorted_by_name(&map[key])))
                     .collect(),
             )
         }

@@ -12,6 +12,11 @@ fn stable_json_sorts_every_object_s_keys_and_ends_with_one_newline() {
         stable_json(&json!({"b": 1, "a": 2})),
         stable_json(&json!({"a": 2, "b": 1}))
     );
+    // As Bun prints it: integer-like keys first, by number.
+    assert_eq!(
+        stable_json(&json!({"b": 1, "10": 2, "9": 3, "01": 4})),
+        "{\n  \"9\": 3,\n  \"10\": 2,\n  \"01\": 4,\n  \"b\": 1\n}\n",
+    );
 }
 
 #[test]

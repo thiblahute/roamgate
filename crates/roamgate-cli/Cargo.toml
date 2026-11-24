@@ -24,6 +24,7 @@ roamgate-base = { path = "../roamgate-base" }
 roamgate-connections = { path = "../roamgate-connections" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }
+roamgate-history = { path = "../roamgate-history" }
 roamgate-mr-reviews = { path = "../roamgate-mr-reviews" }
 roamgate-notify = { path = "../roamgate-notify" }
 roamgate-voice-server = { path = "../roamgate-voice-server" }

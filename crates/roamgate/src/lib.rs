@@ -74,6 +74,7 @@ pub const FAMILY_COMMANDS: &[&str] = &[
     "push",
     "activity",
     "archive",
+    "history",
     "service",
     "doctor",
     "url",

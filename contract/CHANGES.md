@@ -6,6 +6,23 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.31
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+The local history is a family the core serves (S25 prerequisite, item
+df7df4e2; wire/core-channel.md, The history family): `history` in
+owners/families.json (`/api/history`, `/api/history/commit`,
+`roamgate history`, the repo's status file and pass lock). While the core
+owns it, roamgate-history runs the repo with Bun's files and commits; it
+asks the new reverse target `history.release` (Bun's runtime stops, its last
+pass written) before it starts, and `history.configure` to change
+settings.json's `history` while Bun owns that file; the front sends the
+writes of the stores it still owns as `internal.history.changed` and
+`internal.history.work_changed`, one at a time, and asks
+`internal.history.release` before its own runtime runs again. The browser
+surface and the inventory are unchanged.
+
 ## 1.30
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

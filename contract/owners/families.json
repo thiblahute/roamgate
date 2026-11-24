@@ -241,6 +241,15 @@
       "files": ["data:assistant"],
       "shadow": []
     },
+    "history": {
+      "phase": 12,
+      "note": "the local history repo (<data>/history unless Settings moves it): its runtime (dirty sets, debounce, the 30 s polls of the file areas, the start pass, a commit per Work change), its route and `roamgate history`. One writer at a time: the core asks history.release (Bun's runtime stops, its last pass written) before it starts its own, and the front asks internal.history.release before Bun's runs again; the writes of the stores Bun still owns reach the core as internal.history.changed and internal.history.work_changed, in order",
+      "rpc": [],
+      "http": ["/api/history", "/api/history/commit"],
+      "files": ["file:roamgate-status.json", "file:roamgate-pass.lock"],
+      "shadow": [],
+      "cli": ["history"]
+    },
     "test.echo": {
       "test": true,
       "phase": 1,

@@ -33,6 +33,7 @@ pub mod context;
 pub mod cpu_profile;
 pub mod doctor;
 pub mod herdr;
+pub mod history;
 pub mod index;
 pub mod launchd_environment;
 pub mod output;
