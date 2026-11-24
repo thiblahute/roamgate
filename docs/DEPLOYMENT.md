@@ -44,9 +44,13 @@ See [endpoint contracts](./ARCHITECTURE.md#terminal-endpoints).
 
 ## Install a release
 
-Releases include Linux, macOS, and Windows binaries for x86-64 and ARM64.
+Releases include Linux, macOS, and Windows binaries for x86-64 and ARM64, and
+a Linux x86-64 musl build. Each archive holds `roamgate`, the Pi sidecar
+`roamgate-pi` Ranger runs for models other than Claude Code, and `VERSION`;
+keep `roamgate-pi` beside `roamgate`, where the server looks for it.
 
-On Linux/macOS, the checksum-verifying installer writes `~/.local/bin/roamgate`:
+On Linux/macOS, the checksum-verifying installer writes `~/.local/bin/roamgate`
+and `~/.local/bin/roamgate-pi`:
 
 ```bash
 curl -fsSL \
@@ -56,11 +60,15 @@ curl -fsSL \
 
 Add `~/.local/bin` to PATH, then run `roamgate` and open the printed URL.
 `roamgate update` updates (or rerun the installer); `roamgate rollback` restores
-the previous binary (`roamgate.previous`).
+the previous binary (`roamgate.previous`) and its sidecar
+(`roamgate-pi.previous`). An update from a release older than the Rust build
+installs `roamgate` only, since that release's updater does the install: run
+`roamgate update` once more to add `roamgate-pi`.
 
 On Windows, download `roamgate-windows-<arch>.tar.xz` and its `.sha256` from the
 [latest release](https://github.com/powerfooI/roamgate/releases/latest), verify
-with `Get-FileHash`, extract with `tar.exe`, and run `roamgate.exe`.
+with `Get-FileHash`, extract with `tar.exe`, and run `roamgate.exe` with
+`roamgate-pi.exe` beside it.
 
 Installer settings go on the `sh` side of the pipe (`curl ... | <setting> sh`):
 
@@ -159,7 +167,8 @@ herdr plugin install powerfooI/roamgate --ref vX.Y.Z
 ```
 
 The installer verifies the package checksum, version, and platform before
-replacing the executable. To upgrade, run the same command with the new tag;
+replacing the executable, and puts the release's `roamgate-pi` beside it in
+`server/`. To upgrade, run the same command with the new tag;
 `herdr plugin update` stays on the original tag.
 
 For an unreleased checkout, build before linking, and rebuild after updates:
@@ -2142,8 +2151,9 @@ ExecStart=
 ExecStart=/absolute/path/service-wrapper -- %h/.local/bin/roamgate --host 0.0.0.0
 ```
 
-The updater installs a verified binary, keeps `roamgate.previous`, and exits so
-the supervisor restarts it.
+The updater installs a verified binary and its `roamgate-pi`, keeps
+`roamgate.previous` and `roamgate-pi.previous`, and exits so the supervisor
+restarts it.
 
 ## Command-line management
 
@@ -2189,17 +2199,22 @@ targets are listed in `targets.toml`:
 | `darwin-x64`, `darwin-arm64`   | macOS Intel / Apple Silicon                                            |
 | `windows-x64`, `windows-arm64` | Windows x86-64 / ARM64                                                 |
 
+Releases are this build: the Release workflow runs `cargo xtask package` for
+every target in `targets.toml` on its runner (cargo-zigbuild for Linux,
+cargo-xwin for Windows, macOS runners for macOS), with one web build shared by
+all of them, and publishes the same archive names, `.sha256` files and
+`.update.json` manifests, so existing installs update in place. Releases
+follow [AGENTS.md](../AGENTS.md#release-notes).
+
 The Bun build is still available: `bun scripts/studio-plugin.ts build-source`
 builds `server/roamgate`, `bun run build` rebuilds it, and `bun run
-package:<target>` packages it.
+package:<target>` packages it. `bun run clean` removes builds.
 
-`bun run clean` removes builds. Releases follow
-[AGENTS.md](../AGENTS.md#release-notes).
-
-Release binaries have no source maps. Each release run keeps a
-`debug-roamgate-<tag>-<target>` CI artifact for 30 days with source maps; extract
-its tar and run it to get readable stack traces. To build one locally, run
-`bun run build:web` and `bun run --cwd server compile --sourcemap`.
+Release binaries are stripped: a panic's backtrace shows addresses, not
+function names. For a readable one, build the release's tag with
+`CARGO_PROFILE_RELEASE_STRIP=false cargo build --release -p roamgate` and run
+it with `RUST_BACKTRACE=1`. `roamgate-pi` is a minified Bun executable without
+a source map; `bun run --cwd server compile:pi` builds it from a checkout.
 
 ## Troubleshooting
 
