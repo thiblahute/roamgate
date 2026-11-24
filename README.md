@@ -13,7 +13,8 @@ place. Check agent activity, inspect conversations, run commands, and review
 diffs from your browser. Work on any computer, then continue from your phone
 while Herdr keeps your sessions running.
 
-**Requires a running Herdr server.**
+**Requires a running Herdr server.** Roamgate itself is one native binary,
+written in Rust, with the web app built in: no runtime to install.
 
 ## Step away. Stay in flow.
 

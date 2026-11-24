@@ -8,8 +8,10 @@ remote access, see the [tutorial](./TUTORIAL.md#networking).
 - A running Herdr server, or let Roamgate [set one up](#managed-herdr-setup).
   Roamgate uses Herdr's default sockets (`~/.config/herdr/herdr.sock` and
   `herdr-client.sock`; named pipes under `%APPDATA%\herdr\` on Windows).
-- Release binaries need nothing else. Source builds need
-  [Bun](https://bun.sh) 1.4.4+.
+- Release binaries need nothing else: `roamgate` is one native (Rust)
+  executable with the web app embedded, beside the `roamgate-pi` helper Ranger
+  uses for models other than Claude Code. Source builds need
+  [Bun](https://bun.sh) 1.4.4+ (the web app) and a stable Rust toolchain.
 - On Windows, local Git features need [Git for Windows](https://gitforwindows.org/)
   on PATH.
 
@@ -2168,19 +2170,28 @@ and 2 on bad arguments; many accept `--json`.
 ## Build a standalone executable
 
 ```bash
-bun scripts/studio-plugin.ts build-source
-# Output: server/roamgate (server/roamgate.exe on Windows)
+bun install --frozen-lockfile
+bun run build:web
+cargo build --release -p roamgate
+# Output: target/release/roamgate (roamgate.exe on Windows)
 ```
 
-Afterwards `bun run build` rebuilds. Cross-compile with `bun run build:<target>`
-or package with `bun run package:<target>`; `bun run build:all` builds every
-target:
+The release build embeds the web app from `server/public`. `cargo xtask
+package <platform...|all>` builds and packages release archives (`roamgate`,
+`roamgate-pi` and `VERSION`, with checksums and update manifests) in
+`target/dist`; see [Rust workspace](../CONTRIBUTING.md#rust-workspace). The
+targets are listed in `targets.toml`:
 
-| Targets                        | Architectures                                     |
-| ------------------------------ | ------------------------------------------------- |
-| `linux-x64`, `linux-arm64`     | Linux x86-64 / ARM64 (glibc; musl is unsupported) |
-| `darwin-x64`, `darwin-arm64`   | macOS Intel / Apple Silicon                       |
-| `windows-x64`, `windows-arm64` | Windows x86-64 / ARM64                            |
+| Targets                        | Architectures                                                          |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| `linux-x64`, `linux-arm64`     | Linux x86-64 / ARM64 (glibc 2.28+)                                     |
+| `linux-x64-musl`               | Linux x86-64 (musl; not handled by the installer or `roamgate update`) |
+| `darwin-x64`, `darwin-arm64`   | macOS Intel / Apple Silicon                                            |
+| `windows-x64`, `windows-arm64` | Windows x86-64 / ARM64                                                 |
+
+The Bun build is still available: `bun scripts/studio-plugin.ts build-source`
+builds `server/roamgate`, `bun run build` rebuilds it, and `bun run
+package:<target>` packages it.
 
 `bun run clean` removes builds. Releases follow
 [AGENTS.md](../AGENTS.md#release-notes).

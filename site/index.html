@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#080b12" />
     <meta
       name="description"
-      content="Roamgate is an open-source browser client for Herdr. Control terminals, chat with agent sessions, review branches and rendered files with them, track work on a board, and manage worktrees from desktop or mobile."
+      content="Roamgate is an open-source browser client for Herdr. One native binary to control terminals, chat with agent sessions, review branches and rendered files with them, track work on a board, and manage worktrees from desktop or mobile."
     />
     <meta property="og:type" content="website" />
     <meta
@@ -203,8 +203,8 @@
             <span>What waits on you, what agents are doing</span>
           </div>
           <div>
-            <strong>Local or SSH</strong>
-            <span>Supported local and remote hosts</span>
+            <strong>Native</strong>
+            <span>One Rust binary, local or over SSH</span>
           </div>
         </div>
       </section>
@@ -768,9 +768,9 @@
             </div>
             <h3>Roamgate connects locally or over SSH</h3>
             <p>
-              Run one standalone binary beside Herdr. It bridges the local
-              socket API, terminal stream, files, Git operations, and session
-              records.
+              Run one native binary beside Herdr, with nothing else to install.
+              It bridges the local socket API, terminal stream, files, Git
+              operations, and session records.
             </p>
           </li>
           <li class="workflow-step reveal reveal-delay-two">
@@ -787,6 +787,50 @@
             </p>
           </li>
         </ol>
+      </section>
+
+      <section class="section shell" id="native" aria-labelledby="native-title">
+        <div class="section-heading reveal">
+          <div>
+            <p class="kicker">Now native</p>
+            <h2 id="native-title">Rewritten in Rust. Nothing else to learn.</h2>
+          </div>
+          <p>
+            Roamgate's server is now one native <code>roamgate</code> binary
+            written in Rust, with the web app built in. Same features, same
+            commands, and the same files on disk: update and carry on.
+          </p>
+        </div>
+        <ul class="feature-list feature-list-row reveal">
+          <li>
+            <h3>One binary, no runtime</h3>
+            <p>
+              The server, its core, and the web app ship in a single
+              executable. There is no Bun or Node runtime to install; the
+              installer and <code>roamgate update</code> work as before.
+            </p>
+          </li>
+          <li>
+            <h3>Your data, as it is</h3>
+            <p>
+              Settings, connections, reviews, the Work board, and history are
+              read from the same files, in place. Nothing to migrate or
+              export.
+            </p>
+          </li>
+          <li>
+            <h3>A faster terminal</h3>
+            <p>
+              Terminal output reaches the browser with lower latency than the
+              previous server at the same frame rate.
+            </p>
+          </li>
+        </ul>
+        <p class="native-note reveal">
+          Ranger's models other than Claude Code run through a bundled
+          <code>roamgate-pi</code> helper that ships in the same archive, and
+          voice stays an optional helper you build when you want it.
+        </p>
       </section>
 
       <section class="section mobile-section" id="mobile">
@@ -970,8 +1014,8 @@
             <p class="kicker">Ready when the next task starts</p>
             <h2>Give your agents a window.</h2>
             <p>
-              Install the standalone binary on macOS or Linux, start
-              Roamgate, and open the URL it prints. Windows x64 and ARM64 archives
+              Install the native binary on macOS or Linux, start Roamgate,
+              and open the URL it prints. No runtime to install. Windows x64 and ARM64 archives
               are available from GitHub Releases.
             </p>
             <div class="install-actions">
