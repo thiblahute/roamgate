@@ -232,6 +232,23 @@ async fn run_once(
         tracing::warn!(target: "bridge.front", "the core did not start: {}", error.message);
     }
     let _ = link.send(Some(peer.clone()));
+    // The test clock's advances while the core was being welcomed and
+    // started found no core to relay to: it catches up now (an absolute
+    // time, so an advance relayed meanwhile is not counted twice).
+    if let Some(clock) = config
+        .standalone
+        .as_ref()
+        .and_then(|core| core.test_clock.as_ref())
+    {
+        let _ = peer
+            .call(
+                "internal.clock.advance",
+                serde_json::json!({ "to": clock.now() }),
+                Ctx::default(),
+                false,
+            )
+            .await;
+    }
     tracing::info!(
         target: "bridge.front",
         "the {} core is connected",
