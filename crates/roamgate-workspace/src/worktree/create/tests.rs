@@ -1342,7 +1342,13 @@ async fn a_fresh_worktree_path_skips_any_existing_directory_and_any_worktree_git
         "init",
     ]);
     let base = root.join("wt").join("layer");
-    let base = base.to_str().unwrap();
+    // As git lists worktrees: with `/` on Windows too.
+    let base = if cfg!(windows) {
+        base.to_str().unwrap().replace('\\', "/")
+    } else {
+        base.to_str().unwrap().to_owned()
+    };
+    let base = base.as_str();
     let cx = GitContext::local(Arc::new(LocalRunner::system()));
     assert_eq!(
         free_worktree_path(base, "part", repo_path, &cx)

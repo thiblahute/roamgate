@@ -263,7 +263,8 @@ pub async fn free_worktree_path(
     } else {
         ""
     };
-    if !path.starts_with('/') {
+    // A POSIX path, or a drive path on a Windows machine (Git Bash).
+    if !roamgate_git::review::is_host_path(path) {
         let stderr = js_trim(&ran.stderr);
         return Err(if ran.code == 3 {
             format!(
