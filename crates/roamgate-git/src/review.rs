@@ -5,7 +5,6 @@
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::patch::DiffFile;
@@ -108,9 +107,4 @@ pub fn is_metadata_ref(name: &str) -> bool {
         .any(|part| METADATA_PARTS.contains(part.to_lowercase().as_str()))
 }
 
-static WINDOWS_DRIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z]:[\\/]").unwrap());
-
-/// An absolute path on the host: POSIX, or a Windows drive (Git Bash).
-pub fn is_host_path(path: &str) -> bool {
-    path.starts_with('/') || WINDOWS_DRIVE.is_match(path)
-}
+pub use roamgate_base::paths::is_host_path;

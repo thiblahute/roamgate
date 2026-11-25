@@ -988,7 +988,8 @@ impl Handover {
                 .filter(|cwd| !cwd.is_empty())
                 .or_else(|| str_of(agent.get("foreground_cwd")).map(str::to_owned))
                 .unwrap_or_default();
-            if !quitting && !cwd.starts_with('/') {
+            // A POSIX directory, or a drive's on a Windows machine.
+            if !quitting && !roamgate_base::paths::is_host_path(&cwd) {
                 return Ok(Exit::Refused(refuse(format!(
                     "Herdr did not report {name}'s working directory"
                 ))));

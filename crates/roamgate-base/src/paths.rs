@@ -157,6 +157,17 @@ pub fn short_temp_root() -> PathBuf {
     realpath(&root).unwrap_or(root)
 }
 
+/// An absolute path on a host: POSIX, or a Windows drive's (`C:\` or
+/// `C:/`, as Git Bash and Windows name them).
+pub fn is_host_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    path.starts_with('/')
+        || (bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'\\' | b'/'))
+}
+
 /// `path.dirname`: the parent, or the path itself at a root.
 pub fn dirname(path: &Path) -> PathBuf {
     match path.parent() {
