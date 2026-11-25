@@ -14,8 +14,26 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send + 'static> ChannelStream for T {}
 pub type BoxStream = Box<dyn ChannelStream>;
 
 /// Whether a channel address is a Windows named pipe.
-pub fn is_named_pipe(address: &str) -> bool {
-    address.starts_with(r"\\.\pipe\")
+pub use roamgate_base::local_socket::is_named_pipe;
+
+/// Where a front of pid `pid` listens for its core (the contract's
+/// "Process"): `core-<pid>.sock` in `runtime_dir`, on Windows the named pipe
+/// `\\.\pipe\roamgate-core-<pid>-<16 random hex digits>`.
+pub fn channel_address(runtime_dir: &std::path::Path, pid: u32) -> String {
+    #[cfg(windows)]
+    {
+        let _ = runtime_dir;
+        let random: [u8; 8] = rand::random();
+        let hex: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+        format!(r"\\.\pipe\roamgate-core-{pid}-{hex}")
+    }
+    #[cfg(not(windows))]
+    {
+        runtime_dir
+            .join(format!("core-{pid}.sock"))
+            .to_string_lossy()
+            .into_owned()
+    }
 }
 
 /// Connects to the front's channel.
@@ -117,53 +135,24 @@ impl Drop for Listener {
 #[cfg(windows)]
 mod windows {
     use std::io;
-    use std::time::Duration;
 
-    use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOptions};
+    use roamgate_base::local_socket::{PipeListener as Pipe, connect_pipe};
 
     use super::BoxStream;
 
-    /// ERROR_PIPE_BUSY: every instance is taken, try again shortly.
-    const ERROR_PIPE_BUSY: i32 = 231;
-
-    #[allow(clippy::disallowed_methods)]
     pub async fn connect(name: &str) -> io::Result<BoxStream> {
-        for _ in 0..50 {
-            match ClientOptions::new().open(name) {
-                Ok(client) => return Ok(Box::new(client)),
-                Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY) => {
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-                Err(error) => return Err(error),
-            }
-        }
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!("{name} stayed busy"),
-        ))
+        Ok(Box::new(connect_pipe(name).await?))
     }
 
-    pub struct PipeListener {
-        name: String,
-        next: NamedPipeServer,
-    }
+    pub struct PipeListener(Pipe);
 
     impl PipeListener {
         pub fn bind(name: &str) -> io::Result<Self> {
-            let next = ServerOptions::new()
-                .first_pipe_instance(true)
-                .create(name)?;
-            Ok(Self {
-                name: name.to_owned(),
-                next,
-            })
+            Pipe::bind(name).map(Self)
         }
 
         pub async fn accept(&mut self) -> io::Result<BoxStream> {
-            self.next.connect().await?;
-            let fresh = ServerOptions::new().create(&self.name)?;
-            let connected = std::mem::replace(&mut self.next, fresh);
-            Ok(Box::new(connected))
+            Ok(Box::new(self.0.accept().await?))
         }
     }
 }

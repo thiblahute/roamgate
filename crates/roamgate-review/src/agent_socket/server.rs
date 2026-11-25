@@ -274,7 +274,7 @@ impl AgentSocket {
             self.socket_path_for(socket_key)
         };
         let _ = std::fs::remove_file(&path);
-        let listener = roamgate_base::unix_socket::bind_tokio_listener(&path)?;
+        let listener = roamgate_base::local_socket::Listener::bind(&path)?;
         set_mode(&path, 0o600)?;
         let this = self.clone();
         let key = socket_key.to_owned();
@@ -283,7 +283,7 @@ impl AgentSocket {
             loop {
                 tokio::select! {
                     accepted = listener.accept() => {
-                        let Ok((stream, _)) = accepted else { continue };
+                        let Ok(stream) = accepted else { continue };
                         let this = this.clone();
                         let key = key.clone();
                         connections.spawn(async move {
@@ -1764,7 +1764,17 @@ fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
     {
         std::os::unix::fs::symlink(target, link)
     }
-    #[cfg(not(unix))]
+    // As node's symlinkSync without a type: a directory's link or a file's
+    // (Windows lets a user make them in developer mode or as an admin).
+    #[cfg(windows)]
+    {
+        if target.is_dir() {
+            std::os::windows::fs::symlink_dir(target, link)
+        } else {
+            std::os::windows::fs::symlink_file(target, link)
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (target, link);
         Err(std::io::Error::other("no symbolic links here"))

@@ -22,6 +22,7 @@
 //! | [`secrets`] | finding credentials in text and diffs | utils/secrets |
 //! | [`record`] | record mode's redacted JSONL recorder | contract-record/recorder, redact |
 //! | [`swr`] | `SwrCache`: single flight, TTL per entry, LRU, budget | mr-cache core, review/memo |
+//! | [`local_socket`] | Unix sockets at a path on every platform, Windows named pipes | Bun's `unix:` listeners, node:net pipes |
 //! | `unix_socket` | Unix socket listeners at paths past `SUN_LEN` (Linux) | Bun's long socket paths |
 
 pub mod assets;
@@ -31,6 +32,7 @@ pub mod env;
 pub mod error;
 pub mod json;
 pub mod json_store;
+pub mod local_socket;
 pub mod lock;
 pub mod log;
 pub mod loop_stall;

@@ -57,7 +57,6 @@ fn public_dir(args: &[String], env: &dyn Env) -> PathBuf {
 /// `welcome` on (`internal.clock.advance` on the channel). Each `advance`
 /// moves the front's clock, then the core's, and replies once both ran
 /// their due timers.
-#[cfg(unix)]
 fn serve_front_clock(
     clock: roamgate_base::clock::TestClock,
     path: &std::path::Path,
@@ -65,13 +64,13 @@ fn serve_front_clock(
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let _ = std::fs::remove_file(path);
-    let listener = tokio::net::UnixListener::bind(path)?;
+    let listener = roamgate_base::local_socket::Listener::bind(path)?;
     Ok(tokio::spawn(async move {
-        while let Ok((stream, _)) = listener.accept().await {
+        while let Ok(stream) = listener.accept().await {
             let clock = clock.clone();
             let core = core.clone();
             tokio::spawn(async move {
-                let (read, mut write) = stream.into_split();
+                let (read, mut write) = tokio::io::split(stream);
                 let mut lines = BufReader::new(read).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     if line.trim().is_empty() {
@@ -333,7 +332,7 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
         );
         return 1;
     }
-    let channel = runtime_dir.join(format!("core-{}.sock", std::process::id()));
+    let channel = roamgate_channel::transport::channel_address(&runtime_dir, std::process::id());
     let own_exe = std::env::current_exe().unwrap_or_default();
     let (link, core) = watch::channel(None);
     let mut clock_server = None;
@@ -381,7 +380,6 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
         if from_source { "0" } else { "1" }.into(),
     ));
     if let (Some(found), Some(test)) = (&test_clock, &virtual_clock) {
-        #[cfg(unix)]
         match serve_front_clock(test.clone(), &found.socket, core.clone()) {
             Ok(task) => clock_server = Some(task),
             Err(error) => {
@@ -392,8 +390,6 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
                 return 1;
             }
         }
-        #[cfg(not(unix))]
-        let _ = (found, test);
         // The core follows this clock over the channel (empty: no test
         // clock of its own).
         core_env.push((roamgate_base::clock::TEST_CLOCK_ENV.into(), String::new()));
@@ -519,7 +515,7 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
     let core_task = tokio::spawn(run_core(
         CoreConfig {
             program: own_exe,
-            channel: channel.to_string_lossy().into_owned(),
+            channel: channel.clone(),
             // The channel's pings and silence run on real time: a test
             // clock's advance is no silence.
             clock: Arc::new(SystemClock),
@@ -589,7 +585,9 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
     if let Some(recorder) = &recorder {
         recorder.close();
     }
-    let _ = std::fs::remove_file(&channel);
+    if !roamgate_channel::transport::is_named_pipe(&channel) {
+        let _ = std::fs::remove_file(&channel);
+    }
     match served {
         Ok(()) => 0,
         Err(error) => {

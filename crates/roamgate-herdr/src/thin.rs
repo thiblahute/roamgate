@@ -768,9 +768,10 @@ pub(crate) async fn connect_stream(path: &str) -> std::io::Result<Stream> {
     }
     #[cfg(windows)]
     {
-        tokio::net::windows::named_pipe::ClientOptions::new().open(path)
+        roamgate_base::local_socket::connect_pipe(path).await
     }
 }
 
-#[cfg(test)]
+// Its fakes serve Herdr on Unix sockets (Herdr on Windows is a named pipe).
+#[cfg(all(test, unix))]
 mod tests;

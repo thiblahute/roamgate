@@ -47,7 +47,7 @@ fn radix36(mut value: u64) -> String {
 }
 
 /// The base-36 time an id starts with now (tests size request lines).
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn radix36_now_for_tests() -> String {
     radix36(roamgate_base::clock::Clock::now(&roamgate_base::clock::SystemClock) as u64)
 }
@@ -155,8 +155,8 @@ pub async fn request(
         }
         #[cfg(windows)]
         {
-            let stream = tokio::net::windows::named_pipe::ClientOptions::new()
-                .open(path)
+            let stream = roamgate_base::local_socket::connect_pipe(path)
+                .await
                 .map_err(|error| connect_error(&error, path))?;
             exchange(stream, request, &id).await
         }

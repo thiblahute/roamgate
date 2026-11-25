@@ -311,21 +311,21 @@ pub async fn answer(clock: &TestClock, line: &str) -> String {
 }
 
 /// Serves the control protocol on a Unix socket at `path` (a stale file
-/// there is replaced): one reply line per request line, in order per
+/// there is replaced; on Windows an `AF_UNIX` socket too, as Bun's
+/// `Bun.listen({ unix })`): one reply line per request line, in order per
 /// connection, blank lines ignored. Runs until the returned task is aborted.
-#[cfg(unix)]
 pub fn serve(
     clock: TestClock,
     path: &std::path::Path,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let _ = std::fs::remove_file(path);
-    let listener = tokio::net::UnixListener::bind(path)?;
+    let listener = crate::local_socket::Listener::bind(path)?;
     Ok(tokio::spawn(async move {
-        while let Ok((stream, _)) = listener.accept().await {
+        while let Ok(stream) = listener.accept().await {
             let clock = clock.clone();
             tokio::spawn(async move {
-                let (read, mut write) = stream.into_split();
+                let (read, mut write) = tokio::io::split(stream);
                 let mut lines = BufReader::new(read).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     if line.trim().is_empty() {
@@ -619,7 +619,6 @@ mod tests {
         assert_eq!(clock.now(), EPOCH + 1500);
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn the_control_socket_answers_in_order_and_replaces_a_stale_file() {
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -628,8 +627,8 @@ mod tests {
         std::fs::write(&path, "stale").unwrap();
         let clock = TestClock::new(EPOCH);
         let server = serve(clock.clone(), &path).unwrap();
-        let stream = tokio::net::UnixStream::connect(&path).await.unwrap();
-        let (read, mut write) = stream.into_split();
+        let stream = crate::local_socket::connect(&path).await.unwrap();
+        let (read, mut write) = tokio::io::split(stream);
         write
             .write_all(b"now\n\nadvance 250\n  now \nbogus\n")
             .await
