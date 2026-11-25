@@ -463,12 +463,8 @@ if (
       ),
     ].find((button) => button.textContent === "Reply")!;
     await React.act(async () => reply.click());
-    for (
-      let i = 0;
-      i < 50 && !threadElement()?.querySelector(".cm-content");
-      i++
-    )
-      await settle();
+    // The comment editor is lazy: shown once loaded, however long it takes.
+    while (!threadElement()?.querySelector(".cm-content")) await settle();
     const view = EditorView.findFromDOM(
       threadElement()!.querySelector<HTMLElement>(".cm-content")!,
     )!;
@@ -502,12 +498,7 @@ if (
     ]);
     add("pane-one", 2);
     await show("pane-one");
-    for (
-      let i = 0;
-      i < 50 && !threadElement()?.querySelector(".cm-content");
-      i++
-    )
-      await settle();
+    while (!threadElement()?.querySelector(".cm-content")) await settle();
     // The box's editor, loaded after the chat, grew it above the place.
     await resized();
     expect(threadElement()?.textContent).toContain("It sets up the rest.");
