@@ -6,6 +6,9 @@ description: >
   strict host keys, `"$bin" --version && "$bin" integration status`; the
   local herdr CLI is never asked. An SSH failure or a version that is not
   the host's Herdr keeps Herdr's list.
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdr: false
   herdrs:

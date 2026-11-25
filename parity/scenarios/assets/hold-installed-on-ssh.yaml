@@ -6,6 +6,9 @@ description: >
   roamgate-hold and roamgate-review there are the Python ones of
   contract/assets/python with their version line, byte for byte, while
   this machine's are links to the server's own binary.
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdr: false
   herdrs:

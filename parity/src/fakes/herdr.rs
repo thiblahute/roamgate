@@ -1140,7 +1140,7 @@ impl HerdrListener {
 
 /// Where the fake in `dir` listens: sockets in it, or on Windows pipes
 /// named after it (the run's directory and its own).
-fn socket_paths(dir: &Path) -> (PathBuf, PathBuf) {
+pub(crate) fn socket_paths(dir: &Path) -> (PathBuf, PathBuf) {
     if cfg!(windows) {
         let name = |part: Option<&std::ffi::OsStr>| {
             part.map(|part| part.to_string_lossy().into_owned())

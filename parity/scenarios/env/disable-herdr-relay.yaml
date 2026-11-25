@@ -5,6 +5,9 @@ description: >
   (the current name), the tunnel never runs the Herdr relay on the
   host nor forwards to its socket, and the profile still comes up through
   its direct forwards.
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdr: false
   herdrs:

@@ -17,7 +17,7 @@ steps:
         json:
           {
             available: false,
-            detail: "No voice configuration (${HOME}/.config/roamgate/voice.json)",
+            detail: "No voice configuration (${DATA}/voice.json)",
             speech_rate: 1.2,
             max_pause_ms: 8000,
             $exact: true,
@@ -125,7 +125,7 @@ steps:
         json:
           {
             available: false,
-            detail: "${HOME}/.config/roamgate/voice.json: helper is required",
+            detail: "${DATA}/voice.json: helper is required",
             speech_rate: 1,
             max_pause_ms: 5000,
             $exact: true,
@@ -155,14 +155,14 @@ steps:
       {
         status: 502,
         json:
-          { error: "${HOME}/.config/roamgate/voice.json: helper is required" },
+          { error: "${DATA}/voice.json: helper is required" },
       }
   - http: GET /api/voice/voices
     expect:
       {
         status: 502,
         json:
-          { error: "${HOME}/.config/roamgate/voice.json: helper is required" },
+          { error: "${DATA}/voice.json: helper is required" },
       }
   - http: POST /api/voice/voices/surprise
     body: { on: true }

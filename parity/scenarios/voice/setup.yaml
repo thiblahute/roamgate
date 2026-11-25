@@ -45,7 +45,7 @@ steps:
             $exact: true,
           }
         components: "{{array}}"
-        configPath: "${HOME}/.config/roamgate/voice.json"
+        configPath: "${DATA}/voice.json"
         helper: { path: "${ROOT}/bin/roamgate-voice", found: true }
         unused: []
         job: null

@@ -8,6 +8,9 @@ description: >
   command (the integration versions' CLI) runs as a local spawn on the node
   in its HOME, with no ssh command of its own. Herdr's events reach the
   browser through the link's subscription (contract/wire/node-link.md).
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   start: false
   herdr: false

@@ -131,6 +131,6 @@ steps:
         - the recorder did not start
         - the connections did not start
         - auto-sync
-  - assert_absent: "${HOME}/.config/roamgate"
+  - assert_absent: "${DATA}"
   - assert_absent: "${HOME}/.claude"
   - assert_absent: "${HOME}/.local/bin"

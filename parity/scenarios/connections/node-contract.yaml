@@ -6,6 +6,9 @@ description: >
   profile works as one without `node`: Herdr through the tunnel, host
   commands as ssh commands over the master (contract/wire/node-link.md,
   Handshake and Fallback).
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdr: false
   herdrs:

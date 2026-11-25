@@ -6,6 +6,9 @@ description: >
   agent socket is forwarded again with `ssh -O forward -R` on the master,
   and the link is started again a second later, which moves the agent
   socket back to the node (contract/wire/node-link.md, Fallback).
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   start: false
   herdr: false

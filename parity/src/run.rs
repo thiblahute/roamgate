@@ -399,15 +399,17 @@ impl Run {
                 .replace("${BIN}", &bin.to_string_lossy())
                 .replace("${FAKE_HTTP}", &http.base);
             for id in options.herdrs.keys() {
-                let dir = root.join(format!("herdr-{id}"));
+                // Where that fake Herdr listens (named pipes on Windows).
+                let (control, client) =
+                    crate::fakes::herdr::socket_paths(&root.join(format!("herdr-{id}")));
                 text = text
                     .replace(
                         &format!("${{HERDR_{id}_CONTROL}}"),
-                        &dir.join("herdr.sock").to_string_lossy(),
+                        &control.to_string_lossy(),
                     )
                     .replace(
                         &format!("${{HERDR_{id}_CLIENT}}"),
-                        &dir.join("client.sock").to_string_lossy(),
+                        &client.to_string_lossy(),
                     );
             }
             text

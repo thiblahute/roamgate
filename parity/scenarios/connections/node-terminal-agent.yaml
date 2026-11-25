@@ -7,6 +7,9 @@ description: >
   on the path the review client setup prints and streams each connection
   back to the connection's agent socket here, with no `ssh -O forward -R`
   (contract/wire/node-link.md, Socket streams and node.listen).
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   start: false
   herdr: false

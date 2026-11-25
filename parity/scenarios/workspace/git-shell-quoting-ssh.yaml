@@ -5,6 +5,9 @@ description:
   "The same hostile names on an SSH profile's workspace: every git script goes to the host
   as one SSH command (fake-ssh runs it, batch mode and the master), and nothing the names hold runs there
   either."
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdr: false
   herdrs:

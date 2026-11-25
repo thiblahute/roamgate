@@ -3,6 +3,9 @@ family: connections
 description: >
   The same two SSH profiles as ssh-profiles.yaml, with masters turned off:
   each tunnel and command logs in on its own, and no ssh -M ever runs.
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdr: false
   herdrs:

@@ -6,6 +6,9 @@ description: >
   connections, and the forwards push goes to every browser; forward.list,
   forward.candidates (the far host's listening ports, scanned over ssh) and
   forward.close follow. A local connection refuses forwarding.
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdrs:
     remote: { workspaces: [{ workspace_id: w1, label: remote }] }

@@ -4,6 +4,9 @@ description: >
   Two SSH profiles reach their own Herdr through fake-ssh's forwards (the
   remote side is this machine), a third one's login is refused. Each answers
   with its own workspaces, on its own connection and generation.
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdr: false
   herdrs:

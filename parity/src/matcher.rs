@@ -59,7 +59,11 @@ fn placeholder(pattern: &str, actual: Option<&Value>) -> Option<Result<(), Strin
             if let Some(regex) = other.strip_prefix("re:") {
                 match Regex::new(regex) {
                     Ok(regex) => ok(
-                        value.as_str().is_some_and(|text| regex.is_match(text)),
+                        // On Windows a path answered with `\` too.
+                        value.as_str().is_some_and(|text| {
+                            regex.is_match(text)
+                                || (cfg!(windows) && regex.is_match(&text.replace('\\', "/")))
+                        }),
                         &format!("a string matching /{}/", regex.as_str()),
                     ),
                     Err(error) => Err(format!("bad regex {regex}: {error}")),
@@ -106,8 +110,9 @@ fn show(value: Option<&Value>) -> String {
 }
 
 /// On Windows, a path the scenario joins with `/` and the server answers
-/// with `\` (or the other way round): the same path. Only for an absolute
-/// path (a drive's, or a run directory's `$ROOT/...`).
+/// with `\` (or the other way round), alone or in a message: the same.
+/// Only for text naming an absolute path (a drive's, or a run directory's
+/// `$ROOT/...`).
 fn same_windows_path(expected: &str, actual: Option<&Value>) -> bool {
     if !cfg!(windows) {
         return false;
@@ -115,7 +120,7 @@ fn same_windows_path(expected: &str, actual: Option<&Value>) -> bool {
     let Some(Value::String(actual)) = actual else {
         return false;
     };
-    let path = Regex::new(r"^([A-Za-z]:[\\/]|\$[A-Z]+([\\/]|$))").expect("regex");
+    let path = Regex::new(r"(^|[^A-Za-z])[A-Za-z]:[\\/]|\$[A-Z]+([\\/]|$)").expect("regex");
     path.is_match(expected) && expected.replace('\\', "/") == actual.replace('\\', "/")
 }
 

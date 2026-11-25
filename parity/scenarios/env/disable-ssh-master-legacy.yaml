@@ -4,6 +4,9 @@ description: >
   The same SSH profile as connections/ssh-profiles: with the legacy variable
   set, fake-ssh is never asked for a master (-M) nor through its control
   socket (-S), and the profile still comes up through its forwards.
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdr: false
   herdrs:

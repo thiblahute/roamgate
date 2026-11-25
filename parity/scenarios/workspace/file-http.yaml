@@ -81,7 +81,7 @@ steps:
         json:
           {
             remote: false,
-            path: "{{re:^\\$ROOT/tmp/roamgate-uploads-[0-9]+/upload-[^/]+/img-1767225600000-[a-z0-9]+\\.png$}}",
+            path: "{{re:^\\$ROOT/tmp/roamgate-uploads-([0-9]+|user)/upload-[^/]+/img-1767225600000-[a-z0-9]+\\.png$}}",
             text: "{{string}}",
           },
       }

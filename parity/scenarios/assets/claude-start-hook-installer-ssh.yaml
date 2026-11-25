@@ -6,6 +6,9 @@ description: >
   contract/assets/python on the host (fake-ssh runs it in the fake remote
   home): it adds the SessionStart hook beside the user's own hooks, as
   the server's own installer does on this machine.
+# Its SSH host is this machine playing a POSIX host (the fake ssh runs its
+# commands here, its paths are the run's), which Windows is not.
+platforms: [linux, macos]
 server:
   herdr: false
   herdrs:
