@@ -1058,7 +1058,9 @@ async fn a_new_session_in_the_pane_is_told_in_full_again() {
         ..Options::default()
     });
     let session = open_session(&d.service);
+    // Each told before the next is written, not both in one prompt.
     comment(&d.service, &session.id, "First").await;
+    until(|| d.prompts().len() == 1).await;
     comment(&d.service, &session.id, "Second").await;
     until(|| d.prompts().len() == 2).await;
     assert!(!d.prompts()[1].contains("A comment from me"));
