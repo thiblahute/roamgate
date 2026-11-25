@@ -13,7 +13,10 @@ describe("Roamgate release boundary", () => {
     expect(names).toHaveLength(35);
     expect(names).toContain("roamgate-linux-x64-musl.update.json");
     expect(names).toContain("roamgate-linux-x64.update.json");
-    expect(names).toContain("roamgate-v0.7.0-windows-arm64.tar.xz.sha256");
+    expect(names).toContain("roamgate-v0.7.0-windows-arm64.zip.sha256");
+    expect(names).toContain("roamgate-windows-x64.zip");
+    expect(names).not.toContain("roamgate-windows-x64.tar.xz");
+    expect(names).toContain("roamgate-v0.7.0-linux-x64-musl.tar.xz");
     expect(() => verifyReleaseAssetNames(names, "0.7.0")).not.toThrow();
     for (const prefix of ["herdr-gui", "herdr-studio"]) {
       for (const suffix of [

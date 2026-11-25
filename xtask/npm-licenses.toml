@@ -1,0 +1,4 @@
+# npm packages whose package.json names no licence, with the licence their
+# licence file states (xtask/src/notices.rs).
+[clarify]
+khroma = "MIT"

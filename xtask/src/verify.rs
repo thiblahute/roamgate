@@ -10,7 +10,8 @@ use crate::binary;
 use crate::package::{self, checksum_line, sha256_hex, update_manifest, version_file};
 use crate::targets::Target;
 
-/// The updater's manifest rules (server/src/http/update.ts parseUpdateManifest).
+/// The updater's manifest rules (roamgate-cli's update.rs
+/// parse_update_manifest).
 pub fn updater_accepts(manifest: &str) -> Result<()> {
     ensure!(manifest.len() <= 4096, "manifest over 4096 bytes");
     let value: serde_json::Value = serde_json::from_str(manifest)?;
@@ -29,7 +30,7 @@ pub fn updater_accepts(manifest: &str) -> Result<()> {
     let platform = field("platform");
     let parts: Vec<_> = platform.split('-').collect();
     ensure!(
-        parts.len() == 2
+        parts.len() >= 2
             && parts.iter().all(|part| !part.is_empty()
                 && part
                     .chars()
@@ -39,7 +40,10 @@ pub fn updater_accepts(manifest: &str) -> Result<()> {
     let archive = field("archive");
     let stem = archive
         .strip_prefix("roamgate-")
-        .and_then(|rest| rest.strip_suffix(".tar.xz"))
+        .and_then(|rest| {
+            rest.strip_suffix(".tar.xz")
+                .or_else(|| rest.strip_suffix(".zip"))
+        })
         .unwrap_or_default();
     ensure!(
         !stem.is_empty()
@@ -99,11 +103,13 @@ pub fn verify(out: &Path, target: &Target, version: &str) -> Result<()> {
     let binary_path = format!("{dir}/{}", target.binary);
     let pi_path = format!("{dir}/{}", target.pi_binary());
     let version_path = format!("{dir}/VERSION");
+    let notices_path = format!("{dir}/{}", crate::notices::FILE);
     let mut expected = vec![
         dir.as_str(),
         binary_path.as_str(),
         pi_path.as_str(),
         version_path.as_str(),
+        notices_path.as_str(),
     ];
     let mut sorted = names.clone();
     sorted.sort_unstable();
@@ -125,6 +131,20 @@ pub fn verify(out: &Path, target: &Target, version: &str) -> Result<()> {
         "VERSION is {:?}",
         String::from_utf8_lossy(&version_entry.data)
     );
+    // The licences: of the crates, Bun and the npm packages of both.
+    let notices_entry = entry(&notices_path);
+    let notices = String::from_utf8_lossy(&notices_entry.data);
+    for part in [
+        format!("## Rust crates in {} ({})", target.binary, target.triple),
+        "## Bun ".to_owned(),
+        format!("## npm packages bundled into {}", target.pi_binary()),
+        format!("## npm packages of the web app in {}", target.binary),
+    ] {
+        ensure!(
+            notices_entry.kind == tar::EntryType::Regular && notices.contains(&part),
+            "{notices_path} lacks {part:?}"
+        );
+    }
     let binary_entry = entry(&binary_path);
     ensure!(
         binary_entry.kind == tar::EntryType::Regular,
@@ -194,13 +214,16 @@ mod tests {
     #[test]
     fn updater_rules() {
         let digest = "0".repeat(64);
-        let manifest = |platform: &str| {
+        let manifest = |platform: &str, extension: &str| {
             format!(
-                "{{\"schema\":1,\"name\":\"roamgate\",\"version\":\"1.0.0\",\"platform\":\"{platform}\",\"archive\":\"roamgate-{platform}.tar.xz\",\"sha256\":\"{digest}\"}}"
+                "{{\"schema\":1,\"name\":\"roamgate\",\"version\":\"1.0.0\",\"platform\":\"{platform}\",\"archive\":\"roamgate-{platform}.{extension}\",\"sha256\":\"{digest}\"}}"
             )
         };
-        assert!(updater_accepts(&manifest("linux-x64")).is_ok());
-        assert!(updater_accepts(&manifest("linux-x64-musl")).is_err());
-        assert!(updater_accepts(&manifest("Linux-x64")).is_err());
+        assert!(updater_accepts(&manifest("linux-x64", "tar.xz")).is_ok());
+        assert!(updater_accepts(&manifest("linux-x64-musl", "tar.xz")).is_ok());
+        assert!(updater_accepts(&manifest("windows-x64", "zip")).is_ok());
+        assert!(updater_accepts(&manifest("windows-x64", "7z")).is_err());
+        assert!(updater_accepts(&manifest("linux", "tar.xz")).is_err());
+        assert!(updater_accepts(&manifest("Linux-x64", "tar.xz")).is_err());
     }
 }

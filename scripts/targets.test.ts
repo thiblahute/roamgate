@@ -61,7 +61,7 @@ test("release.yml publishes every target of targets.toml", () => {
   const published = new Set(
     releaseAssetNames("1.0.0").map(
       (name) =>
-        /^roamgate-(?:v1\.0\.0-)?([a-z0-9-]+?)(?:\.tar\.xz.*|\.update\.json)$/.exec(
+        /^roamgate-(?:v1\.0\.0-)?([a-z0-9-]+?)(?:\.tar\.xz.*|\.zip.*|\.update\.json)$/.exec(
           name,
         )?.[1],
     ),

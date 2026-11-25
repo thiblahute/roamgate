@@ -14,13 +14,17 @@ export function releaseAssetNames(version) {
     "linux-x64-musl",
     "windows-arm64",
     "windows-x64",
-  ].flatMap((platform) => [
-    `roamgate-v${version}-${platform}.tar.xz`,
-    `roamgate-v${version}-${platform}.tar.xz.sha256`,
-    `roamgate-${platform}.tar.xz`,
-    `roamgate-${platform}.tar.xz.sha256`,
-    `roamgate-${platform}.update.json`,
-  ]);
+  ].flatMap((platform) => {
+    // Windows packages are zip: its tar.exe reads no xz before Windows 11.
+    const extension = platform.startsWith("windows-") ? "zip" : "tar.xz";
+    return [
+      `roamgate-v${version}-${platform}.${extension}`,
+      `roamgate-v${version}-${platform}.${extension}.sha256`,
+      `roamgate-${platform}.${extension}`,
+      `roamgate-${platform}.${extension}.sha256`,
+      `roamgate-${platform}.update.json`,
+    ];
+  });
 }
 
 /** A release must never accidentally reopen the legacy clients' update feed. */
