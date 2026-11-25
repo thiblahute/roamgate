@@ -1,0 +1,46 @@
+name: Rust and the builder of a target
+description: >
+  The stable Rust toolchain with a target of targets.toml, and the builder
+  that target is built with on its runner (cargo-zigbuild with Zig, or
+  cargo-xwin with LLVM's MSVC tools).
+
+inputs:
+  triple:
+    description: The Rust target (targets.toml `triple`)
+    required: true
+  builder:
+    description: cargo, zigbuild or xwin (targets.toml `builder`)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust
+      shell: bash
+      env:
+        TRIPLE: ${{ inputs.triple }}
+      run: |
+        rustup toolchain install stable --profile minimal
+        rustup default stable
+        rustup target add "$TRIPLE"
+    - if: inputs.builder == 'zigbuild'
+      uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+      with:
+        tool: cargo-zigbuild
+    - if: inputs.builder == 'zigbuild'
+      name: Install Zig
+      shell: bash
+      run: python3 -m pip install --user ziglang
+    - if: inputs.builder == 'xwin'
+      uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+      with:
+        tool: cargo-xwin
+    # cargo-xwin drives clang-cl, lld-link and llvm-lib, which only LLVM's
+    # own bin directory has under those names.
+    - if: inputs.builder == 'xwin'
+      name: Install LLVM
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends clang lld llvm
+        llvm-config --bindir >> "$GITHUB_PATH"

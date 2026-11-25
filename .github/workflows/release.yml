@@ -126,84 +126,30 @@ jobs:
         with:
           name: web
           path: server/public
-      - name: Install Rust and the builder
-        shell: bash
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustup target add "${{ matrix.target.triple }}"
-          case "${{ matrix.target.builder }}" in
-            zigbuild)
-              python3 -m pip install --user ziglang
-              cargo install --locked cargo-zigbuild
-              ;;
-            xwin)
-              cargo install --locked cargo-xwin
-              ;;
-          esac
+      - uses: ./.github/actions/rust-builder
+        with:
+          triple: ${{ matrix.target.triple }}
+          builder: ${{ matrix.target.builder }}
+      # cargo xtask verify: checksums, update manifest, layout, modes and
+      # binary kinds.
       - name: Build, package and verify
         shell: bash
         env:
           VERSION: ${{ needs.validate.outputs.version }}
         run: cargo xtask package "${{ matrix.target.platform }}" --version "$VERSION"
-      - name: Verify release package
-        shell: bash
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-        run: |
-          version="$VERSION"
-          platform="${{ matrix.target.platform }}"
-          dist="target/dist"
-          package_dir="roamgate-$platform"
-          versioned_archive="roamgate-v$version-$platform.tar.xz"
-          latest_archive="roamgate-$platform.tar.xz"
-
-          for archive in "$versioned_archive" "$latest_archive"; do
-            test -f "$dist/$archive"
-            test -f "$dist/$archive.sha256"
-            if command -v sha256sum >/dev/null 2>&1; then
-              (cd "$dist" && sha256sum -c "$archive.sha256")
-            else
-              (cd "$dist" && shasum -a 256 -c "$archive.sha256")
-            fi
-          done
-
-          manifest="$dist/roamgate-$platform.update.json"
-          test -f "$manifest"
-          if command -v sha256sum >/dev/null 2>&1; then
-            archive_digest="$(sha256sum "$dist/$latest_archive" | awk '{ print $1 }')"
-          else
-            archive_digest="$(shasum -a 256 "$dist/$latest_archive" | awk '{ print $1 }')"
-          fi
-          expected_manifest="{\"schema\":1,\"name\":\"roamgate\",\"version\":\"$version\",\"platform\":\"$platform\",\"archive\":\"$latest_archive\",\"sha256\":\"$archive_digest\"}"
-          grep -Fx "$expected_manifest" "$manifest"
-
-          binary="${{ matrix.target.binary }}"
-          pi="roamgate-pi"
-          case "$binary" in
-            *.exe) pi="roamgate-pi.exe" ;;
-          esac
-          tar -tJf "$dist/$versioned_archive" | sort > "$RUNNER_TEMP/entries"
-          printf '%s\n' "$package_dir/" "$package_dir/$binary" "$package_dir/$pi" "$package_dir/VERSION" |
-            sort | diff - "$RUNNER_TEMP/entries"
-          extract_dir="$RUNNER_TEMP/roamgate-release"
-          mkdir -p "$extract_dir"
-          tar -xJf "$dist/$versioned_archive" -C "$extract_dir"
-          grep -Fx "roamgate $version $platform" "$extract_dir/$package_dir/VERSION"
-          test -x "$extract_dir/$package_dir/$binary"
-          test -x "$extract_dir/$package_dir/$pi"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: roamgate-${{ matrix.target.platform }}
+          # The versioned and latest archives, their checksums and the
+          # update manifest (cargo xtask package verified them).
           path: |
-            target/dist/roamgate-v*-${{ matrix.target.platform }}.tar.xz*
-            target/dist/roamgate-${{ matrix.target.platform }}.tar.xz*
-            target/dist/roamgate-${{ matrix.target.platform }}.update.json
+            target/dist/roamgate-v*-${{ matrix.target.platform }}.*
+            target/dist/roamgate-${{ matrix.target.platform }}.*
           if-no-files-found: error
           retention-days: 7
 
   check:
-    name: Run ${{ matrix.target.platform }}
+    name: Smoke ${{ matrix.target.platform }}
     needs: [validate, targets, web, package]
     strategy:
       fail-fast: false
@@ -219,51 +165,17 @@ jobs:
         with:
           name: roamgate-${{ matrix.target.platform }}
           path: target/dist
-      - name: Run the packaged binary
-        shell: bash
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-        run: |
-          version="$VERSION"
-          platform="${{ matrix.target.platform }}"
-          dir="$RUNNER_TEMP/run"
-          mkdir -p "$dir"
-          tar -xJf "target/dist/roamgate-v$version-$platform.tar.xz" -C "$dir"
-          test "$("$dir/roamgate-$platform/${{ matrix.target.binary }}" --version | tr -d '\r')" = "roamgate $version"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        if: matrix.target.update
         with:
           name: web
           path: server/public
-      # Existing installs update in place: the last published release's
-      # binary updates itself to this package in a sandbox.
-      - name: Update the last release to it
-        if: matrix.target.update
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # Releases are published upstream; a fork has none to update from.
-          RELEASES_REPO: powerfooI/roamgate
-          VERSION: ${{ needs.validate.outputs.version }}
-        run: |
-          command -v cargo >/dev/null || {
-            curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-            export PATH="$HOME/.cargo/bin:$PATH"
-          }
-          platform="${{ matrix.target.platform }}"
-          previous="$(gh release list --repo "$RELEASES_REPO" --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '[.[] | select(.tagName != env.GITHUB_REF_NAME)][0].tagName // ""')"
-          if [ -z "$previous" ]; then
-            echo "No earlier release to update from."
-            exit 0
-          fi
-          from="$RUNNER_TEMP/previous"
-          mkdir -p "$from"
-          gh release download "$previous" --repo "$RELEASES_REPO" \
-            --pattern "roamgate-$platform.tar.xz" --dir "$from"
-          tar -xJf "$from/roamgate-$platform.tar.xz" -C "$from" "roamgate-$platform/roamgate"
-          cargo xtask update-proof "$platform" \
-            --from "$from/roamgate-$platform/roamgate" \
-            --version "$VERSION"
+      - uses: ./.github/actions/check-package
+        with:
+          platform: ${{ matrix.target.platform }}
+          version: ${{ needs.validate.outputs.version }}
+          container: ${{ matrix.target.container }}
+          update: ${{ matrix.target.update }}
+          token: ${{ github.token }}
 
   publish:
     name: Publish GitHub Release
@@ -284,9 +196,7 @@ jobs:
           pattern: roamgate-*
           merge-multiple: true
       - name: Reject missing assets and legacy update aliases
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-        run: node scripts/check-release-assets.mjs "$VERSION"
+        run: node scripts/check-release-assets.mjs "${GITHUB_REF_NAME#v}"
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

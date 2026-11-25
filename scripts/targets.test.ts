@@ -114,7 +114,8 @@ test("the Rust workflow takes its matrix from targets.toml and pins its actions"
   for (const job of Object.values(workflow.jobs)) {
     expect(job["timeout-minutes"]).toBeGreaterThan(0);
     for (const step of job.steps) {
-      if (!step.uses) continue;
+      // A local action (.github/actions) is this checkout's own.
+      if (!step.uses || step.uses.startsWith("./.github/actions/")) continue;
       expect(step.uses).toMatch(/^[\w-]+\/[\w/-]+@[a-f0-9]{40}$/);
       if (step.uses.startsWith("actions/checkout@")) {
         expect(step.with).toEqual({ "persist-credentials": false });

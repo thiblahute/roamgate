@@ -141,19 +141,10 @@ jobs:
         with:
           name: web
           path: server/public
-      - name: Install Rust and the builder
-        shell: bash
-        run: |
-          rustup target add "${{ matrix.target.triple }}"
-          case "${{ matrix.target.builder }}" in
-            zigbuild)
-              python3 -m pip install --user ziglang
-              cargo install --locked cargo-zigbuild
-              ;;
-            xwin)
-              cargo install --locked cargo-xwin
-              ;;
-          esac
+      - uses: ./.github/actions/rust-builder
+        with:
+          triple: ${{ matrix.target.triple }}
+          builder: ${{ matrix.target.builder }}
       - name: Build, package and verify
         shell: bash
         run: cargo xtask package "${{ matrix.target.platform }}" --version "${{ needs.targets.outputs.version }}"
@@ -161,12 +152,12 @@ jobs:
         with:
           name: rust-roamgate-${{ matrix.target.platform }}
           path: |
-            target/dist/roamgate-*${{ matrix.target.platform }}.tar.xz*
-            target/dist/roamgate-${{ matrix.target.platform }}.update.json
+            target/dist/roamgate-v*-${{ matrix.target.platform }}.*
+            target/dist/roamgate-${{ matrix.target.platform }}.*
           if-no-files-found: error
 
   check:
-    name: Run ${{ matrix.target.platform }}
+    name: Smoke ${{ matrix.target.platform }}
     needs: [targets, web, package]
     strategy:
       fail-fast: false
@@ -182,46 +173,14 @@ jobs:
         with:
           name: rust-roamgate-${{ matrix.target.platform }}
           path: target/dist
-      - name: Run the packaged binary
-        shell: bash
-        run: |
-          version="${{ needs.targets.outputs.version }}"
-          platform="${{ matrix.target.platform }}"
-          dir="$RUNNER_TEMP/run"
-          mkdir -p "$dir"
-          tar -xJf "target/dist/roamgate-v$version-$platform.tar.xz" -C "$dir"
-          grep -Fx "roamgate $version $platform" "$dir/roamgate-$platform/VERSION"
-          test "$("$dir/roamgate-$platform/${{ matrix.target.binary }}" --version | tr -d '\r')" = "roamgate $version"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        if: matrix.target.update
         with:
           name: web
           path: server/public
-      # Existing installs update in place: the last published release's
-      # binary updates itself to this package in a sandbox.
-      - name: Update the last release to it
-        if: matrix.target.update
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # Releases are published upstream; a fork has none to update from.
-          RELEASES_REPO: powerfooI/roamgate
-        run: |
-          command -v cargo >/dev/null || {
-            curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-            export PATH="$HOME/.cargo/bin:$PATH"
-          }
-          platform="${{ matrix.target.platform }}"
-          previous="$(gh release list --repo "$RELEASES_REPO" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""')"
-          if [ -z "$previous" ]; then
-            echo "No release to update from."
-            exit 0
-          fi
-          from="$RUNNER_TEMP/previous"
-          mkdir -p "$from"
-          gh release download "$previous" --repo "$RELEASES_REPO" \
-            --pattern "roamgate-$platform.tar.xz" --dir "$from"
-          tar -xJf "$from/roamgate-$platform.tar.xz" -C "$from" "roamgate-$platform/roamgate"
-          cargo xtask update-proof "$platform" \
-            --from "$from/roamgate-$platform/roamgate" \
-            --version "${{ needs.targets.outputs.version }}"
+      - uses: ./.github/actions/check-package
+        with:
+          platform: ${{ matrix.target.platform }}
+          version: ${{ needs.targets.outputs.version }}
+          container: ${{ matrix.target.container }}
+          update: ${{ matrix.target.update }}
+          token: ${{ github.token }}
