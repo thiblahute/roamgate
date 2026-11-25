@@ -536,7 +536,15 @@ async fn the_sidecar_exiting_fails_what_is_in_flight_and_the_next_call_starts_it
     sidecar.kill();
     assert_eq!(
         run.await.unwrap(),
-        Err(PiError::Closed("The Pi sidecar exited (signal)".into()))
+        // Windows has no signals: a killed process exits with code 1.
+        Err(PiError::Closed(
+            if cfg!(windows) {
+                "The Pi sidecar exited (1)"
+            } else {
+                "The Pi sidecar exited (signal)"
+            }
+            .into()
+        ))
     );
     assert!(!sidecar.running());
     driver.catalog("assistant").await.unwrap();
