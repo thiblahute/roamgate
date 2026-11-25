@@ -1,0 +1,42 @@
+name: Probe Windows tar.exe
+on:
+  push:
+    branches: ["ci/packaging-probe*"]
+permissions: {}
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025, windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: System tar version
+        shell: pwsh
+        run: |
+          [System.Environment]::OSVersion.Version
+          (Get-CimInstance Win32_OperatingSystem).Caption
+          & "$env:SystemRoot\System32\tar.exe" --version
+      - name: Make archives with Git Bash
+        shell: bash
+        run: |
+          mkdir -p pkg/roamgate-x
+          printf 'hello\n' > pkg/roamgate-x/VERSION
+          tar -C pkg -cJf probe.tar.xz roamgate-x
+          tar -C pkg -czf probe.tar.gz roamgate-x
+          (cd pkg && 7z a -tzip ../probe.zip roamgate-x >/dev/null)
+          ls -la probe.*
+      - name: Extract with System32 tar.exe
+        shell: pwsh
+        run: |
+          $tar = "$env:SystemRoot\System32\tar.exe"
+          foreach ($case in @(@('probe.tar.xz','-xJf'), @('probe.tar.xz','-xf'), @('probe.tar.gz','-xzf'), @('probe.zip','-xf'))) {
+            $dir = "out-$($case[0])-$($case[1])"
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            & $tar $case[1] $case[0] -C $dir 2>&1 | Out-String | Write-Host
+            $ok = Test-Path "$dir/roamgate-x/VERSION"
+            Write-Host "RESULT $($case[0]) $($case[1]): exit=$LASTEXITCODE extracted=$ok"
+          }
+          New-Item -ItemType Directory -Force out-expand | Out-Null
+          Expand-Archive probe.zip -DestinationPath out-expand
+          Write-Host "RESULT Expand-Archive zip: $(Test-Path out-expand/roamgate-x/VERSION)"
