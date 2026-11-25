@@ -65,17 +65,64 @@ pub fn server_path() -> PathBuf {
     target_dir().join("debug").join(binary_name())
 }
 
-/// This checkout's debug `roamgate`, built once per test process.
+/// This checkout's debug `roamgate`, built once per test process, as a
+/// copy of its own that no later build replaces ([`stable_copy`]).
 pub fn server() -> Result<PathBuf> {
     static BUILT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
     BUILT
         .get_or_init(|| {
             cargo_build(&[])
-                .map(|()| server_path())
+                .and_then(|()| stable_copy(&server_path()))
                 .map_err(|error| format!("{error:#}"))
         })
         .clone()
         .map_err(|error| anyhow!(error))
+}
+
+/// A copy of `binary` named for its size and time, made once: every test
+/// process builds the server (cargo, a no-op once fresh, may still put it
+/// in place again), and a running server's own executable must stay: the
+/// agent clients it installs (`roamgate-review`, `roamgate-hold`) are
+/// links to it, run by the scenarios' panes while other processes build.
+fn stable_copy(binary: &Path) -> Result<PathBuf> {
+    let meta = std::fs::metadata(binary)?;
+    let stamp = meta
+        .modified()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|age| age.as_nanos())
+        .unwrap_or(0);
+    let dir = binary
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("parity-server");
+    std::fs::create_dir_all(&dir)?;
+    let name = format!(
+        "roamgate-{}-{stamp}{}",
+        meta.len(),
+        std::env::consts::EXE_SUFFIX
+    );
+    let copy = dir.join(&name);
+    if !copy.exists() {
+        let temp = dir.join(format!("{name}.{}.tmp", std::process::id()));
+        std::fs::copy(binary, &temp)?;
+        if std::fs::rename(&temp, &copy).is_err() {
+            // Another process made it meanwhile.
+            let _ = std::fs::remove_file(&temp);
+        }
+    }
+    // Copies of builds a day old go (best effort: one may still run).
+    for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age > std::time::Duration::from_secs(24 * 3600));
+        if old && entry.path() != copy {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    Ok(copy)
 }
 
 /// The release binary (`PARITY_STANDALONE`, else this checkout's release

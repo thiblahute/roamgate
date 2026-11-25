@@ -252,7 +252,12 @@ pub fn server_command() -> (Vec<String>, PathBuf) {
                 .unwrap_or_else(|| repo.clone()),
         ),
         _ => (
-            vec![crate::build::server_path().to_string_lossy().into_owned()],
+            vec![
+                crate::build::server()
+                    .unwrap_or_else(|_| crate::build::server_path())
+                    .to_string_lossy()
+                    .into_owned(),
+            ],
             repo,
         ),
     }
