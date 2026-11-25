@@ -222,9 +222,13 @@ async fn keeps_missing_failed_and_unsupported_sessions_without_fabricated_activi
         false,
         Arc::new(|path| {
             Box::pin(async move {
+                // Local paths, resolved (on a drive on Windows).
+                let local = |name: &str| crate::paths::resolve(name).to_string_lossy().into_owned();
                 match path.as_str() {
-                    "/denied" => Err(io::Error::other("Permission denied")),
-                    "/good" => Ok(Some(SessionFile {
+                    denied if denied == local("/denied") => {
+                        Err(io::Error::other("Permission denied"))
+                    }
+                    good if good == local("/good") => Ok(Some(SessionFile {
                         path,
                         mtime_ms: 1234.0,
                         ..Default::default()

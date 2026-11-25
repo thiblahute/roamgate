@@ -33,7 +33,13 @@ fn env(home: &Path, vars: &[(&str, &Path)]) -> AgentEnv {
 }
 
 fn grok_session(root: &Path, cwd: &str, id: &str, updated: &str) -> PathBuf {
-    let dir = root.join(crate::paths::encode_uri_component(cwd)).join(id);
+    // Grok names the folder after the absolute cwd (on a drive on Windows).
+    let absolute = crate::paths::resolve(cwd);
+    let dir = root
+        .join(crate::paths::encode_uri_component(
+            &absolute.to_string_lossy(),
+        ))
+        .join(id);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("chat_history.jsonl"), "{\"type\":\"user\"}\n").unwrap();
     let summary = json!({ "info": { "id": id, "cwd": cwd }, "created_at": "2026-07-01T00:00:00.000Z", "updated_at": updated, "current_model_id": "grok-4.5" });
@@ -208,7 +214,10 @@ fn muse_session(root: &Path, id: &str, cwd: &str, time: f64) -> String {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, format!("{}\n", jsonl(&conversation(cwd)))).unwrap();
     set_mtime(&path, time);
-    path.to_string_lossy().into_owned()
+    // As listed from the directories: one separator throughout on Windows.
+    crate::paths::normalize(&path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn reads() -> usize {
