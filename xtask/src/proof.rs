@@ -112,7 +112,7 @@ pub fn run(proof: &Proof) -> Result<()> {
             format!("http://{mirror_address}"),
         )],
     )?;
-    let bin_dir = sandbox.home.join(".local/bin");
+    let bin_dir = sandbox.home.join(".local").join("bin");
     std::fs::create_dir_all(&bin_dir)?;
     // roamgate.exe and roamgate-pi.exe on Windows, each with its
     // `<name>.previous` beside it.

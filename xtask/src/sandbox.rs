@@ -301,9 +301,10 @@ pub fn wait_healthy(server: &mut Server, address: SocketAddr) -> Result<()> {
     Ok(())
 }
 
-/// The packages a container image needs for the Pi sidecar: Bun's musl
-/// build links libstdc++ and libgcc dynamically.
-const ALPINE_PACKAGES: &[&str] = &["libstdc++", "libgcc"];
+/// The packages a container image needs: Bun's musl build of the Pi
+/// sidecar links libstdc++ and libgcc dynamically, and `roamgate update`
+/// downloads with curl (which install-roamgate.sh needs as well).
+const ALPINE_PACKAGES: &[&str] = &["libstdc++", "libgcc", "curl"];
 
 /// A container of an image (docker, or podman), sharing the network and a
 /// directory at the same path: a sandbox under [`Container::shared`] runs
