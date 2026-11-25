@@ -128,10 +128,25 @@ the release workflow and the installers in line with it. `cargo xtask` reads it:
   for each target with the web app in `server/public` embedded
   (`bun run build:web` first) and compiles the Pi sidecar `roamgate-pi` for
   it with Bun, packages both in the release layout (versioned
-  and latest `tar.xz`, `.sha256`, `.update.json`) in `target/dist`, and
-  verifies the package, running the binary when this machine can. Linux and
-  macOS targets build with cargo-zigbuild off their OS, Windows targets with
-  cargo-xwin.
+  and latest `tar.xz`, `zip` for Windows, `.sha256`, `.update.json`) in
+  `target/dist`, and verifies the package, running the binary when this
+  machine can. Linux and macOS targets build with cargo-zigbuild off their
+  OS, Windows targets with cargo-xwin.
+- Each package carries `THIRD_PARTY_LICENSES.md`: the licences of the crates
+  linked into `roamgate` for the target (cargo-about, which packaging needs:
+  `cargo install --locked --features cli cargo-about@0.9.3`), of Bun and the
+  npm packages it bundles into `roamgate-pi` (Bun's metafile), and of the web
+  app's npm packages. A licence missing from `about.toml`'s `accepted` list
+  fails packaging; npm packages that name no licence get theirs in
+  `xtask/npm-licenses.toml`. The Bun that compiles `roamgate-pi` must be the
+  `packageManager` one, whose notice `LICENSES/BUN.md` holds.
+- macOS targets built on Linux link against Apple's frameworks, so they need
+  a macOS SDK: copy `/Library/Developer/CommandLineTools/SDKs/MacOSX<version>.sdk`
+  from a Mac with the Xcode Command Line Tools (for example with
+  `rsync -a mac:/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk ~/.cache/macos-sdk/`)
+  and point `SDKROOT` at it: `SDKROOT=~/.cache/macos-sdk/MacOSX15.4.sdk cargo
+  xtask package darwin-arm64`. Release builds run on macOS runners and need
+  none.
 - `cargo xtask update-proof <platform> --from <earlier roamgate>` installs
   an earlier build (the last release's binary) in a sandbox (its own HOME, XDG directories and TMPDIR), lets its
   `roamgate update` install the package from a loopback mirror, and checks

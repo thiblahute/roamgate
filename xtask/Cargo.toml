@@ -19,6 +19,8 @@ sha2 = "0.10"
 # The smoke test's agent-socket call: AF_UNIX on Windows too.
 socket2 = { version = "0.6", features = ["all"] }
 tar = "0.4"
+# Windows packages: zip, which every Windows tar.exe and Expand-Archive read.
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 toml = "0.9"
 
 [dev-dependencies]
