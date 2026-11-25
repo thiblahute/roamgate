@@ -435,7 +435,10 @@ impl AgentSocket {
     }
 
     async fn root_of(&self, connection: &AgentConnection, form: &Form) -> ReviewResult<String> {
-        let Some(cwd) = form.non_empty("cwd").filter(|cwd| cwd.starts_with('/')) else {
+        let Some(cwd) = form
+            .non_empty("cwd")
+            .filter(|cwd| super::is_client_dir(cwd))
+        else {
             return Err(ReviewError::new("the client did not send its directory"));
         };
         self.0
@@ -505,7 +508,7 @@ impl AgentSocket {
             let cwd = form.get("cwd").unwrap_or("");
             let root = match self.root_of(connection, form).await {
                 Ok(root) => root,
-                Err(_) if cwd.starts_with('/') => cwd.to_owned(),
+                Err(_) if super::is_client_dir(cwd) => cwd.to_owned(),
                 Err(_) => return Err(ReviewError::new("the client did not send its directory")),
             };
             return Ok(Some((root, json!({"kind": "rendered", "url": url}))));
