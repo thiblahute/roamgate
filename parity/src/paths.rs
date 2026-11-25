@@ -4,12 +4,20 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// The POSIX shell of `sh:` steps, spawned processes, pane jobs and the
-/// fake ssh: `sh`, or on Windows Git for Windows' bash, found as the server
-/// finds it (roamgate_base::posix_shell).
+/// fake ssh: bash where there is one (as an interactive pane's shell, and
+/// the same on every distribution: dash, Debian's sh, does not exec a
+/// `-c` command's last program, so a pane job's pid would not be the
+/// program it runs), else `sh`; on Windows Git for Windows' bash, found as
+/// the server finds it (roamgate_base::posix_shell).
 pub fn posix_shell() -> String {
     static SHELL: OnceLock<String> = OnceLock::new();
     SHELL
         .get_or_init(|| {
+            if cfg!(unix)
+                && let Some(bash) = roamgate_base::posix_shell::which_on_path("bash")
+            {
+                return bash;
+            }
             roamgate_base::posix_shell::posix_shell().unwrap_or_else(|_| "sh".to_owned())
         })
         .clone()
