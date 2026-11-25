@@ -571,7 +571,7 @@ scripts/studio-plugin.test.ts	a missing source binary fails without silently dow
 scripts/targets.test.ts	targets.toml lists the seven release targets once	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/targets.test.ts	release.yml publishes every target of targets.toml	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/targets.test.ts	the installers name targets.toml's platforms	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
-scripts/targets.test.ts	the Rust workflow takes its matrix from targets.toml and pins its actions	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/targets.test.ts	the Rust workflows take their matrix from targets.toml and pin their actions	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/test-home.test.ts	a test run has a home of its own, for itself and the processes it starts	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/test-home.test.ts	a store whose variable a test restored falls back into that home, not the user's	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/test-home.test.ts	the Roamgate and Herdr paths of the shell that runs the tests are dropped	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
