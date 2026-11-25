@@ -966,11 +966,14 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 static MARKDOWN_IMAGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"!\[([^\]\n]*)\]\((?:<([^>\n]+)>|([^)\s]+))\)").unwrap());
 
-/// An image of this host: an absolute path, not `//` nor `/uploads/`.
+/// An image of this host: an absolute path (a drive's on Windows), not
+/// `//` nor `/uploads/`.
 fn local_image(source: &str) -> Option<String> {
     static EXTENSION: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?i)\.(png|jpe?g|gif|webp)$").unwrap());
-    if !source.starts_with('/')
+    let absolute =
+        source.starts_with('/') || (cfg!(windows) && std::path::Path::new(source).is_absolute());
+    if !absolute
         || source.starts_with("//")
         || source.starts_with("/uploads/")
         || source.contains(['?', '#', '\0'])
