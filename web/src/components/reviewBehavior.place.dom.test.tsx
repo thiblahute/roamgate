@@ -132,18 +132,24 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
 
       test("the places of the last 50 reviews are kept, older ones forgotten", async () => {
         const files = [added("a.ts", 9)];
-        // 51 reviews, each left on its own line.
+        // 51 reviews, each left on its own line, settled on the fake clock.
         for (let index = 0; index < 51; index++) {
           const review = await mount({
             files,
             sessionId: `p${index}`,
             storage: index ? "keep" : {},
+            fakeTimers: true,
           });
           await review.press(`${1 + (index % 7)}j`);
           await review.unmount();
         }
         // The first one is forgotten: it opens on its first line.
-        const oldest = await mount({ files, sessionId: "p0", storage: "keep" });
+        const oldest = await mount({
+          files,
+          sessionId: "p0",
+          storage: "keep",
+          fakeTimers: true,
+        });
         expect(oldest.cursorLine()?.text).toBe("a.ts line 1");
         await oldest.unmount();
         // The next ones kept theirs (p0 opening again pushed out p1).
@@ -152,6 +158,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
             files,
             sessionId: `p${index}`,
             storage: "keep",
+            fakeTimers: true,
           });
           expect(kept.cursorLine()?.text).toBe(`a.ts line ${2 + (index % 7)}`);
           await kept.unmount();
@@ -160,10 +167,13 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           files,
           sessionId: "p1",
           storage: "keep",
+          fakeTimers: true,
         });
         expect(pushedOut.cursorLine()?.text).toBe("a.ts line 1");
         await pushedOut.unmount();
-      });
+        // 55 whole Changes reviews mounted: some 30 ms of work each, past
+        // the default 5 s on a slow runner. Its own time, not a wait.
+      }, 20_000);
 
       test("damaged place and preferences in storage read as empty, and are written anew", async () => {
         const files = [added("a.ts", 9)];
