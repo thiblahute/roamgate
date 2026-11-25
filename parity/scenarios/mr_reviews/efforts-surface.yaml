@@ -80,7 +80,10 @@ steps:
       }
   - call: bridge.mr_reviews.ledger.match
     params: { id: e1, decisions: [] }
-    error: { message: "decisions: [{commit, match, accept}] (commit and match shas)" }
+    error:
+      {
+        message: "decisions: [{commit, match, accept}] (commit and match shas)",
+      }
   - call: bridge.mr_reviews.ledger.plans
     params: { id: e1, action: dance }
     error: { message: "action: propose, accept, edit, split or drop" }

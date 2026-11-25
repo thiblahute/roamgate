@@ -98,7 +98,9 @@ const server = Bun.serve({
       } else if (parsed.stats) {
         send(ws, JSON.stringify({ stats: null }), "message");
       } else if (parsed.report) {
-        console.log(`REPORT ${JSON.stringify({ ...parsed.report, backend: "bun" })}`);
+        console.log(
+          `REPORT ${JSON.stringify({ ...parsed.report, backend: "bun" })}`,
+        );
       }
     },
   },

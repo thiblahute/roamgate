@@ -98,7 +98,9 @@ test("a YAML change other than an addition is refused, not rewritten", () => {
   expect(yamlWithAdditions(hand, { a: { b: 1 }, c: { d: 3 } })).toBeNull();
   expect(yamlWithAdditions(hand, { a: { b: 1 } })).toBeNull();
   // Under a flow mapping there is no line to add.
-  expect(yamlWithAdditions(hand, { a: { b: 1, e: 1 }, c: { d: 2 } })).toBeNull();
+  expect(
+    yamlWithAdditions(hand, { a: { b: 1, e: 1 }, c: { d: 2 } }),
+  ).toBeNull();
   expect(() => yamlFileText(path, { a: { b: 2 }, c: { d: 2 } })).toThrow(
     /make it by hand/,
   );

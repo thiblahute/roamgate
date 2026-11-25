@@ -32,7 +32,11 @@ server:
       replies:
         - tools:
             - { name: workspace_tree_get, id: tree-read, input: {} }
-            - { name: archive_search, id: archive-read, input: { query: zebra } }
+            - {
+                name: archive_search,
+                id: archive-read,
+                input: { query: zebra },
+              }
       cycle:
         - text: Read the arrangement and the archive.
   files:
@@ -80,7 +84,11 @@ steps:
           },
       }
   - call: bridge.assistant.send
-    params: { text: Show me the arrangement and the archive, request_id: tools-question }
+    params:
+      {
+        text: Show me the arrangement and the archive,
+        request_id: tools-question,
+      }
   - http_fake_calls: { fake: anthropic, count: 2 }
     retry: 10000
   - http_fake_calls:

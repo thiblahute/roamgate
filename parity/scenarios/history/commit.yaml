@@ -62,7 +62,8 @@ steps:
   - cli: [history, status, --json]
     expect:
       exit: 0
-      stdout_json: { enabled: true, exists: true, commits: 3, pending: [], running: false }
+      stdout_json:
+        { enabled: true, exists: true, commits: 3, pending: [], running: false }
   - cli: [history, commit]
     expect:
       exit: 0
@@ -91,7 +92,8 @@ steps:
     body: {}
     expect:
       status: 200
-      json: { location: "${ROOT}/elsewhere", exists: true, commits: 2, errors: [] }
+      json:
+        { location: "${ROOT}/elsewhere", exists: true, commits: 2, errors: [] }
   - assert_file:
       path: "${ROOT}/elsewhere/work/items/${item}.md"
       text_contains: "Keep history"

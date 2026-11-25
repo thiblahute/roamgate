@@ -66,7 +66,11 @@ const isMapping = (value: unknown): value is Record<string, unknown> =>
 type Addition = { path: string[]; key: string; value: unknown };
 
 /** What `next` adds to `old`; null when it changes or removes anything. */
-function additions(old: unknown, next: unknown, path: string[]): Addition[] | null {
+function additions(
+  old: unknown,
+  next: unknown,
+  path: string[],
+): Addition[] | null {
   if (isMapping(old) && isMapping(next)) {
     const out: Addition[] = [];
     for (const key of Object.keys(old)) if (!(key in next)) return null;
@@ -198,15 +202,13 @@ export function alignMarkdownTables(text: string): string {
     }
     let end = start;
     while (end < lines.length && lines[end]!.startsWith("|")) end++;
-    const rows = lines
-      .slice(start, end)
-      .map((line) =>
-        line
-          .replace(/^\|/, "")
-          .replace(/\|\s*$/, "")
-          .split(/(?<!\\)\|/)
-          .map((cell) => cell.trim()),
-      );
+    const rows = lines.slice(start, end).map((line) =>
+      line
+        .replace(/^\|/, "")
+        .replace(/\|\s*$/, "")
+        .split(/(?<!\\)\|/)
+        .map((cell) => cell.trim()),
+    );
     const separator = (cells: string[]) =>
       cells.every((cell) => /^:?-+:?$/.test(cell));
     const widths: number[] = [];

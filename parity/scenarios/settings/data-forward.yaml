@@ -29,7 +29,8 @@ server:
         profiles:
           list: [{ name: " Work ", agent: claude, env: { A: "1" } }]
           default: work
-        mr_reviews: { checkout: on_demand, order: [a, a, b], retention_days: "30" }
+        mr_reviews:
+          { checkout: on_demand, order: [a, a, b], retention_days: "30" }
         ui: { theme: black, "9bad": 1 }
         rendered_sites: ["https://docs.example.test/guide/index.html"]
         rendered_site_roots:
@@ -75,8 +76,7 @@ steps:
             default: Work,
             return_after_reset: false,
           }
-        mr_reviews:
-          { checkout: on_demand, retention_days: 30, order: [a, b] }
+        mr_reviews: { checkout: on_demand, retention_days: 30, order: [a, b] }
         custom: {}
         ui: { theme: black }
         rendered_sites: ["https://docs.example.test/guide/"]
@@ -89,7 +89,8 @@ steps:
   - call: settings.conversation.get
     reply: { idle_stop_minutes: 45, $exact: true }
   - call: settings.limit_resume.get
-    reply: { enabled: false, message: carry on, margin_seconds: 60, $exact: true }
+    reply:
+      { enabled: false, message: carry on, margin_seconds: 60, $exact: true }
   - call: settings.terminal_transport.get
     reply: { surface_codecs: false, $exact: true }
   - call: bridge.ui_settings.get
