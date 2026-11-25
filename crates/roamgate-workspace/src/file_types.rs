@@ -161,20 +161,7 @@ pub fn resolve(base: &Path, path: &str) -> PathBuf {
     out
 }
 
-/// Node's `realpath`: the canonical path (without Windows' `\\?\`).
-pub fn realpath(path: &Path) -> std::io::Result<PathBuf> {
-    let real = std::fs::canonicalize(path)?;
-    #[cfg(windows)]
-    {
-        let text = real.to_string_lossy();
-        if let Some(rest) = text.strip_prefix(r"\\?\")
-            && !rest.starts_with("UNC\\")
-        {
-            return Ok(PathBuf::from(rest));
-        }
-    }
-    Ok(real)
-}
+pub use roamgate_base::paths::realpath;
 
 /// Node's `mtimeMs`: milliseconds with their fraction.
 pub fn mtime_ms(metadata: &std::fs::Metadata) -> f64 {

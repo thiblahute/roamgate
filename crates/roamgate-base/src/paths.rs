@@ -96,6 +96,22 @@ pub fn dirname(path: &Path) -> PathBuf {
     }
 }
 
+/// Node's `realpath`: the canonical path (without Windows' `\\?\` for a
+/// drive path, which Git, shells and socket addresses do not take).
+pub fn realpath(path: &Path) -> io::Result<PathBuf> {
+    let real = std::fs::canonicalize(path)?;
+    #[cfg(windows)]
+    {
+        let text = real.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\")
+            && !rest.starts_with("UNC\\")
+        {
+            return Ok(PathBuf::from(rest));
+        }
+    }
+    Ok(real)
+}
+
 fn lstat_if_present(path: &Path, follow: bool) -> io::Result<Option<std::fs::Metadata>> {
     let found = if follow {
         std::fs::metadata(path)
