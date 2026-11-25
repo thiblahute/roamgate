@@ -1,5 +1,5 @@
 import { inIsolatedChild } from "../testIsolated";
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 
 if (
   inIsolatedChild(
@@ -153,10 +153,13 @@ if (
       return found[found.length - 1];
     };
     const { showMrReviews } = await import("./boardPanel.testkit");
-    const wait = (ms: number) =>
-      act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, ms));
+    // Timers move only when told; the calls' promises settle in between.
+    const wait = async (ms: number) => {
+      await act(async () => {
+        jest.advanceTimersByTime(ms);
       });
+      for (let i = 0; i < 5; i++) await act(async () => {});
+    };
     const press = async (name: string, init: KeyboardEventInit = {}) => {
       await act(async () => {
         (document.activeElement ?? document.body).dispatchEvent(
@@ -167,8 +170,8 @@ if (
             ...init,
           }),
         );
-        await new Promise((resolve) => setTimeout(resolve, 20));
       });
+      await wait(20);
     };
     const keys = async (text: string) => {
       for (const each of text) await press(each);
@@ -195,150 +198,156 @@ if (
         (node) => Number(node.getAttribute("data-mr-key")!.split("#")[1]),
       );
 
-    await act(async () => showMrReviews());
-    await wait(80);
-    // Lanes with counts; the blocked ones drawn under their parent.
-    expect(lanes()).toEqual([
-      "Needs you2",
-      "Waiting1",
-      "Blocked2",
-      "Merged or closed1",
-    ]);
-    expect(rows()).toEqual([1, 2, 3, 4, 5, 6]);
-    const item = (n: number) =>
-      document.querySelector(`[data-mr-key='${key(n)}']`)!.closest("li")!;
-    expect(item(4).className).toContain("is-child");
-    expect(item(5).getAttribute("style")).toContain("--mr-depth: 2");
-    expect(item(5).className).toContain("is-last-child");
-    expect(item(3).textContent).toContain("blocks 1");
-    expect(item(4).textContent).toContain("after !3");
-    // The next step, and who set it; outdated when the request moved on.
-    expect(item(1).querySelector(".mr-reviews-next-text")?.textContent).toBe(
-      "Fix the failed pipeline",
-    );
-    const next2 = item(2).querySelector(".mr-reviews-next-text")!;
-    expect(next2.className).toContain("is-outdated");
-    expect(item(2).querySelector(".mr-reviews-setby")?.textContent).toBe(
-      "changed since",
-    );
-    expect(item(2).textContent).toContain("api");
-
-    // za folds the requests under a parent, then a lane (kept here).
-    await keys("jjj");
-    expect(selected()).toBe(key(3));
-    await keys("za");
-    expect(rows()).toEqual([1, 2, 3, 6]);
-    await keys("za");
-    expect(rows()).toEqual([1, 2, 3, 4, 5, 6]);
-    await keys("gg");
-    await keys("za");
-    expect(rows()).toEqual([3, 4, 5, 6]);
-    expect(localStorage.getItem("roamgate:mrReviewsLanesFolded")).toBe(
-      '["your_move"]',
-    );
-    expect(selected()).toBe(key(3));
-    await act(async () =>
-      document
-        .querySelector<HTMLButtonElement>(".mr-reviews-lane-title")!
-        .click(),
-    );
-    expect(rows()).toEqual([1, 2, 3, 4, 5, 6]);
-
-    // J / K move within the lane only.
-    await keys("gg");
-    await keys("j");
-    expect(selected()).toBe(key(2));
-    await press("K");
-    await wait(30);
-    expect(
-      calls.find(([method]) => method === "bridge.mr_reviews.order")?.[1],
-    ).toMatchObject({ op: "before", keys: [key(2)], target: key(1) });
-    await keys("jj");
-    expect(selected()).toBe(key(3));
-    const before = calls.length;
-    await press("K");
-    await press("J");
-    expect(
-      calls
-        .slice(before)
-        .some(([method]) => method === "bridge.mr_reviews.order"),
-    ).toBe(false);
-
-    // :note sets the next step; the toast offers Undo.
-    await press(":");
-    await type(document.activeElement as HTMLInputElement, "note ping bob");
-    await press("Enter");
-    await wait(30);
-    expect(calls[calls.length - 2]).toEqual([
-      "bridge.mr_reviews.override",
-      { key: key(3), set: { next: "ping bob" } },
-    ]);
-    expect(document.querySelector(".mr-reviews-undo")?.textContent).toContain(
-      "Next step set on !3",
-    );
-    await press("u");
-    await wait(30);
-    expect(
-      calls.some(
-        ([method, params]) =>
-          method === "bridge.mr_reviews.order" &&
-          params.op === "undo" &&
-          params.version === 7,
-      ),
-    ).toBe(true);
-
-    // e: the form in its details; whose move and labels saved.
-    await press("e");
-    await wait(30);
-    const form = document.querySelector<HTMLFormElement>(".mr-override-form")!;
-    expect(form).not.toBeNull();
-    const [nextBox, depends, labels] = [
-      ...form.querySelectorAll<HTMLInputElement>("input[type='text']"),
-    ];
-    expect(document.activeElement).toBe(nextBox);
-    await type(nextBox!, "ask alice");
-    await type(depends!, "group/app!1");
-    await type(labels!, "infra, api");
-    await act(async () => {
-      const select = form.querySelector("select")!;
-      select.value = "reviewer";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await act(async () => {
-      form.dispatchEvent(
-        new Event("submit", { bubbles: true, cancelable: true }),
+    jest.useFakeTimers();
+    try {
+      await act(async () => showMrReviews());
+      await wait(80);
+      // Lanes with counts; the blocked ones drawn under their parent.
+      expect(lanes()).toEqual([
+        "Needs you2",
+        "Waiting1",
+        "Blocked2",
+        "Merged or closed1",
+      ]);
+      expect(rows()).toEqual([1, 2, 3, 4, 5, 6]);
+      const item = (n: number) =>
+        document.querySelector(`[data-mr-key='${key(n)}']`)!.closest("li")!;
+      expect(item(4).className).toContain("is-child");
+      expect(item(5).getAttribute("style")).toContain("--mr-depth: 2");
+      expect(item(5).className).toContain("is-last-child");
+      expect(item(3).textContent).toContain("blocks 1");
+      expect(item(4).textContent).toContain("after !3");
+      // The next step, and who set it; outdated when the request moved on.
+      expect(item(1).querySelector(".mr-reviews-next-text")?.textContent).toBe(
+        "Fix the failed pipeline",
       );
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    expect(lastOverride()).toEqual([
-      "bridge.mr_reviews.override",
-      {
-        key: key(3),
-        set: {
-          whose: "reviewer",
-          next: "ask alice",
-          dependsOn: ["group/app!1"],
-          labels: ["infra", "api"],
+      const next2 = item(2).querySelector(".mr-reviews-next-text")!;
+      expect(next2.className).toContain("is-outdated");
+      expect(item(2).querySelector(".mr-reviews-setby")?.textContent).toBe(
+        "changed since",
+      );
+      expect(item(2).textContent).toContain("api");
+
+      // za folds the requests under a parent, then a lane (kept here).
+      await keys("jjj");
+      expect(selected()).toBe(key(3));
+      await keys("za");
+      expect(rows()).toEqual([1, 2, 3, 6]);
+      await keys("za");
+      expect(rows()).toEqual([1, 2, 3, 4, 5, 6]);
+      await keys("gg");
+      await keys("za");
+      expect(rows()).toEqual([3, 4, 5, 6]);
+      expect(localStorage.getItem("roamgate:mrReviewsLanesFolded")).toBe(
+        '["your_move"]',
+      );
+      expect(selected()).toBe(key(3));
+      await act(async () =>
+        document
+          .querySelector<HTMLButtonElement>(".mr-reviews-lane-title")!
+          .click(),
+      );
+      expect(rows()).toEqual([1, 2, 3, 4, 5, 6]);
+
+      // J / K move within the lane only.
+      await keys("gg");
+      await keys("j");
+      expect(selected()).toBe(key(2));
+      await press("K");
+      await wait(30);
+      expect(
+        calls.find(([method]) => method === "bridge.mr_reviews.order")?.[1],
+      ).toMatchObject({ op: "before", keys: [key(2)], target: key(1) });
+      await keys("jj");
+      expect(selected()).toBe(key(3));
+      const before = calls.length;
+      await press("K");
+      await press("J");
+      expect(
+        calls
+          .slice(before)
+          .some(([method]) => method === "bridge.mr_reviews.order"),
+      ).toBe(false);
+
+      // :note sets the next step; the toast offers Undo.
+      await press(":");
+      await type(document.activeElement as HTMLInputElement, "note ping bob");
+      await press("Enter");
+      await wait(30);
+      expect(calls[calls.length - 2]).toEqual([
+        "bridge.mr_reviews.override",
+        { key: key(3), set: { next: "ping bob" } },
+      ]);
+      expect(document.querySelector(".mr-reviews-undo")?.textContent).toContain(
+        "Next step set on !3",
+      );
+      await press("u");
+      await wait(30);
+      expect(
+        calls.some(
+          ([method, params]) =>
+            method === "bridge.mr_reviews.order" &&
+            params.op === "undo" &&
+            params.version === 7,
+        ),
+      ).toBe(true);
+
+      // e: the form in its details; whose move and labels saved.
+      await press("e");
+      await wait(30);
+      const form =
+        document.querySelector<HTMLFormElement>(".mr-override-form")!;
+      expect(form).not.toBeNull();
+      const [nextBox, depends, labels] = [
+        ...form.querySelectorAll<HTMLInputElement>("input[type='text']"),
+      ];
+      expect(document.activeElement).toBe(nextBox);
+      await type(nextBox!, "ask alice");
+      await type(depends!, "group/app!1");
+      await type(labels!, "infra, api");
+      await act(async () => {
+        const select = form.querySelector("select")!;
+        select.value = "reviewer";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await act(async () => {
+        form.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+      });
+      await wait(20);
+      expect(lastOverride()).toEqual([
+        "bridge.mr_reviews.override",
+        {
+          key: key(3),
+          set: {
+            whose: "reviewer",
+            next: "ask alice",
+            dependsOn: ["group/app!1"],
+            labels: ["infra", "api"],
+          },
         },
-      },
-    ]);
-    expect(document.querySelector(".mr-override-form")).toBeNull();
-    // The details show what is set; E clears it.
-    await press("Escape");
-    // !2 went before !1 (K above).
-    await keys("kk");
-    expect(selected()).toBe(key(2));
-    await press("E");
-    await wait(30);
-    expect(lastOverride()).toEqual([
-      "bridge.mr_reviews.override",
-      { key: key(2), clear: "all" },
-    ]);
-    await press("i");
-    await wait(30);
-    const detail = document.querySelector(".mr-reviews-detail")!;
-    expect(detail.textContent).toContain("Lane");
-    expect(detail.textContent).toContain("set by Claude, changed since");
-    expect(detail.textContent).toContain("Set by hand");
+      ]);
+      expect(document.querySelector(".mr-override-form")).toBeNull();
+      // The details show what is set; E clears it.
+      await press("Escape");
+      // !2 went before !1 (K above).
+      await keys("kk");
+      expect(selected()).toBe(key(2));
+      await press("E");
+      await wait(30);
+      expect(lastOverride()).toEqual([
+        "bridge.mr_reviews.override",
+        { key: key(2), clear: "all" },
+      ]);
+      await press("i");
+      await wait(30);
+      const detail = document.querySelector(".mr-reviews-detail")!;
+      expect(detail.textContent).toContain("Lane");
+      expect(detail.textContent).toContain("set by Claude, changed since");
+      expect(detail.textContent).toContain("Set by hand");
+    } finally {
+      jest.useRealTimers();
+    }
   });
 }

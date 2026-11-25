@@ -1,5 +1,5 @@
 import { inIsolatedChild } from "../testIsolated";
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 
 if (
   inIsolatedChild(
@@ -204,10 +204,13 @@ if (
     const { showMrReviews, closeMrReviews } = await import(
       "./boardPanel.testkit"
     );
-    const wait = (ms: number) =>
-      act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, ms));
+    // Timers move only when told; the calls' promises settle in between.
+    const wait = async (ms: number) => {
+      await act(async () => {
+        jest.advanceTimersByTime(ms);
       });
+      for (let i = 0; i < 5; i++) await act(async () => {});
+    };
     const press = async (name: string, init: KeyboardEventInit = {}) => {
       await act(async () => {
         (document.activeElement ?? document.body).dispatchEvent(
@@ -218,8 +221,8 @@ if (
             ...init,
           }),
         );
-        await new Promise((resolve) => setTimeout(resolve, 20));
       });
+      await wait(20);
     };
     const keys = async (text: string) => {
       for (const each of text) await press(each);
@@ -254,170 +257,175 @@ if (
     const callsOf = (method: string) =>
       calls.filter(([each]) => each === `bridge.mr_reviews.${method}`);
 
-    // 1. The search is kept: written a moment after the typing stops, read
-    // back on the next run; the saved view it is shows selected.
-    await open();
-    expect(search().value).toBe("");
-    expect(pressed()).toEqual(["All"]);
-    await act(async () => search().focus());
-    await type(search(), "project:gstreamer/*");
-    expect(callsOf("panel")).toHaveLength(0);
-    await wait(700);
-    expect(callsOf("panel").map(([, params]) => params)).toEqual([
-      { search: "project:gstreamer/*" },
-    ]);
-    expect(localStorage.getItem("roamgate:mrReviewsSearch")).toBe(
-      "project:gstreamer/*",
-    );
-    expect(pressed()).toEqual(["gst"]);
-    await close();
-    await open();
-    expect(search().value).toBe("project:gstreamer/*");
-    expect(pressed()).toEqual(["gst"]);
-    // The filter is kept and sent at once.
-    await act(async () =>
-      document
-        .querySelector<HTMLButtonElement>(".mr-reviews-filter button")!
-        .click(),
-    );
-    await wait(30);
-    expect(callsOf("panel").slice(-1)[0]?.[1]).toEqual({ filter: "all" });
-    // Another device wrote later: taken on the next read.
-    await close();
-    panel = {
-      search: "label:audio",
-      filter: "review",
-      at: new Date(Date.now() + 60_000).toISOString(),
-    };
-    await open();
-    expect(search().value).toBe("label:audio");
-    expect(pressed()[0]).toBe("To review");
-    // Esc empties it, for every device too.
-    await act(async () => search().focus());
-    await press("Escape");
-    await wait(700);
-    expect(search().value).toBe("");
-    expect(callsOf("panel").slice(-1)[0]?.[1]).toEqual({ search: "" });
-    await act(async () =>
-      document
-        .querySelector<HTMLButtonElement>(".mr-reviews-filter button")!
-        .click(),
-    );
-    await wait(30);
+    jest.useFakeTimers();
+    try {
+      // 1. The search is kept: written a moment after the typing stops, read
+      // back on the next run; the saved view it is shows selected.
+      await open();
+      expect(search().value).toBe("");
+      expect(pressed()).toEqual(["All"]);
+      await act(async () => search().focus());
+      await type(search(), "project:gstreamer/*");
+      expect(callsOf("panel")).toHaveLength(0);
+      await wait(700);
+      expect(callsOf("panel").map(([, params]) => params)).toEqual([
+        { search: "project:gstreamer/*" },
+      ]);
+      expect(localStorage.getItem("roamgate:mrReviewsSearch")).toBe(
+        "project:gstreamer/*",
+      );
+      expect(pressed()).toEqual(["gst"]);
+      await close();
+      await open();
+      expect(search().value).toBe("project:gstreamer/*");
+      expect(pressed()).toEqual(["gst"]);
+      // The filter is kept and sent at once.
+      await act(async () =>
+        document
+          .querySelector<HTMLButtonElement>(".mr-reviews-filter button")!
+          .click(),
+      );
+      await wait(30);
+      expect(callsOf("panel").slice(-1)[0]?.[1]).toEqual({ filter: "all" });
+      // Another device wrote later: taken on the next read.
+      await close();
+      panel = {
+        search: "label:audio",
+        filter: "review",
+        at: new Date(Date.now() + 60_000).toISOString(),
+      };
+      await open();
+      expect(search().value).toBe("label:audio");
+      expect(pressed()[0]).toBe("To review");
+      // Esc empties it, for every device too.
+      await act(async () => search().focus());
+      await press("Escape");
+      await wait(700);
+      expect(search().value).toBe("");
+      expect(callsOf("panel").slice(-1)[0]?.[1]).toEqual({ search: "" });
+      await act(async () =>
+        document
+          .querySelector<HTMLButtonElement>(".mr-reviews-filter button")!
+          .click(),
+      );
+      await wait(30);
 
-    // 2. A click on a request with a home: its review there, not in the
-    // shared review workspace; one whose only workspace is the shared one
-    // opens as before.
-    await act(async () =>
-      document
-        .querySelector<HTMLButtonElement>(`[data-mr-key='${key(2)}']`)!
-        .click(),
-    );
-    await wait(50);
-    expect(callsOf("open").map(([, params]) => params)).toEqual([
-      { key: key(2), home: { connection_id: "local", workspace_id: "w-2" } },
-    ]);
-    expect(jumps).toEqual([["local", "w-2"]]);
-    expect(document.querySelector(".mr-reviews-panel")).toBeNull();
-    await open();
-    await act(async () =>
-      document
-        .querySelector<HTMLButtonElement>(`[data-mr-key='${key(1)}']`)!
-        .click(),
-    );
-    await wait(50);
-    expect(callsOf("open").slice(-1)[0]?.[1]).toEqual({ key: key(1) });
-    expect(jumps.slice(-1)[0]).toEqual(["local", "w-reviews"]);
+      // 2. A click on a request with a home: its review there, not in the
+      // shared review workspace; one whose only workspace is the shared one
+      // opens as before.
+      await act(async () =>
+        document
+          .querySelector<HTMLButtonElement>(`[data-mr-key='${key(2)}']`)!
+          .click(),
+      );
+      await wait(50);
+      expect(callsOf("open").map(([, params]) => params)).toEqual([
+        { key: key(2), home: { connection_id: "local", workspace_id: "w-2" } },
+      ]);
+      expect(jumps).toEqual([["local", "w-2"]]);
+      expect(document.querySelector(".mr-reviews-panel")).toBeNull();
+      await open();
+      await act(async () =>
+        document
+          .querySelector<HTMLButtonElement>(`[data-mr-key='${key(1)}']`)!
+          .click(),
+      );
+      await wait(50);
+      expect(callsOf("open").slice(-1)[0]?.[1]).toEqual({ key: key(1) });
+      expect(jumps.slice(-1)[0]).toEqual(["local", "w-reviews"]);
 
-    // 3. Start a review with a home: gH, the row's button, the details' one
-    // with the prompt in its tooltip.
-    await open();
-    await keys("j");
-    expect(selected()).toBe(key(1));
-    expect(
-      document.querySelector(
-        "button[aria-label='Start a review with a home (gH)']",
-      ),
-    ).not.toBeNull();
-    await keys("gH");
-    await wait(50);
-    expect(callsOf("home").map(([, params]) => params)).toEqual([
-      { key: key(1) },
-    ]);
-    expect(jumps.slice(-1)[0]).toEqual(["local", "w-home-1"]);
-    expect(document.querySelector(".mr-reviews-panel")).toBeNull();
-    await open();
-    await keys("j");
-    await keys("i");
-    const start = [...document.querySelectorAll("button")].find(
-      (each) => each.textContent?.trim() === "Start a review with a home",
-    )!;
-    expect(start.title).toContain(
-      "Be the home of https://gitlab.example.org/gstreamer/app/-/merge_requests/1",
-    );
-    await press("Escape");
-    // A request with a home has no row button for it.
-    await keys("j");
-    expect(selected()).toBe(key(2));
-    expect(
-      document.querySelector(
-        "button[aria-label='Start a review with a home (gH)']",
-      ),
-    ).toBeNull();
-    await press(":");
-    const command = document.querySelector<HTMLInputElement>(
-      "input[aria-label='Command']",
-    )!;
-    await type(command, "home");
-    await press("Enter");
-    await wait(50);
-    expect(callsOf("home").slice(-1)[0]?.[1]).toEqual({ key: key(2) });
+      // 3. Start a review with a home: gH, the row's button, the details' one
+      // with the prompt in its tooltip.
+      await open();
+      await keys("j");
+      expect(selected()).toBe(key(1));
+      expect(
+        document.querySelector(
+          "button[aria-label='Start a review with a home (gH)']",
+        ),
+      ).not.toBeNull();
+      await keys("gH");
+      await wait(50);
+      expect(callsOf("home").map(([, params]) => params)).toEqual([
+        { key: key(1) },
+      ]);
+      expect(jumps.slice(-1)[0]).toEqual(["local", "w-home-1"]);
+      expect(document.querySelector(".mr-reviews-panel")).toBeNull();
+      await open();
+      await keys("j");
+      await keys("i");
+      const start = [...document.querySelectorAll("button")].find(
+        (each) => each.textContent?.trim() === "Start a review with a home",
+      )!;
+      expect(start.title).toContain(
+        "Be the home of https://gitlab.example.org/gstreamer/app/-/merge_requests/1",
+      );
+      await press("Escape");
+      // A request with a home has no row button for it.
+      await keys("j");
+      expect(selected()).toBe(key(2));
+      expect(
+        document.querySelector(
+          "button[aria-label='Start a review with a home (gH)']",
+        ),
+      ).toBeNull();
+      await press(":");
+      const command = document.querySelector<HTMLInputElement>(
+        "input[aria-label='Command']",
+      )!;
+      await type(command, "home");
+      await press("Enter");
+      await wait(50);
+      expect(callsOf("home").slice(-1)[0]?.[1]).toEqual({ key: key(2) });
 
-    // 4. A wide pane: the board, one column per section and lane.
-    await open();
-    expect(document.querySelector(".mr-reviews-board")).toBeNull();
-    await close();
-    panelWidth = 2000;
-    await open();
-    const panelNode = document.querySelector(".mr-reviews-panel")!;
-    expect(panelNode.className).toContain("is-board");
-    const board = document.querySelector(".mr-reviews-board")!;
-    expect(board).not.toBeNull();
-    expect(
-      [...board.querySelectorAll(".mr-reviews-lane-title")].map(
-        (node) => node.textContent,
-      ),
-    ).toEqual(["Needs you2", "Waiting3", "Merged or closed1"]);
-    // j / k stay in the column; h / l and Tab go across, at the same height.
-    await keys("j");
-    expect(selected()).toBe(key(1));
-    await keys("jjj");
-    expect(selected()).toBe(key(2));
-    await keys("l");
-    expect(selected()).toBe(key(4));
-    await keys("k");
-    expect(selected()).toBe(key(3));
-    await press("Tab");
-    expect(selected()).toBe(key(5));
-    await keys("jj");
-    expect(selected()).toBe(key(7));
-    await keys("l");
-    expect(selected()).toBe(key(8));
-    await keys("l");
-    expect(selected()).toBe(key(8));
-    await press("Tab", { shiftKey: true });
-    expect(selected()).toBe(key(5));
-    await keys("hh");
-    expect(selected()).toBe(key(1));
-    // Narrow again: the stacked list.
-    panelWidth = 600;
-    await act(async () => window.dispatchEvent(new Event("resize")));
-    await wait(20);
-    expect(document.querySelector(".mr-reviews-board")).toBeNull();
-    await keys("j");
-    expect(selected()).toBe(key(2));
-    await keys("j");
-    expect(selected()).toBe(key(3));
-    await close();
+      // 4. A wide pane: the board, one column per section and lane.
+      await open();
+      expect(document.querySelector(".mr-reviews-board")).toBeNull();
+      await close();
+      panelWidth = 2000;
+      await open();
+      const panelNode = document.querySelector(".mr-reviews-panel")!;
+      expect(panelNode.className).toContain("is-board");
+      const board = document.querySelector(".mr-reviews-board")!;
+      expect(board).not.toBeNull();
+      expect(
+        [...board.querySelectorAll(".mr-reviews-lane-title")].map(
+          (node) => node.textContent,
+        ),
+      ).toEqual(["Needs you2", "Waiting3", "Merged or closed1"]);
+      // j / k stay in the column; h / l and Tab go across, at the same height.
+      await keys("j");
+      expect(selected()).toBe(key(1));
+      await keys("jjj");
+      expect(selected()).toBe(key(2));
+      await keys("l");
+      expect(selected()).toBe(key(4));
+      await keys("k");
+      expect(selected()).toBe(key(3));
+      await press("Tab");
+      expect(selected()).toBe(key(5));
+      await keys("jj");
+      expect(selected()).toBe(key(7));
+      await keys("l");
+      expect(selected()).toBe(key(8));
+      await keys("l");
+      expect(selected()).toBe(key(8));
+      await press("Tab", { shiftKey: true });
+      expect(selected()).toBe(key(5));
+      await keys("hh");
+      expect(selected()).toBe(key(1));
+      // Narrow again: the stacked list.
+      panelWidth = 600;
+      await act(async () => window.dispatchEvent(new Event("resize")));
+      await wait(20);
+      expect(document.querySelector(".mr-reviews-board")).toBeNull();
+      await keys("j");
+      expect(selected()).toBe(key(2));
+      await keys("j");
+      expect(selected()).toBe(key(3));
+      await close();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 }
