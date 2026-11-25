@@ -426,6 +426,13 @@ async fn settings_rpc_errors_carry_their_runtime_connection_identity() {
     );
 }
 
+/// An absolute path to no file (a drive's on Windows).
+const MISSING_SECRET: &str = if cfg!(windows) {
+    r"C:\nonexistent\token"
+} else {
+    "/nonexistent/token"
+};
+
 #[tokio::test]
 async fn agent_profiles_listed_with_the_built_in_secrets_by_path_validated_on_update() {
     let home = tempfile::tempdir().unwrap();
@@ -455,7 +462,7 @@ async fn agent_profiles_listed_with_the_built_in_secrets_by_path_validated_on_up
             "agent": "claude",
             "env": [
                 {"name": "ANTHROPIC_MODEL", "value": "glm-5p3"},
-                {"name": "ANTHROPIC_AUTH_TOKEN", "file": "/nonexistent/token"},
+                {"name": "ANTHROPIC_AUTH_TOKEN", "file": MISSING_SECRET},
             ],
             "unset": [],
         }],
@@ -477,7 +484,7 @@ async fn agent_profiles_listed_with_the_built_in_secrets_by_path_validated_on_up
         glm["env"][0],
         json!({"name": "ANTHROPIC_MODEL", "value": "glm-5p3"})
     );
-    assert_eq!(glm["env"][1]["file"], "/nonexistent/token");
+    assert_eq!(glm["env"][1]["file"], MISSING_SECRET);
     assert!(
         glm["env"][1]["problem"]
             .as_str()
@@ -485,7 +492,7 @@ async fn agent_profiles_listed_with_the_built_in_secrets_by_path_validated_on_up
     );
     assert_eq!(
         file(&path)["profiles"]["list"][0]["env"]["ANTHROPIC_AUTH_TOKEN"],
-        json!({"file": "/nonexistent/token"})
+        json!({"file": MISSING_SECRET})
     );
     for params in [
         json!({"list": [], "default": "Nope"}),

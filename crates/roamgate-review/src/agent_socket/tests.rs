@@ -267,7 +267,7 @@ fn temp(prefix: &str) -> tempfile::TempDir {
     // path: macOS's /tmp is a link, and data paths refuse links.
     tempfile::Builder::new()
         .prefix(prefix)
-        .tempdir_in(std::fs::canonicalize("/tmp").unwrap())
+        .tempdir_in(roamgate_base::paths::short_temp_root())
         .unwrap()
 }
 
@@ -300,8 +300,8 @@ fn setup_with(with: With) -> Setup {
     let cwd = temp("rg-cwd-");
     let other = temp("rg-other-");
     let (cwd_path, other_path) = (
-        std::fs::canonicalize(cwd.path()).unwrap(),
-        std::fs::canonicalize(other.path()).unwrap(),
+        roamgate_base::paths::realpath(cwd.path()).unwrap(),
+        roamgate_base::paths::realpath(other.path()).unwrap(),
     );
     let panes = Arc::new(Panes {
         prompting: with.prompting,
@@ -2356,6 +2356,9 @@ fn the_skill_says_agent_messages_carry_no_user_authority() {
 
 // ---------------------------------------------------------------- agent-remote.test.ts
 
+// The setup script is for a POSIX SSH host: Windows' command line cannot
+// carry it, and its client is a symlink.
+#[cfg(unix)]
 fn run_setup(home: &Path) -> std::process::Output {
     std::process::Command::new("sh")
         .args(["-c", &remote::remote_setup_script()])
@@ -2403,6 +2406,8 @@ fn the_host_setup_installs_the_client_once_and_names_the_socket() {
     assert_eq!(std::fs::metadata(&client).unwrap().mtime_nsec(), before);
 }
 
+// A POSIX host's setup, symlinks included (see run_setup).
+#[cfg(unix)]
 #[test]
 fn the_host_setup_links_the_skill_and_client_not_over_the_users() {
     let home = tempfile::tempdir().unwrap();

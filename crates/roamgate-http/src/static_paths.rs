@@ -87,7 +87,7 @@ mod tests {
     fn keeps_resolved_files_inside_the_public_directory() {
         assert_eq!(
             resolve_public_file_path(Path::new("/srv/public"), "/assets/app.js"),
-            Some(PathBuf::from("/srv/public/assets/app.js"))
+            Some(absolute(Path::new("/srv/public/assets/app.js")))
         );
         assert_eq!(
             resolve_public_file_path(Path::new("/srv/public"), "/../secret"),
@@ -99,7 +99,7 @@ mod tests {
         );
         assert_eq!(
             resolve_public_file_path(Path::new("/srv/public/"), "/a/../b"),
-            Some(PathBuf::from("/srv/public/b"))
+            Some(absolute(Path::new("/srv/public/b")))
         );
     }
 

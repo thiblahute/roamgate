@@ -16,6 +16,18 @@ fn args(list: &[&str]) -> Vec<String> {
     list.iter().map(|arg| (*arg).to_owned()).collect()
 }
 
+/// A tunnel socket under the tests' `/tmp`, joined as the platform joins.
+fn in_tmp(name: &str) -> String {
+    Path::new("/tmp").join(name).display().to_string()
+}
+
+/// An absolute path as `path.resolve` gives it here (on a drive on Windows).
+fn resolved(path: &str) -> String {
+    roamgate_base::paths::resolve(Path::new(path))
+        .display()
+        .to_string()
+}
+
 fn runtime(home: &Path) -> ConfigRuntime {
     ConfigRuntime {
         platform: "linux".into(),
@@ -518,10 +530,13 @@ fn uses_stable_12_hex_sha_256_identifiers_for_each_socket_kind() {
     let args = ["--ssh-host", "alice@example.com", "--session", "work"];
     let first = socket_config(&args, &[]);
     let second = socket_config(&args, &[]);
-    assert_eq!(first.socket_path, "/tmp/roamgate-cce73172d55b-control.sock");
+    assert_eq!(
+        first.socket_path,
+        in_tmp("roamgate-cce73172d55b-control.sock")
+    );
     assert_eq!(
         first.client_socket_path,
-        "/tmp/roamgate-4796b7bb06b9-client.sock"
+        in_tmp("roamgate-4796b7bb06b9-client.sock")
     );
     assert_eq!(second.socket_path, first.socket_path);
     assert!(!first.has_explicit_socket_path && !first.has_explicit_client_socket_path);
@@ -547,11 +562,11 @@ fn distinguishes_hosts_sessions_and_the_default_session() {
     assert_eq!((controls.len(), clients.len()), (4, 4));
     assert_eq!(
         configs[0].socket_path,
-        "/tmp/roamgate-3c8b63447e14-control.sock"
+        in_tmp("roamgate-3c8b63447e14-control.sock")
     );
     assert_eq!(
         configs[0].client_socket_path,
-        "/tmp/roamgate-d2b2306369cc-client.sock"
+        in_tmp("roamgate-d2b2306369cc-client.sock")
     );
 }
 
@@ -628,14 +643,13 @@ fn preserves_local_herdr_socket_paths_for_session() {
         if let Some(session) = session {
             base = base.join("sessions").join(session);
         }
-        assert_eq!(
-            config.socket_path,
-            base.join("herdr.sock").display().to_string()
-        );
-        assert_eq!(
-            config.client_socket_path,
-            base.join("herdr-client.sock").display().to_string()
-        );
+        let socket = |name: &str| {
+            roamgate_base::paths::resolve(&base.join(name))
+                .display()
+                .to_string()
+        };
+        assert_eq!(config.socket_path, socket("herdr.sock"));
+        assert_eq!(config.client_socket_path, socket("herdr-client.sock"));
         assert!(!config.has_explicit_socket_path && !config.has_explicit_client_socket_path);
     }
 }
@@ -772,13 +786,13 @@ fn prefers_explicit_paths_then_ssh_tunnels_then_the_session_layout() {
         ("/run/a.sock".into(), "/run/b.sock".into())
     );
     let (control, client) = resolve_herdr_socket_paths(&settings(None, None, Some("me@box"), None));
-    assert!(control.starts_with("/tmp/roamgate-") && control.ends_with("-control.sock"));
+    assert!(control.starts_with(&in_tmp("roamgate-")) && control.ends_with("-control.sock"));
     assert!(client.ends_with("-client.sock"));
     assert_eq!(
         resolve_herdr_socket_paths(&settings(None, None, None, Some("work"))),
         (
-            "/h/.config/herdr/sessions/work/herdr.sock".into(),
-            "/h/.config/herdr/sessions/work/herdr-client.sock".into()
+            resolved("/h/.config/herdr/sessions/work/herdr.sock"),
+            resolved("/h/.config/herdr/sessions/work/herdr-client.sock")
         )
     );
 }
