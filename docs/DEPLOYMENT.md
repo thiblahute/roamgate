@@ -15,6 +15,15 @@ remote access, see the [tutorial](./TUTORIAL.md#networking).
 - On Windows, local Git features need [Git for Windows](https://gitforwindows.org/)
   on PATH.
 
+### Windows limits
+
+A server running on Windows serves its local Herdr only: it cannot open
+[SSH profiles](#multiple-and-remote-herdr-connections), and `roamgate node`
+does not run there. A Windows machine reached over SSH from a Linux or macOS
+server gets terminals and Herdr operations; file, Git, worktree, worktree hook
+and agent-history features need a Unix host, and Ranger can only read status
+and terminal output there.
+
 ### Herdr compatibility
 
 | Herdr                            | Support                              |
@@ -500,7 +509,8 @@ connection per bridged socket client and has no command master. GUI preferences 
 Give each bridge on the same account its own `ROAMGATE_SETTINGS_PATH` (an
 absolute, stable path; changing it requires logging in again).
 
-**Node link (`"node": true`):** an SSH profile on a Linux/macOS host may add
+**Node link (`"node": true`):** an SSH profile on a Linux/macOS host (the node
+does not run on Windows) may add
 `"node": true` in `connections.json` (there is no form field for it; edits in
 the connection form keep it). The server then runs
 `~/.local/share/roamgate-node/bin/roamgate node --stdio` on the host over the
