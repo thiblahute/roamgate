@@ -294,8 +294,17 @@ fn write_seed(home: &Path, file: &SeedFile) -> Result<()> {
 impl Run {
     /// Prepares a run (fakes up, files written); the server is not started.
     pub async fn new(fake_bin: &Path, options: RunOptions) -> Result<Run> {
-        // Short paths: Unix socket paths are limited to about 100 bytes.
-        let dir = tempfile::Builder::new().prefix("rgp-").tempdir()?;
+        // Short paths: Unix socket paths are limited to about 100 bytes,
+        // and macOS' TMPDIR alone takes half of them (the SSH runtime
+        // directory refuses it): /tmp there. Linux keeps TMPDIR (it binds
+        // longer paths).
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("rgp-");
+        let dir = if cfg!(target_os = "macos") {
+            builder.tempdir_in(roamgate_base::paths::short_temp_root())?
+        } else {
+            builder.tempdir()?
+        };
         // Real, and on Windows without `\\?\`: Git Bash and socket
         // addresses take drive paths only.
         let root = roamgate_base::paths::realpath(dir.path())?;
