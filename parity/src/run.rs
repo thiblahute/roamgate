@@ -62,6 +62,25 @@ pub const HARNESS_ENV: &[&str] = &[
     "ROAMGATE_SSH_RUNTIME_DIR",
 ];
 
+/// The system variables a run passes on from the suite's own environment
+/// on Windows.
+const WINDOWS_ENV: &[&str] = &[
+    "SystemRoot",
+    "SystemDrive",
+    "windir",
+    "ComSpec",
+    "PATHEXT",
+    "OS",
+    "NUMBER_OF_PROCESSORS",
+    "PROCESSOR_ARCHITECTURE",
+    "ProgramFiles",
+    "ProgramFiles(x86)",
+    "ProgramW6432",
+    "ProgramData",
+    "USERNAME",
+    "COMPUTERNAME",
+];
+
 /// How long a server gets to listen (a niced debug build on a busy
 /// machine).
 pub const START_TIMEOUT: Duration = Duration::from_secs(60);
@@ -190,7 +209,12 @@ fn build_pi_sidecar() -> Result<PathBuf> {
     };
     let path = dir.join(name);
     // Built aside and renamed: another suite's servers may run the last one.
-    let building = dir.join(format!("{name}.{}.tmp", std::process::id()));
+    // Bun gives a Windows executable its `.exe` when its name lacks one.
+    let building = dir.join(if cfg!(windows) {
+        format!("roamgate-pi.{}.tmp.exe", std::process::id())
+    } else {
+        format!("{name}.{}.tmp", std::process::id())
+    });
     let output = std::process::Command::new("bun")
         .args([
             "build",
@@ -272,7 +296,9 @@ impl Run {
     pub async fn new(fake_bin: &Path, options: RunOptions) -> Result<Run> {
         // Short paths: Unix socket paths are limited to about 100 bytes.
         let dir = tempfile::Builder::new().prefix("rgp-").tempdir()?;
-        let root = dir.path().canonicalize()?;
+        // Real, and on Windows without `\\?\`: Git Bash and socket
+        // addresses take drive paths only.
+        let root = roamgate_base::paths::realpath(dir.path())?;
         let keep = std::env::var_os("PARITY_KEEP").is_some();
         let home = root.join("home");
         let fakes_dir = root.join("fakes");
@@ -383,6 +409,18 @@ impl Run {
             env.insert(key.to_owned(), value);
         };
         set("PATH", format!("{}{separator}{path_var}", text(&bin)));
+        // What Windows itself needs in a process's environment (Winsock
+        // loads its providers from SystemRoot) and where Git for Windows
+        // is found; the temporary directory is the run's.
+        if cfg!(windows) {
+            for name in WINDOWS_ENV {
+                if let Ok(value) = std::env::var(name) {
+                    set(name, value);
+                }
+            }
+            set("TEMP", text(&root.join("tmp")));
+            set("TMP", text(&root.join("tmp")));
+        }
         set("HOME", text(&home));
         set("USERPROFILE", text(&home));
         set("APPDATA", text(&home.join("AppData").join("Roaming")));
