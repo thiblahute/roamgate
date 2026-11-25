@@ -132,6 +132,8 @@ pub(crate) struct Layer {
     pub(crate) runtimes: runtime::Runtimes,
     /// The `connections.agent_sessions` answers each socket holds.
     pub(crate) session_versions: browser::SessionVersions,
+    /// Each connection's summary, shared by every browser.
+    pub(crate) session_snapshots: Arc<browser::SessionSnapshots>,
 }
 
 /// Agent starts typed into a pane, one use each (Bun's `launchRegistry()`):
@@ -204,6 +206,7 @@ impl Layer {
             review_agent_hosts: Mutex::default(),
             runtimes: runtime::Runtimes::default(),
             session_versions: browser::SessionVersions::default(),
+            session_snapshots: Arc::default(),
         }
     }
 

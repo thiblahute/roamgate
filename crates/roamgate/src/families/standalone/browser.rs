@@ -19,9 +19,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use futures_util::FutureExt;
+use futures_util::future::{BoxFuture, Shared};
 use roamgate_base::env::ProcessEnv;
 use roamgate_connections::agent_summaries::{
-    SummaryRuntime, TasksRuntime, read_connection_agent_sessions_with, read_connection_agent_tasks,
+    SummaryRuntime, TasksRuntime, read_connection_agent_tasks, read_connection_summary,
 };
 use roamgate_connections::routing::CONNECTION_CHANGED_DURING_REQUEST;
 use roamgate_herdr::integration_versions::{
@@ -78,6 +80,179 @@ impl SessionVersions {
     pub(crate) fn socket_closed(&self, socket_id: u64) {
         self.0.lock().unwrap().remove(&socket_id);
     }
+}
+
+/// A connection's summary is read again when older than this, Herdr
+/// having said nothing: what Herdr does not tell of (git status, the
+/// transcripts' activity times) is at most this old. The browsers read
+/// the summaries every 15 s and after Herdr's events.
+pub(crate) const SNAPSHOT_MAX_AGE_MS: f64 = 10_000.0;
+
+/// The least time between two reads of a connection's summary: Herdr's
+/// events come in bursts, and each browser reads after them.
+const SNAPSHOT_MIN_GAP: std::time::Duration = std::time::Duration::from_millis(1000);
+
+/// A connection's summary (`read_connection_summary`), shared by every
+/// browser (`connections.agent_sessions`, `agent.list`): read once for
+/// all, again only when Herdr's read generation moved (an event, a change
+/// made through its client) or it is [`SNAPSHOT_MAX_AGE_MS`] old. A reader
+/// that finds it stale joins the read in flight when that read started
+/// after what made it stale, else waits for the next one, which every
+/// other reader then shares.
+#[derive(Default)]
+pub(crate) struct SessionSnapshots(Mutex<HashMap<String, SnapshotState>>);
+
+type SharedSummary = Arc<Map<String, Value>>;
+
+/// A flight's Herdr read generation before it starts.
+const NOT_STARTED: u64 = u64::MAX;
+
+#[derive(Default)]
+struct SnapshotState {
+    /// The connection's generation these are of.
+    generation: u64,
+    kept: Option<Kept>,
+    flight: Option<Flight>,
+    /// When the last read started.
+    last_start: Option<std::time::Instant>,
+}
+
+#[derive(Clone)]
+struct Flight {
+    /// Herdr's read generation when the read started ([`NOT_STARTED`]
+    /// while it waits).
+    herdr_generation: Arc<std::sync::atomic::AtomicU64>,
+    result: Shared<BoxFuture<'static, SharedSummary>>,
+}
+
+struct Kept {
+    /// Herdr's read generation when its read started.
+    herdr_generation: u64,
+    /// The clock's monotonic time when its read started.
+    at: f64,
+    value: SharedSummary,
+}
+
+impl SnapshotState {
+    fn of<'a>(states: &'a mut HashMap<String, SnapshotState>, lease: &Lease) -> &'a mut Self {
+        let state = states.entry(lease.connection_id.clone()).or_default();
+        if state.generation != lease.generation {
+            *state = SnapshotState {
+                generation: lease.generation,
+                ..SnapshotState::default()
+            };
+        }
+        state
+    }
+}
+
+impl SessionSnapshots {
+    /// The connection's summary, read after anything Herdr said before
+    /// this call came, unless the kept one still holds.
+    async fn read(
+        &self,
+        layer: &Arc<Layer>,
+        cx: &FamilyContext,
+        lease: &Lease,
+        this: &Arc<Self>,
+    ) -> SharedSummary {
+        use std::sync::atomic::Ordering;
+        let herdr = lease.runtime.herdr();
+        let arrival = herdr.read_generation();
+        loop {
+            let (flight, joined) = {
+                let mut states = self.0.lock().unwrap();
+                let state = SnapshotState::of(&mut states, lease);
+                if let Some(kept) = &state.kept
+                    && kept.herdr_generation >= arrival
+                    && kept.herdr_generation == herdr.read_generation()
+                    && layer.clock.monotonic() - kept.at < SNAPSHOT_MAX_AGE_MS
+                {
+                    return kept.value.clone();
+                }
+                match &state.flight {
+                    Some(flight) => {
+                        let started = flight.herdr_generation.load(Ordering::SeqCst);
+                        (flight.clone(), started == NOT_STARTED || started >= arrival)
+                    }
+                    None => {
+                        let wait = state
+                            .last_start
+                            .map(|last| SNAPSHOT_MIN_GAP.saturating_sub(last.elapsed()))
+                            .unwrap_or_default();
+                        state.last_start = Some(std::time::Instant::now() + wait);
+                        let herdr_generation =
+                            Arc::new(std::sync::atomic::AtomicU64::new(NOT_STARTED));
+                        let task = tokio::spawn(read_snapshot(
+                            layer.clone(),
+                            cx.clone(),
+                            lease.clone(),
+                            this.clone(),
+                            herdr_generation.clone(),
+                            wait,
+                        ));
+                        let flight = Flight {
+                            herdr_generation,
+                            result: async move { task.await.unwrap_or_default() }
+                                .boxed()
+                                .shared(),
+                        };
+                        state.flight = Some(flight.clone());
+                        (flight, true)
+                    }
+                }
+            };
+            let value = flight.result.await;
+            if joined {
+                return value;
+            }
+        }
+    }
+}
+
+/// One read of a connection's summary, kept for the next readers.
+async fn read_snapshot(
+    layer: Arc<Layer>,
+    cx: FamilyContext,
+    lease: Lease,
+    snapshots: Arc<SessionSnapshots>,
+    started: Arc<std::sync::atomic::AtomicU64>,
+    wait: std::time::Duration,
+) -> SharedSummary {
+    if !wait.is_zero() {
+        tokio::time::sleep(wait).await;
+    }
+    let herdr_generation = lease.runtime.herdr().read_generation();
+    started.store(herdr_generation, std::sync::atomic::Ordering::SeqCst);
+    let at = layer.clock.monotonic();
+    let runtime = Summary {
+        cx,
+        lease: lease.clone(),
+    };
+    let value =
+        Arc::new(read_connection_summary(&lease.connection_id, lease.generation, &runtime).await);
+    let mut states = snapshots.0.lock().unwrap();
+    // Not kept for a connection connected again meanwhile.
+    if let Some(state) = states
+        .get_mut(&lease.connection_id)
+        .filter(|state| state.generation == lease.generation)
+    {
+        if state
+            .flight
+            .as_ref()
+            .is_some_and(|flight| Arc::ptr_eq(&flight.herdr_generation, &started))
+        {
+            state.flight = None;
+        }
+        if state.kept.as_ref().is_none_or(|kept| kept.at <= at) {
+            state.kept = Some(Kept {
+                herdr_generation,
+                at,
+                value: value.clone(),
+            });
+        }
+    }
+    value
 }
 
 const PANE_INPUT_METHODS: &[&str] = &["pane.send_input", "pane.send_text", "pane.send_keys"];
@@ -456,6 +631,16 @@ async fn agent_list(
                 .await
                 .map_err(RpcError::new);
         }
+        // The whole list: the connection's shared summary has it.
+        if params.as_object().is_some_and(Map::is_empty) {
+            let snapshot = layer
+                .session_snapshots
+                .read(layer, cx, lease, &layer.session_snapshots)
+                .await;
+            if let Some(agents) = snapshot.get("agents").filter(|agents| !agents.is_null()) {
+                return Ok(agents.clone());
+            }
+        }
         let (readers, _) =
             super::super::agent_sessions::owned_readers(cx, &lease.connection_id).await?;
         readers
@@ -600,34 +785,40 @@ async fn agent_sessions(
         .host
         .manager_now()
         .ok_or_else(|| RpcError::new("the connections are not started"))?;
-    let summary_cx = cx.clone();
-    let sessions = read_connection_agent_sessions_with(&manager, |lease| {
-        Arc::new(Summary {
-            cx: summary_cx.clone(),
-            lease: lease.clone(),
-        }) as Arc<dyn SummaryRuntime>
-    })
-    .await;
-    let snapshots = sessions["connections"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    // Each ready connection's summary, shared by every browser; those
+    // still current once read.
+    let snapshots = &layer.session_snapshots;
+    let manager = &manager;
+    let reads = manager.list().into_iter().map(|connection| async move {
+        let lease = manager.ready_runtime_lease(&connection.id).ok().flatten()?;
+        let snapshot = snapshots.read(layer, cx, &lease, snapshots).await;
+        Some((lease, snapshot))
+    });
+    let snapshots: Vec<SharedSummary> = futures_util::future::join_all(reads)
+        .await
+        .into_iter()
+        .flatten()
+        .filter(|(lease, _)| lease.is_current())
+        .map(|(_, snapshot)| snapshot)
+        .collect();
     let reads = snapshots.into_iter().map(|snapshot| async move {
         let agents = match snapshot.get("agents") {
             Some(agents) if truthy(agents) => agents.clone(),
-            _ => return Ok(snapshot),
+            _ => return Ok(Value::Object((*snapshot).clone())),
         };
-        let id = text(&snapshot, "connection_id").unwrap_or("").to_owned();
+        let id = snapshot
+            .get("connection_id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
         let boot = match layer.ready(&id).ok().flatten() {
             Some(lease) => layer.herdr_boot(&lease, false).await,
             None => None,
         };
         let agents = annotate(cx, &id, agents, boot).await?;
-        let mut snapshot = snapshot;
-        if let Some(object) = snapshot.as_object_mut() {
-            object.insert("agents".into(), agents);
-        }
-        Ok::<Value, RpcError>(snapshot)
+        let mut snapshot = (*snapshot).clone();
+        snapshot.insert("agents".into(), agents);
+        Ok::<Value, RpcError>(Value::Object(snapshot))
     });
     let connections = futures_util::future::try_join_all(reads).await?;
     let result = json!({ "connections": connections });

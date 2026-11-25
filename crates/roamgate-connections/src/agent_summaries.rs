@@ -66,29 +66,9 @@ where
     let summary = &summary;
     let reads = manager.list().into_iter().map(|connection| async move {
         let lease = manager.ready_runtime_lease(&connection.id).ok().flatten()?;
-        let mut identity = Map::new();
-        identity.insert("connection_id".into(), json!(connection.id));
-        identity.insert("connection_generation".into(), json!(lease.generation));
         let runtime = summary(&lease);
-        let snapshot = match read_one(runtime.as_ref()).await {
-            Ok((workspaces, tabs, panes, agents)) => {
-                let mut snapshot = identity;
-                snapshot.insert("workspaces".into(), workspaces);
-                snapshot.insert("tabs".into(), tabs);
-                snapshot.insert("panes".into(), panes);
-                snapshot.insert("agents".into(), agents);
-                snapshot
-            }
-            Err(error) => {
-                let mut snapshot = identity;
-                snapshot.insert("workspaces".into(), json!([]));
-                snapshot.insert("tabs".into(), json!([]));
-                snapshot.insert("panes".into(), json!([]));
-                snapshot.insert("agents".into(), Value::Null);
-                snapshot.insert("error".into(), json!(sanitize_connection_error(&error)));
-                snapshot
-            }
-        };
+        let snapshot =
+            read_connection_summary(&connection.id, lease.generation, runtime.as_ref()).await;
         Some((lease, snapshot))
     });
     let results = join_all(reads).await;
@@ -99,6 +79,35 @@ where
         .map(|(_, snapshot)| Value::Object(snapshot))
         .collect();
     json!({"connections": connections})
+}
+
+/// One ready connection's summary (its part of
+/// [`read_connection_agent_sessions`]): its lists, or the error that
+/// stopped them.
+pub async fn read_connection_summary(
+    connection_id: &str,
+    generation: u64,
+    runtime: &dyn SummaryRuntime,
+) -> Map<String, Value> {
+    let mut snapshot = Map::new();
+    snapshot.insert("connection_id".into(), json!(connection_id));
+    snapshot.insert("connection_generation".into(), json!(generation));
+    match read_one(runtime).await {
+        Ok((workspaces, tabs, panes, agents)) => {
+            snapshot.insert("workspaces".into(), workspaces);
+            snapshot.insert("tabs".into(), tabs);
+            snapshot.insert("panes".into(), panes);
+            snapshot.insert("agents".into(), agents);
+        }
+        Err(error) => {
+            snapshot.insert("workspaces".into(), json!([]));
+            snapshot.insert("tabs".into(), json!([]));
+            snapshot.insert("panes".into(), json!([]));
+            snapshot.insert("agents".into(), Value::Null);
+            snapshot.insert("error".into(), json!(sanitize_connection_error(&error)));
+        }
+    }
+    snapshot
 }
 
 async fn read_one(runtime: &dyn SummaryRuntime) -> Result<(Value, Value, Value, Value), String> {

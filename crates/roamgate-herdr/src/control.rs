@@ -271,6 +271,12 @@ impl HerdrClient {
         reads.reused.clear();
     }
 
+    /// The read generation: it moves with each Herdr event and each change
+    /// made through this client (what a read made before may not show).
+    pub fn read_generation(&self) -> u64 {
+        self.reads().generation
+    }
+
     /// A call with the defaults: 8 s, no check, not fresh.
     pub async fn call_simple(&self, method: &str, params: Value) -> Result<Value, String> {
         self.call(method, params, DEFAULT_CALL_TIMEOUT_MS, None, false)

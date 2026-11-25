@@ -1,0 +1,82 @@
+name: every browser reads the same agent summary of a connection, read again once Herdr says something changed
+family: connections
+fronts: [rust-only]
+description: >
+  Two browsers ask for every connection's agent sessions and the agent
+  list: the connection's lists are read from Herdr once for both. A Herdr
+  event makes the next asks read them again, once for both; with no event
+  since, the kept summary answers.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes:
+      [{ pane_id: p1, workspace_id: w1, agent: claude, agent_status: idle }]
+    agents: [{ pane_id: p1, agent: claude, agent_status: idle }]
+steps:
+  - login: {}
+  - connect: { name: a }
+  - connect: { name: b }
+  - call: connections.agent_sessions
+    socket: a
+    reply: { connections: [{ workspaces: [{ workspace_id: w1 }] }] }
+  # Past Herdr's own reuse of a list (1 s): the summary still holds.
+  - sh: "sleep 1.2"
+  - call: connections.agent_sessions
+    socket: b
+    reply: { connections: [{ workspaces: [{ workspace_id: w1 }] }] }
+  - call: agent.list
+    socket: b
+    reply: { agents: [{ pane_id: p1, agent_status: idle }] }
+  - herdr_calls: { method: tab.list, count: 1 }
+  - sh: "sleep 1.2"
+  - herdr_seed:
+      workspaces: [{ workspace_id: w1, label: work }]
+      panes:
+        [
+          {
+            pane_id: p1,
+            workspace_id: w1,
+            agent: claude,
+            agent_status: working,
+          },
+        ]
+      agents: [{ pane_id: p1, agent: claude, agent_status: working }]
+  - herdr_emit:
+      {
+        event: pane_agent_status_changed,
+        data:
+          {
+            type: pane_agent_status_changed,
+            pane_id: p1,
+            workspace_id: w1,
+            agent_status: working,
+            agent: claude,
+          },
+      }
+  - expect_push: "event:pane_agent_status_changed"
+    socket: a
+  - call: agent.list
+    socket: a
+    reply: { agents: [{ pane_id: p1, agent_status: working }] }
+  - call: connections.agent_sessions
+    socket: b
+    reply:
+      {
+        connections:
+          [{ agents: { agents: [{ pane_id: p1, agent_status: working }] } }],
+      }
+  - call: connections.agent_sessions
+    socket: a
+    reply:
+      {
+        connections:
+          [{ agents: { agents: [{ pane_id: p1, agent_status: working }] } }],
+      }
+  - herdr_calls: { method: tab.list, count: 2 }
+contract_exceptions:
+  - {
+      surface: push,
+      name: "event:pane_agent_status_changed",
+      kind: unlisted,
+      reason: "Herdr's own events pass through unlisted: the case waits for the one it emits",
+    }
