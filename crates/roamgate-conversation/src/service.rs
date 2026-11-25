@@ -8,7 +8,7 @@
 //! Bun writes them (the same JSON text); events reach the browsers as
 //! `AgentChatEventEnvelope` values in Bun's order.
 
-mod aux;
+mod auxiliary;
 mod holders;
 mod recover;
 
@@ -222,7 +222,7 @@ pub(crate) struct Inner {
     /// Each pane's lease as last told to the browsers (to note releases
     /// the handover made).
     known: Mutex<HashMap<String, (String, String)>>,
-    pub(crate) aux: aux::AuxState,
+    pub(crate) aux: auxiliary::AuxState,
     pub(crate) holder_side: holders::HolderSideState,
     pub(crate) recovery: recover::RecoveryState,
     timers: Mutex<Vec<JoinHandle<()>>>,
@@ -1360,7 +1360,7 @@ impl ConversationService {
                 released: Mutex::new(HashMap::new()),
                 lease_lock,
                 known: Mutex::new(HashMap::new()),
-                aux: aux::AuxState::default(),
+                aux: auxiliary::AuxState::default(),
                 holder_side: holders::HolderSideState::default(),
                 recovery: recover::RecoveryState::new(unread, options.reattach_limit),
                 timers: Mutex::new(Vec::new()),
@@ -1637,7 +1637,7 @@ impl ConversationService {
         let inner = &self.inner;
         let session = inner.session_for(pane_id)?;
         let command = if images.is_empty() {
-            crate::service::aux::parse_model_command(text)
+            crate::service::auxiliary::parse_model_command(text)
         } else {
             None
         };
@@ -1743,7 +1743,7 @@ impl ConversationService {
                     "ok": false,
                     "requested": requested,
                     "model": null,
-                    "text": aux::model_refusal_text(&requested, &reason),
+                    "text": auxiliary::model_refusal_text(&requested, &reason),
                 }))),
             );
             inner.log(
@@ -1752,7 +1752,7 @@ impl ConversationService {
             );
             fail(reason)
         };
-        if !aux::is_model_name(&requested) {
+        if !auxiliary::is_model_name(&requested) {
             return refused("that is not a model name".into());
         }
         let session = match inner.session_for(pane_id) {
@@ -1787,7 +1787,7 @@ impl ConversationService {
                 "ok": true,
                 "requested": requested,
                 "model": model,
-                "text": aux::model_switch_text(&requested, model.as_deref(), next_turn),
+                "text": auxiliary::model_switch_text(&requested, model.as_deref(), next_turn),
             }))),
         );
         let mut fields = json!({"pane": pane_id, "model": requested});
@@ -1838,7 +1838,7 @@ impl ConversationService {
             .as_ref()
             .map(|(models, _)| models.clone())
             .unwrap_or_default();
-        let models = aux::merge_models(agent.as_deref(), &offered_models);
+        let models = auxiliary::merge_models(agent.as_deref(), &offered_models);
         let agent_len = agent.as_ref().map_or(0, Vec::len);
         let chosen = session
             .as_ref()
