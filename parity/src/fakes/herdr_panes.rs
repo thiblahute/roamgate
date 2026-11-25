@@ -279,7 +279,7 @@ impl Panes {
                         .unwrap_or_default();
                     let log = log_file(&shell.dir, &params.pane_id);
                     let keyboard = pane.seed.keyboard;
-                    let job = Command::new("sh")
+                    let job = Command::new(crate::paths::posix_shell())
                         .arg("-c")
                         .arg(&command)
                         .env_clear()

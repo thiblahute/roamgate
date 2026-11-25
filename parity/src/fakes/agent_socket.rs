@@ -89,8 +89,28 @@ pub fn replies_of(spec: &Value) -> BTreeMap<String, Vec<Value>> {
         .collect()
 }
 
+/// The server's own socket listener, for axum.
+struct LocalListener(roamgate_base::local_socket::Listener);
+
+impl axum::serve::Listener for LocalListener {
+    type Io = roamgate_base::local_socket::Stream;
+    type Addr = ();
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            if let Ok(stream) = self.0.accept().await {
+                return (stream, ());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<Self::Addr> {
+        Ok(())
+    }
+}
+
 impl FakeAgentSocket {
-    #[cfg(unix)]
     pub async fn start(
         path: &Path,
         replies: BTreeMap<String, Vec<Value>>,
@@ -103,7 +123,7 @@ impl FakeAgentSocket {
             replies,
             ..Shared::default()
         }));
-        let listener = tokio::net::UnixListener::bind(path)?;
+        let listener = LocalListener(roamgate_base::local_socket::Listener::bind(path)?);
         let app = Router::new().fallback(answer).with_state(shared.clone());
         let task = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -113,14 +133,6 @@ impl FakeAgentSocket {
             shared,
             task,
         })
-    }
-
-    #[cfg(not(unix))]
-    pub async fn start(
-        _path: &Path,
-        _replies: BTreeMap<String, Vec<Value>>,
-    ) -> Result<FakeAgentSocket> {
-        anyhow::bail!("the scripted agent socket needs Unix sockets")
     }
 
     /// Every request so far: `{command, body}`.

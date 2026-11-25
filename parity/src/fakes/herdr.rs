@@ -14,7 +14,9 @@
 //! The client socket answers the direct terminal handshake (`TerminalHello`
 //! with `Welcome`, Herdr's version check) and then stays quiet.
 //!
-//! Named pipes (Windows) are not served yet.
+//! On Windows both are named pipes (`\\.\pipe\<run>-<dir>-control` and
+//! `-client`), Herdr's own transport there, through the server's pipe
+//! listener (roamgate_base::local_socket).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -1099,17 +1101,75 @@ fn handle(shared: &Mutex<Shared>, text: &str) -> (String, bool) {
     }
 }
 
+/// A connection to the fake: a Unix socket, or a named pipe on Windows.
 #[cfg(unix)]
+type Conn = roamgate_base::local_socket::Stream;
+#[cfg(windows)]
+type Conn = tokio::net::windows::named_pipe::NamedPipeServer;
+
+/// The fake's listener: a Unix socket at a path, or on Windows the named
+/// pipe the path names.
+struct HerdrListener {
+    #[cfg(unix)]
+    inner: roamgate_base::local_socket::Listener,
+    #[cfg(windows)]
+    inner: roamgate_base::local_socket::PipeListener,
+}
+
+impl HerdrListener {
+    fn bind(path: &Path) -> std::io::Result<Self> {
+        #[cfg(unix)]
+        {
+            let _ = std::fs::remove_file(path);
+            Ok(Self {
+                inner: roamgate_base::local_socket::Listener::bind(path)?,
+            })
+        }
+        #[cfg(windows)]
+        {
+            Ok(Self {
+                inner: roamgate_base::local_socket::PipeListener::bind(&path.to_string_lossy())?,
+            })
+        }
+    }
+
+    async fn accept(&mut self) -> std::io::Result<Conn> {
+        self.inner.accept().await
+    }
+}
+
+/// Where the fake in `dir` listens: sockets in it, or on Windows pipes
+/// named after it (the run's directory and its own).
+fn socket_paths(dir: &Path) -> (PathBuf, PathBuf) {
+    if cfg!(windows) {
+        let name = |part: Option<&std::ffi::OsStr>| {
+            part.map(|part| part.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        };
+        let base = format!(
+            "{}-{}",
+            name(dir.parent().and_then(Path::file_name)),
+            name(dir.file_name())
+        );
+        (
+            PathBuf::from(format!(r"\\.\pipe\{base}-control")),
+            PathBuf::from(format!(r"\\.\pipe\{base}-client")),
+        )
+    } else {
+        (dir.join("herdr.sock"), dir.join("client.sock"))
+    }
+}
+
 async fn serve_control(
-    listener: tokio::net::UnixListener,
+    mut listener: HerdrListener,
     shared: Arc<Mutex<Shared>>,
     events: broadcast::Sender<String>,
 ) {
-    while let Ok((stream, _)) = listener.accept().await {
+    while let Ok(stream) = listener.accept().await {
         let shared = shared.clone();
         let mut receiver = events.subscribe();
         tokio::spawn(async move {
-            let (read, mut write) = stream.into_split();
+            let (read, mut write) = tokio::io::split(stream);
             let mut lines = BufReader::new(read).lines();
             let mut subscribed = false;
             loop {
@@ -1197,8 +1257,7 @@ fn terminal_frame(seq: u64, full: bool, bytes: &[u8]) -> Vec<u8> {
 /// `AttachTerminal` gets the terminal's screen (`screens` in the seed, by
 /// terminal or pane id), typed `Input` is echoed back as an incremental
 /// frame, and everything the client sends is logged as `client.<what>`.
-#[cfg(unix)]
-async fn serve_terminal(mut stream: tokio::net::UnixStream, shared: Arc<Mutex<Shared>>) {
+async fn serve_terminal(mut stream: Conn, shared: Arc<Mutex<Shared>>) {
     let mut seq = 0u64;
     let mut attached = String::new();
     while let Some(payload) = read_payload(&mut stream).await {
@@ -1365,15 +1424,14 @@ fn pane_surface(
 /// src/protocol/endpoint.rs): welcome, the snapshot, health pongs, endpoint
 /// requests answered from the seed's `endpoint_responses`, and every frame
 /// `endpoint_frames` carries (semantic notifications, newer snapshots).
-#[cfg(unix)]
 async fn serve_endpoint(
-    stream: tokio::net::UnixStream,
+    stream: Conn,
     shared: Arc<Mutex<Shared>>,
     mut frames: broadcast::Receiver<Vec<u8>>,
     hello: String,
 ) {
     use herdr_api::endpoint::*;
-    let (mut read, mut write) = stream.into_split();
+    let (mut read, mut write) = tokio::io::split(stream);
     let parsed = serde_json::from_str::<EndpointClientHello>(&hello);
     record(
         &shared,
@@ -1591,13 +1649,12 @@ async fn serve_endpoint(
     }
 }
 
-#[cfg(unix)]
 async fn serve_client(
-    listener: tokio::net::UnixListener,
+    mut listener: HerdrListener,
     shared: Arc<Mutex<Shared>>,
     frames: broadcast::Sender<Vec<u8>>,
 ) {
-    while let Ok((mut stream, _)) = listener.accept().await {
+    while let Ok(mut stream) = listener.accept().await {
         let shared = shared.clone();
         let receiver = frames.subscribe();
         tokio::spawn(async move {
@@ -1688,14 +1745,11 @@ async fn serve_client(
 }
 
 impl FakeHerdr {
-    /// Starts the fake on sockets in `dir`.
-    #[cfg(unix)]
+    /// Starts the fake on sockets in `dir` (pipes named after it on
+    /// Windows).
     pub async fn start(dir: &Path, seed: &HerdrSeed) -> Result<FakeHerdr> {
         std::fs::create_dir_all(dir)?;
-        let control = dir.join("herdr.sock");
-        let client = dir.join("client.sock");
-        let _ = std::fs::remove_file(&control);
-        let _ = std::fs::remove_file(&client);
+        let (control, client) = socket_paths(dir);
         let model = Model::from_seed(seed)?;
         let shared = Arc::new(Mutex::new(Shared {
             model,
@@ -1704,8 +1758,10 @@ impl FakeHerdr {
         }));
         let (events, _) = broadcast::channel(1024);
         let (frames, _) = broadcast::channel(256);
-        let control_listener = tokio::net::UnixListener::bind(&control)?;
-        let client_listener = tokio::net::UnixListener::bind(&client)?;
+        let control_listener = HerdrListener::bind(&control)
+            .with_context(|| format!("fake herdr at {}", control.display()))?;
+        let client_listener = HerdrListener::bind(&client)
+            .with_context(|| format!("fake herdr at {}", client.display()))?;
         let tasks = vec![
             tokio::spawn(serve_control(
                 control_listener,
@@ -1726,11 +1782,6 @@ impl FakeHerdr {
             frames,
             tasks,
         })
-    }
-
-    #[cfg(not(unix))]
-    pub async fn start(_dir: &Path, _seed: &HerdrSeed) -> Result<FakeHerdr> {
-        bail!("fake herdr: named pipes are not served yet")
     }
 
     /// Sends an event to every subscription, after checking it is one of

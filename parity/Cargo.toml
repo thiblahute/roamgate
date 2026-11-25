@@ -41,6 +41,9 @@ jsonschema = { version = "0.33", default-features = false }
 libtest-mimic = "0.8"
 p256 = { version = "0.13", features = ["ecdh", "ecdsa"] }
 regex = "1"
+# The server's local socket transports (Unix sockets everywhere, named
+# pipes on Windows) and its POSIX shell lookup (Git for Windows' bash).
+roamgate-base = { path = "../crates/roamgate-base" }
 roamgate-protocol = { path = "../crates/roamgate-protocol" }
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

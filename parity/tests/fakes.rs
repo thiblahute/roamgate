@@ -257,7 +257,7 @@ fn the_voice_helper_times_its_frames_when_asked() {
     assert!(lines.iter().all(|line| line["pid"] == lines[0]["pid"]));
 }
 
-#[cfg(unix)]
+/// On its Unix socket, or its named pipe on Windows.
 #[tokio::test]
 async fn herdr_answers_on_its_own_types_and_refuses_the_rest() {
     let dir = tempfile::tempdir().unwrap();
@@ -271,8 +271,13 @@ async fn herdr_answers_on_its_own_types_and_refuses_the_rest() {
         let path = herdr.control.clone();
         async move {
             use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-            let stream = tokio::net::UnixStream::connect(path).await.unwrap();
-            let (read, mut write) = stream.into_split();
+            #[cfg(unix)]
+            let stream = roamgate_base::local_socket::connect(&path).await.unwrap();
+            #[cfg(windows)]
+            let stream = roamgate_base::local_socket::connect_pipe(&path.to_string_lossy())
+                .await
+                .unwrap();
+            let (read, mut write) = tokio::io::split(stream);
             write.write_all(line.as_bytes()).await.unwrap();
             let mut reply = String::new();
             BufReader::new(read).read_line(&mut reply).await.unwrap();

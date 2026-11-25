@@ -183,15 +183,12 @@ pub async fn send(target: &Target, request: &Request, timeout: Duration) -> Resu
                     .with_context(|| format!("connect {address}"))?;
                 exchange(stream, address, request).await
             }
-            #[cfg(unix)]
             Target::Unix(path) => {
-                let stream = tokio::net::UnixStream::connect(path)
+                let stream = roamgate_base::local_socket::connect(path)
                     .await
                     .with_context(|| format!("connect {}", path.display()))?;
                 exchange(stream, "localhost", request).await
             }
-            #[cfg(not(unix))]
-            Target::Unix(_) => bail!("Unix sockets are not available here"),
         }
     };
     tokio::time::timeout(timeout, work)
