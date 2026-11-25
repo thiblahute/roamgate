@@ -2524,8 +2524,9 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
             .collect::<Vec<_>>()
             .join("\n");
         return Err(error.context(format!(
-            "{}\n--- server output (last lines) ---\n{tail}",
-            scenario.name
+            "{}\n--- server output (last lines) ---\n{tail}{}",
+            scenario.name,
+            pane_logs(&runner.run.root)
         )));
     }
     // PARITY_RECORDINGS_DIR keeps every run's recording (to census shapes
@@ -2545,4 +2546,32 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
     record::enforce(&report, &scenario.contract_exceptions)
         .with_context(|| scenario.name.clone())?;
     Ok(())
+}
+
+/// What the fake Herdr panes printed (`<herdr dir>/pane-<id>.log`), last
+/// lines each: a holder that did not start says why there.
+fn pane_logs(root: &Path) -> String {
+    let mut out = String::new();
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if path.is_dir() && name != "home" && name != "record" {
+                dirs.push(path);
+            } else if name.starts_with("pane-") && name.ends_with(".log") {
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                let lines: Vec<&str> = text.lines().collect();
+                let tail = lines[lines.len().saturating_sub(30)..].join("\n");
+                out.push_str(&format!(
+                    "\n--- {} (last lines) ---\n{tail}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    out
 }
