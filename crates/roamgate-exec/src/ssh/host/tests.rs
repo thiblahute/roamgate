@@ -49,7 +49,7 @@ impl Fake {
     fn new() -> Self {
         let dir = tempfile::Builder::new()
             .prefix("rg-ssh-host-")
-            .tempdir_in("/tmp")
+            .tempdir_in(roamgate_base::paths::short_temp_root())
             .unwrap();
         let ssh = dir.path().join("ssh");
         std::fs::write(&ssh, FAKE_SSH).unwrap();
