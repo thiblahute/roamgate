@@ -60,6 +60,16 @@ impl Loopback {
     }
 }
 
+/// The bash the TS tests ran SSH lines with: Git for Windows' on Windows
+/// (a plain `bash` there can be WSL's launcher).
+pub fn bash() -> String {
+    if cfg!(windows) {
+        roamgate_base::posix_shell::posix_shell().unwrap()
+    } else {
+        "bash".to_owned()
+    }
+}
+
 /// The command without its login shell: the host's profile is not what
 /// these tests are about, and a login profile here can take seconds.
 fn no_login(command: String) -> String {
@@ -84,11 +94,7 @@ impl Runner for Loopback {
         let argv: Vec<String> = match &request.invocation {
             Invocation::Local(argv) => argv.clone(),
             Invocation::Ssh { command, .. } => {
-                vec![
-                    "bash".into(),
-                    "-c".into(),
-                    no_login((self.transform)(command)),
-                ]
+                vec![bash(), "-c".into(), no_login((self.transform)(command))]
             }
         };
         let argv = if self.env.is_empty() {
@@ -131,7 +137,7 @@ impl StreamProcess for LoopbackStreams {
         async move {
             match invocation {
                 Invocation::Ssh { command, .. } => {
-                    spawn_local(&["bash".into(), "-c".into(), no_login(command)])
+                    spawn_local(&[bash(), "-c".into(), no_login(command)])
                 }
                 Invocation::Local(argv) => spawn_local(&argv),
             }
