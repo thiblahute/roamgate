@@ -27,7 +27,8 @@ git_code=$?
 case "$git_code" in 0|1) ;; *) exit "$git_code" ;; esac
 unmerged=0
 [ -n "$(git ls-files -u -- {{pathspec}} 2>/dev/null | head -n 1)" ] && unmerged=1
-patch_size=$(wc -c <"$patch_file")
+# macOS wc pads its count with spaces: the number alone.
+patch_size=$(( $(wc -c <"$patch_file") ))
 printf '%s %s %s\n' "$patch_size" "$untracked" "$unmerged"
 if [ {{automatic}} -eq 0 ] || [ "$patch_size" -lt {{large_patch_bytes}} ]; then
   head -c {{cap}} "$patch_file"
