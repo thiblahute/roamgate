@@ -5,13 +5,18 @@
 #   voice/helper/linux/build.sh [--test] [output directory]
 #
 # The output directory (voice/helper/target/linux-cuda by default) gets the
-# roamgate-voice binary and, in lib/, the CUDA libraries it is linked with,
-# where it finds them: install the directory as a whole. The host needs only
-# the NVIDIA driver. With --test, `cargo test --release` runs first, with the
+# roamgate-voice binary; in lib/, espeak-ng's library, Whisper's CUDA module
+# and the CUDA libraries, where it finds them; in share/, espeak-ng's data:
+# install the directory as a whole. The host needs the NVIDIA driver for the
+# GPU, PulseAudio's client library (libpulse, PipeWire's pulse provides it)
+# and glibc 2.38 or newer. With --test, `cargo test --release` runs first, with the
 # GPU (CDI's nvidia.com/gpu=all), whose driver library the binary loads.
 #
 # CUDA_COMPUTE_CAP (86 for an RTX 3060) sets the GPU code built, the host
-# GPU's by default. The image (roamgate-voice-build) and the volume holding
+# GPU's by default; CMAKE_CUDA_ARCHITECTURES, Whisper's (CUDA_COMPUTE_CAP's
+# by default; "75-virtual;80-virtual;86-real;89-real" for several GPUs).
+# ROAMGATE_VOICE_FEATURES ("cuda" by default; empty for the CPU) are the
+# helper's Cargo features: with cuda, any-tts's models run with CUDA too. The image (roamgate-voice-build) and the volume holding
 # Cargo's downloads and build (roamgate-voice-build-cache) are kept between
 # builds; ROAMGATE_VOICE_BUILD_IMAGE and ROAMGATE_VOICE_BUILD_CACHE rename
 # them.
@@ -116,12 +121,13 @@ $yield podman run --rm --security-opt label=disable \
     ${test:+--device nvidia.com/gpu=all} \
     ${jobs:+-e CARGO_BUILD_JOBS=$jobs -e RUST_TEST_THREADS=$jobs} \
     -v "$repo:/src:ro" -v "$cache:/cache" -v "$out:/out" \
-    -e CUDA_COMPUTE_CAP="$cap" -e CMAKE_CUDA_ARCHITECTURES="$cap" \
+    -e CUDA_COMPUTE_CAP="$cap" -e CMAKE_CUDA_ARCHITECTURES="${CMAKE_CUDA_ARCHITECTURES:-$cap}" \
+    -e FEATURES="${ROAMGATE_VOICE_FEATURES-cuda}" \
     -e SYSTEM_DEPS_BUILD_MANIFEST=/src/voice/helper/Cargo.toml -e TEST="$test" \
     "$image" sh -euc '
         cd /src/voice/helper
-        if [ -n "$TEST" ]; then cargo test --release --locked --features cuda; fi
-        cargo build --release --locked --features cuda
+        if [ -n "$TEST" ]; then cargo test --release --locked --features "$FEATURES"; fi
+        cargo build --release --locked --features "$FEATURES"
         bin=$CARGO_TARGET_DIR/release/roamgate-voice
         rm -rf /out/lib /out/roamgate-voice && mkdir -p /out/lib
         # Whisper'"'"'s CUDA backend, a ggml module the helper loads at run
@@ -150,6 +156,14 @@ $yield podman run --rm --security-opt label=disable \
         { ldd "$bin"; LD_LIBRARY_PATH=/usr/local/cuda/lib64 ldd /out/lib/libggml-cuda.so; } |
             awk "index(\$3, \"/usr/local/cuda\") == 1 { print \$1, \$3 }" | sort -u |
             while read -r name path; do cp -L "$path" "/out/lib/$name"; done
+        # espeak-ng (Kokoro) and the libraries of its own a distribution may
+        # lack, and its data, which the helper points it at (share/).
+        espeak=$(ldd "$bin" | awk "/libespeak-ng/ { print \$3 }")
+        { echo "libespeak-ng.so.1 $espeak"; ldd "$espeak"; } |
+            awk "\$1 ~ /^lib(espeak-ng|pcaudio|sonic)\\./ { print \$1, (\$3 == \"\" ? \$2 : \$3) }" |
+            sort -u | while read -r name path; do cp -L "$path" "/out/lib/$name"; done
+        rm -rf /out/share && mkdir -p /out/share
+        cp -r "$(dirname "$espeak")/espeak-ng-data" /out/share/
         if ls /out/lib/libnvrtc.so.* >/dev/null 2>&1; then
             builtins=$(readlink -f /usr/local/cuda/lib64/libnvrtc-builtins.so)
             cp "$builtins" "/out/lib/$(objdump -p "$builtins" | awk "/SONAME/ { print \$2 }")"

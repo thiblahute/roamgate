@@ -1210,6 +1210,17 @@ fn main() {
         // SAFETY: no other thread runs yet.
         unsafe { std::env::set_var("WEBRTCSINK_SIGNALLING_SERVER_LOG", "warn") };
     }
+    // espeak-ng's data (Kokoro's phonemes) beside the binary, where a
+    // release's archive puts it: share/espeak-ng-data.
+    if std::env::var_os("ESPEAK_DATA_PATH").is_none()
+        && let Some(share) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| Some(exe.parent()?.join("share")))
+            .filter(|share| share.join("espeak-ng-data").is_dir())
+    {
+        // SAFETY: no other thread runs yet.
+        unsafe { std::env::set_var("ESPEAK_DATA_PATH", share) };
+    }
     if let Err(err) = gst::init() {
         eprintln!("GStreamer failed to initialize: {err}");
         std::process::exit(1);
