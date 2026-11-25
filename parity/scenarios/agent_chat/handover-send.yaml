@@ -171,7 +171,9 @@ steps:
         count: 1,
         calls: [{ params: { target: p1, text: /exit } }],
       }
-  - assert_file:
+  # The leases file is written after the handover answers: real I/O.
+  - retry: 10000
+    assert_file:
       path: .config/roamgate/conversation-leases.json
       mode: "0600"
       normalize: [run-paths]
