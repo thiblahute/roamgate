@@ -890,14 +890,25 @@ with GStreamer, those plugins and ONNX Runtime linked in: it downloads a prebuil
 package once through gstreamer-rs's `binary` feature, GStreamer's official
 one on macOS (about 720 MB), and on Linux (x86-64) the bundle
 `voice/helper/Cargo.toml` names (about 580 MB). Whisper and the any-tts
-models run on the GPU, with Metal on macOS and with CUDA on Linux, where the
-build needs the CUDA toolkit and the binary its libraries.
+models run on the GPU with Metal on macOS. On Linux, whisper.cpp is linked
+for the CPU and its CUDA backend is a module of its own,
+`lib/libggml-cuda.so` beside the binary, which the helper loads when it
+starts if it is there and the NVIDIA driver is, Whisper staying on the CPU
+otherwise; the any-tts models run with CUDA when the helper is built with
+its `cuda` feature, which links the CUDA libraries, so that binary needs the
+NVIDIA driver to start. Both need the CUDA toolkit to build.
 `voice/helper/linux/build.sh [--test] [directory]` builds the Linux binary
 with Podman, in a container that has the toolkit, and writes it to the
-directory with those libraries in `lib/` beside it, where it finds them:
-installed as a whole, it needs only the NVIDIA driver on the host. Kokoro
-also needs espeak-ng installed (`brew install espeak-ng`, or the
-distribution's `espeak-ng` package).
+directory with, in `lib/` beside it where it finds them, Whisper's CUDA
+module, the CUDA libraries and espeak-ng's library (Kokoro's phonemes), and
+espeak-ng's data in `share/`: installed as a whole, it needs on the host
+only the NVIDIA driver, PulseAudio's client library (`libpulse`, which
+PipeWire's PulseAudio service also provides) and glibc 2.38 or newer.
+`ROAMGATE_VOICE_FEATURES=` (empty) builds it without the `cuda` feature:
+the any-tts models then run on the CPU and the binary starts without the
+driver. A `cargo build` uses the espeak-ng installed (`brew install
+espeak-ng`, or the distribution's `espeak-ng` package). The voice helper
+does not build for Windows yet.
 
 ### Voice setup assistant
 
@@ -910,9 +921,11 @@ chosen ones into `~/.local/share/roamgate/voice/models`
 (`%APPDATA%\roamgate\voice\models` on Windows) and writes their paths to
 `voice.json`, its other settings untouched.
 
-The helper runs its GPU models with CUDA on Linux and Windows (an NVIDIA
-card and its driver's `nvidia-smi`) and with Metal on Apple silicon; an AMD
-or Intel GPU is listed but not used, as there is no ROCm or Vulkan build.
+The helper runs its GPU models with CUDA on Linux (an NVIDIA card and its
+driver's `nvidia-smi`; the any-tts models only in a build with the `cuda`
+feature, see above) and with Metal on Apple silicon; an AMD or Intel GPU is
+listed but not used, as there is no ROCm or Vulkan build, and there is no
+Windows helper yet.
 With about 6 GB or more for the GPU, the **heavy** tier is proposed: Parakeet,
 Whisper large-v3-turbo reading again, Qwen3-TTS (1.7B from 8 GB, 0.6B
 below) with Kokoro-82M and Pocket TTS beside it, WeSpeaker, Smart Turn and
@@ -951,9 +964,20 @@ fields in `tts_models` are kept. `remove-unused` (**Remove them** in the
 assistant) only ever deletes inside the models directory, and leaves what
 voice.json names. The Claude models (`clean_model`, `dictation_model`,
 `route_model`, `front_model`) are not downloads and are not changed; the
-echo canceller needs no model. The helper itself is not downloaded: build it
-as above and install it as `~/.local/share/roamgate/voice/roamgate-voice`,
-where the assistant names it in voice.json, or pass `--helper`. From the
+echo canceller needs no model. When the helper is not installed, the
+assistant then looks for this version's prebuilt one: the release asset
+`roamgate-voice-<platform>.json` (`linux-x64`, `linux-arm64`,
+`darwin-arm64`, `windows-x64`; from `ROAMGATE_UPDATE_BASE_URL`'s mirror
+when it is set) names the helper's archive and, on Linux, its CUDA pack
+(the CUDA libraries and Whisper's CUDA module), each with its size and
+SHA-256. After asking (`--yes` does not), it downloads the archive, and
+the pack when an NVIDIA GPU is found (`--cuda` or `--no-cuda` decide
+instead), checks them and unpacks them into the helper's directory;
+`--no-helper-download` skips this, and `roamgate setup voice helper`
+installs or replaces the helper alone. Without that asset it says so:
+build the helper as above and install it as
+`~/.local/share/roamgate/voice/roamgate-voice`, where the assistant names
+it in voice.json, or pass `--helper`. From the
 page, the running helper stops once nothing uses it, so the next voice
 request loads the new models; after `roamgate setup voice`,
 `roamgate service restart` loads them at once.
