@@ -51,6 +51,8 @@ realfft = "3.5"
 # Whisper's language identification and reading (reread.rs), from the
 # same whisper.cpp build as whispertranscriber.
 whisper-rs = "0.16"
+# Whisper's CUDA backend, a ggml module loaded at run time (gpu.rs).
+whisper-rs-sys = "0.15"
 # Who speaks (voices.rs): WeSpeaker's speaker embeddings, with the
 # ONNX Runtime speechgate's speaker check uses.
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-native"] }
@@ -140,11 +142,11 @@ objc2-foundation = "0.3"
 gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "metal"] }
 gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "metal"] }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-# CUDA on Linux, built with the CUDA toolkit (linux/build.sh), its
-# libraries found next to the binary at run time.
-gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "cuda"] }
-gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "cuda"] }
+[features]
+# any-tts's models on NVIDIA GPUs with CUDA (Linux and Windows), built with
+# the CUDA toolkit (linux/build.sh). Whisper's CUDA backend is not a
+# feature: it is a module loaded at run time when present (gpu.rs).
+cuda = ["gst-plugin-anytts/cuda"]
 
 # Its own workspace, with its own Cargo.lock: the repository's workspace
 # excludes it, so building the server never resolves the git dependencies
@@ -185,4 +187,4 @@ gstreamer-utils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs"
 # any-tts with the Metal and CUDA speedups, streaming
 # Qwen3-TTS decoding and voice cloning, until they are merged upstream.
 [patch.crates-io]
-any-tts = { git = "https://github.com/thiblahute/any-tts", branch = "roamgate" }
+any-tts = { git = "https://github.com/thiblahute/any-tts", branch = "roamgate-runtime-cuda" }

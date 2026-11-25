@@ -120,14 +120,35 @@ $yield podman run --rm --security-opt label=disable \
     -e SYSTEM_DEPS_BUILD_MANIFEST=/src/voice/helper/Cargo.toml -e TEST="$test" \
     "$image" sh -euc '
         cd /src/voice/helper
-        if [ -n "$TEST" ]; then cargo test --release --locked; fi
-        cargo build --release --locked
+        if [ -n "$TEST" ]; then cargo test --release --locked --features cuda; fi
+        cargo build --release --locked --features cuda
         bin=$CARGO_TARGET_DIR/release/roamgate-voice
-        rm -rf /out/lib && mkdir -p /out/lib
-        # The toolkit libraries it needs, by the names it asks for, and the
-        # one NVRTC loads if it needs NVRTC; libcuda comes with the host
-        # driver.
-        ldd "$bin" | awk "index(\$3, \"/usr/local/cuda\") == 1 { print \$1, \$3 }" |
+        rm -rf /out/lib /out/roamgate-voice && mkdir -p /out/lib
+        # Whisper'"'"'s CUDA backend, a ggml module the helper loads at run
+        # time (src/gpu.rs): built from the whisper.cpp whisper-rs-sys
+        # carries, the one linked in, with ggml'"'"'s GGML_BACKEND_DL. It takes
+        # ggml'"'"'s base functions from the binary, which exports them, so it
+        # does not ask for libggml-base; it finds its CUDA libraries beside
+        # it.
+        version=$(awk "/^name = \"whisper-rs-sys\"/ { getline; gsub(/\"/, \"\", \$3); print \$3 }" Cargo.lock)
+        whisper=$(ls -d "$CARGO_HOME"/registry/src/*/whisper-rs-sys-"$version"/whisper.cpp | head -n 1)
+        cmake -S "$whisper" -B "$CARGO_TARGET_DIR/whisper-cuda" -DCMAKE_BUILD_TYPE=Release \
+            -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=OFF -DWHISPER_BUILD_SERVER=OFF \
+            -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CUDA=ON -DGGML_CPU=OFF \
+            -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DCMAKE_SKIP_RPATH=ON \
+            -DCMAKE_CUDA_ARCHITECTURES="$CMAKE_CUDA_ARCHITECTURES" >/dev/null
+        cmake --build "$CARGO_TARGET_DIR/whisper-cuda" --target ggml-cuda -j "${CARGO_BUILD_JOBS:-$(nproc)}"
+        module=$(find "$CARGO_TARGET_DIR/whisper-cuda" -name libggml-cuda.so | head -n 1)
+        cp "$module" /out/lib/libggml-cuda.so
+        for needed in $(patchelf --print-needed /out/lib/libggml-cuda.so | grep "^libggml-base"); do
+            patchelf --remove-needed "$needed" /out/lib/libggml-cuda.so
+        done
+        patchelf --set-rpath "\$ORIGIN" /out/lib/libggml-cuda.so
+        # The toolkit libraries the binary and the module need, by the names
+        # they ask for, and the one NVRTC loads if it needs NVRTC; libcuda
+        # comes with the host driver.
+        { ldd "$bin"; LD_LIBRARY_PATH=/usr/local/cuda/lib64 ldd /out/lib/libggml-cuda.so; } |
+            awk "index(\$3, \"/usr/local/cuda\") == 1 { print \$1, \$3 }" | sort -u |
             while read -r name path; do cp -L "$path" "/out/lib/$name"; done
         if ls /out/lib/libnvrtc.so.* >/dev/null 2>&1; then
             builtins=$(readlink -f /usr/local/cuda/lib64/libnvrtc-builtins.so)
@@ -135,4 +156,10 @@ $yield podman run --rm --security-opt label=disable \
         fi
         cp "$bin" /out/roamgate-voice
     '
+# A podman that does not pass the container's failure on (a toolbox's
+# wrapper) leaves no binary.
+if [ ! -x "$out/roamgate-voice" ]; then
+    echo "the build failed: no $out/roamgate-voice" >&2
+    exit 1
+fi
 echo "$out/roamgate-voice, with $(ls "$out/lib" | wc -l) libraries in $out/lib"

@@ -131,6 +131,7 @@ mod call;
 mod clone;
 mod echo;
 mod frames;
+mod gpu;
 mod language;
 mod listen;
 mod loudness;
@@ -1227,6 +1228,7 @@ fn main() {
         eprintln!("The speech plugins failed to register: {err}");
         std::process::exit(1);
     }
+    gpu::load_whisper_backend();
     #[cfg(target_os = "macos")]
     {
         let swept = processtap::sweep();

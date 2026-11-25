@@ -9,5 +9,7 @@
 [target.'cfg(target_vendor = "apple")']
 rustflags = ["-C", "link-arg=-lc++"]
 
+# ggml's functions are exported for Whisper's CUDA backend, a module the
+# binary loads at run time (src/gpu.rs), which takes them from it.
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))']
-rustflags = ["-C", "link-arg=-lstdc++"]
+rustflags = ["-C", "link-arg=-lstdc++", "-C", "link-arg=-Wl,--export-dynamic-symbol=ggml_*,--export-dynamic-symbol=gguf_*"]

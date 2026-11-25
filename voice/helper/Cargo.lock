@@ -114,7 +114,7 @@ dependencies = [
 [[package]]
 name = "any-tts"
 version = "0.2.0"
-source = "git+https://github.com/thiblahute/any-tts?branch=roamgate#8c8fcd3c12cbc0981a409c153fd81ca0d189310c"
+source = "git+https://github.com/thiblahute/any-tts?branch=roamgate-runtime-cuda#012739a2c1ecad40abf5a1d6e0b18d4185b3c49c"
 dependencies = [
  "base64 0.22.1",
  "candle-core",
@@ -5784,6 +5784,7 @@ dependencies = [
  "serde_json",
  "tokenizers 0.23.2",
  "whisper-rs",
+ "whisper-rs-sys",
  "xn",
 ]
 
