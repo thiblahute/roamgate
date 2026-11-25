@@ -304,9 +304,13 @@ impl AgentSocket {
                                 async move { Ok::<_, Infallible>(this.serve(&key, request).await) }
                             });
                             // Watches are long polls: no idle timeout.
-                            let _ = hyper::server::conn::http1::Builder::new()
+                            let served = hyper::server::conn::http1::Builder::new()
                                 .serve_connection(TokioIo::new(stream), service)
+                                .without_shutdown()
                                 .await;
+                            if let Ok(parts) = served {
+                                linger(parts.io.into_inner()).await;
+                            }
                         });
                     }
                     Some(_) = connections.join_next(), if !connections.is_empty() => {}
@@ -1747,6 +1751,23 @@ fn create_dir_mode(path: &Path, mode: u32) -> std::io::Result<()> {
         let _ = mode;
         std::fs::create_dir_all(path)
     }
+}
+
+/// Closes a connection whose answer is written: the write side first,
+/// then what the client still sends is read and dropped for a moment. A
+/// request refused unread (413) leaves its body in the socket, and closing
+/// over unread data resets the connection: Windows then drops the answer
+/// before the client reads it.
+async fn linger(mut stream: roamgate_base::local_socket::Stream) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    if stream.shutdown().await.is_err() {
+        return;
+    }
+    let mut buffer = vec![0u8; 64 * 1024];
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while matches!(stream.read(&mut buffer).await, Ok(read) if read > 0) {}
+    })
+    .await;
 }
 
 fn set_mode(path: &Path, mode: u32) -> std::io::Result<()> {
