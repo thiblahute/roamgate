@@ -318,10 +318,16 @@ if (
     async function mountVim(annotations: readonly Annotation[] = held) {
       localStorage.setItem("roamgate:vimKeys", "true");
       const view = mount(annotations);
-      await act(async () => {
-        for (let tick = 0; tick < 8; tick++)
+      // The Vim editors are lazy: drawn once loaded, however long it takes,
+      // in place of every comment's textarea.
+      const drawn = () =>
+        !!view.panel.querySelector("[data-review-annotation-id] .cm-editor") &&
+        !view.panel.querySelector("[data-review-annotation-id] textarea");
+      while (!drawn()) {
+        await act(async () => {
           await new Promise((done) => setTimeout(done, 10));
-      });
+        });
+      }
       const { EditorView } = await import("@codemirror/view");
       const { getCM } = await import("@replit/codemirror-vim");
       const editor = (id: string) =>
