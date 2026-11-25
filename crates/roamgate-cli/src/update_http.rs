@@ -11,9 +11,9 @@ use roamgate_base::env::{Env, roamgate_env};
 use serde_json::{Map, Value, json};
 
 use crate::update::{
-    RunProcess, UPDATE_CHECK_CACHE_MS, UPDATE_INSTALL_TIMEOUT, UpdateManifest, UpdateTarget,
-    compare_version, curl_transport_command, fetch_latest_update_manifest, is_supervisor_managed,
-    normalize_update_base_url, render_update_install_script, resolve_update_target, run_failure,
+    RunProcess, UPDATE_CHECK_CACHE_MS, UpdateManifest, UpdateTarget, compare_version,
+    fetch_latest_update_manifest, install_update, is_supervisor_managed, normalize_update_base_url,
+    resolve_update_target, run_failure,
 };
 
 pub type Answer = (u16, Value);
@@ -280,18 +280,8 @@ impl UpdateHandlers {
                 );
             }
         }
-        let script = render_update_install_script(
-            &self.runtime.exec_path,
-            &target,
-            &latest,
-            &self.archive_url(base),
-            &curl_transport_command(base),
-        );
-        let ran = match (self.run)(
-            vec!["sh".into(), "-c".into(), script],
-            UPDATE_INSTALL_TIMEOUT,
-        )
-        .await
+        let ran = match install_update(&self.runtime.exec_path, &target, &latest, base, &self.run)
+            .await
         {
             Ok(ran) => ran,
             Err(message) => return (500, error_body(&message, self.source_details())),
@@ -512,8 +502,8 @@ mod tests {
     async fn does_not_check_a_mismatched_package_on_unsupported_architectures() {
         let fake = fake(|_, _| Err("should not run".into()));
         let runtime = UpdateRuntime {
-            platform: "win32".into(),
-            arch: "x64".into(),
+            platform: "linux".into(),
+            arch: "riscv64".into(),
             ..darwin()
         };
         let (handlers, _) = handlers("0.2.16", fake.run.clone(), runtime, env(&[]));
@@ -521,10 +511,10 @@ mod tests {
         assert_eq!(status, 200);
         assert_eq!(body["update_available"], false);
         assert_eq!(body["can_auto_update"], false);
-        assert_eq!(body["platform"], "win32-x64");
+        assert_eq!(body["platform"], "linux-riscv64");
         assert_eq!(
             body["reason"],
-            "Auto update is not available for win32-x64."
+            "Auto update is not available for linux-riscv64."
         );
     }
 
@@ -689,14 +679,17 @@ mod tests {
     async fn rejects_install_requests_on_unsupported_architectures_before_download() {
         let fake = fake(|_, _| Err("should not run".into()));
         let runtime = UpdateRuntime {
-            platform: "win32".into(),
-            arch: "x64".into(),
+            platform: "linux".into(),
+            arch: "riscv64".into(),
             ..darwin()
         };
         let (handlers, _) = handlers("0.2.16", fake.run.clone(), runtime, env(&[]));
         let (status, body) = handlers.install(true).await;
         assert_eq!(status, 409);
-        assert_eq!(body["error"], "Auto update is not available for win32-x64.");
+        assert_eq!(
+            body["error"],
+            "Auto update is not available for linux-riscv64."
+        );
         assert_eq!(body["current_version"], "0.2.16");
     }
 

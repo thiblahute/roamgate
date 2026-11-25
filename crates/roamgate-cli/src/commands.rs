@@ -15,9 +15,8 @@ use crate::service::{
     ServiceRuntime, read_service_environment, restart_service, roamgate_service_status,
 };
 use crate::update::{
-    RunProcess, UPDATE_INSTALL_TIMEOUT, compare_version, curl_transport_command,
-    fetch_latest_update_manifest, normalize_update_base_url, render_update_install_script,
-    resolve_update_target, run_failure,
+    RunProcess, compare_version, fetch_latest_update_manifest, install_update,
+    normalize_update_base_url, resolve_update_target, run_failure,
 };
 
 pub fn update_help() -> &'static str {
@@ -36,10 +35,12 @@ kept as roamgate.previous, and the Pi sidecar roamgate-pi beside it as
 roamgate-pi.previous; `roamgate rollback` restores them. When the executable is
 already the latest release but its roamgate-pi is missing, update installs it.
 A running managed service that uses this executable is restarted afterwards.
+On Windows the files are .exe, and the running executable is renamed aside
+rather than replaced.
 
 ROAMGATE_UPDATE_BASE_URL selects a mirror (from the shell, else the service
 config). To install a specific version, rerun the installer with
-ROAMGATE_VERSION=X.Y.Z. Windows builds update by downloading a release.
+ROAMGATE_VERSION=X.Y.Z.
 "
 }
 
@@ -244,16 +245,12 @@ async fn update_inner(
         ));
     }
     let target_path = runtime.exec_path.display().to_string();
-    let script = render_update_install_script(
+    let ran = install_update(
         &target_path,
         &target,
         &manifest,
-        &format!("{base}/{}", target.archive_name),
-        &curl_transport_command(&base),
-    );
-    let ran = (effects.run_process)(
-        vec!["sh".into(), "-c".into(), script],
-        UPDATE_INSTALL_TIMEOUT,
+        &base,
+        &effects.run_process,
     )
     .await
     .map_err(Failure::Failed)?;
@@ -295,13 +292,17 @@ fn absent(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_err()
 }
 
-/// The Pi sidecar `roamgate-pi` beside `executable` (Linux and macOS, the
-/// platforms update and rollback serve).
+/// The Pi sidecar beside `executable`: `roamgate-pi`, or `roamgate-pi.exe`
+/// beside a `.exe`.
 pub fn pi_sidecar_path(executable: &Path) -> PathBuf {
-    executable
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("roamgate-pi")
+    let exe = executable
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"));
+    executable.parent().unwrap_or(Path::new(".")).join(if exe {
+        "roamgate-pi.exe"
+    } else {
+        "roamgate-pi"
+    })
 }
 
 fn with_previous(path: &Path) -> PathBuf {
@@ -326,13 +327,12 @@ fn rollback_inner(
     printed: &mut Printed,
 ) -> Result<i32, Failure> {
     parse_flags(args, &[])?;
-    if !runtime.standalone || runtime.platform == "win32" {
-        printed
-            .error("roamgate rollback: only the standalone Linux and macOS binary can roll back.");
+    if !runtime.standalone {
+        printed.error("roamgate rollback: only the standalone binary can roll back.");
         return Ok(1);
     }
     let current = runtime.exec_path.clone();
-    let previous = PathBuf::from(format!("{}.previous", current.display()));
+    let previous = with_previous(&current);
     if !regular_file(&current) || !regular_file(&previous) {
         printed.error(&format!(
             "roamgate rollback: no previous executable at {}",
@@ -565,10 +565,15 @@ mod tests {
 
     #[tokio::test]
     async fn explains_platforms_without_update_packages() {
-        let test = test("win32");
+        let mut test = test("linux");
+        test.runtime.arch = "riscv64".into();
         let printed = update(&test.runtime, &effects(&test, "1.3.0", 0), &[]).await;
         assert_eq!(printed.code, 1);
-        assert!(printed.stderr.contains("no update package for win32-x64"));
+        assert!(
+            printed
+                .stderr
+                .contains("no update package for linux-riscv64")
+        );
     }
 
     #[tokio::test]
