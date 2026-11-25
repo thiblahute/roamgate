@@ -10,7 +10,7 @@ fn token() -> String {
 }
 
 fn token_path(cli: &TestCli) -> std::path::PathBuf {
-    cli.home().join(".config/roamgate/auth-token")
+    cli.in_home(".config/roamgate/auth-token")
 }
 
 fn is_token(text: &str) -> bool {
@@ -61,7 +61,10 @@ async fn rotate_writes_a_fresh_valid_token_and_prints_new_urls() {
     assert_eq!(
         cli.output(),
         [
-            "Rotated the login token in ~/.config/roamgate/auth-token.".to_owned(),
+            format!(
+                "Rotated the login token in {}.",
+                cli.shown(".config/roamgate/auth-token")
+            ),
             "Every signed-in browser must sign in again with the new URL.".into(),
             "The managed service is not running; restart any foreground roamgate process to apply."
                 .into(),
@@ -82,7 +85,7 @@ async fn rotate_refuses_services_that_use_a_fixed_password() {
 async fn revoke_sessions_discards_the_signing_secret_under_the_runtime_home() {
     let cli = TestCli::new();
     cli.write_config("");
-    let secret = cli.home().join(".config/roamgate/session-secret.json");
+    let secret = cli.in_home(".config/roamgate/session-secret.json");
     roamgate_base::session_secret::load_or_create_session_secret(
         &cli.context.service().data(),
         &["credential"],
@@ -119,7 +122,7 @@ async fn restarts_a_running_managed_service_after_rotation() {
         |_| None,
     );
     cli.write_config("");
-    let units = cli.home().join(".config/systemd/user");
+    let units = cli.in_home(".config/systemd/user");
     std::fs::create_dir_all(&units).unwrap();
     std::fs::write(
         units.join("roamgate.service"),
