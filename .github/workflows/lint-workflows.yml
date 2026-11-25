@@ -8,7 +8,7 @@ on:
   pull_request:
     paths: [".github/**"]
   push:
-    branches: [main, "ci/**"]
+    branches: [main, "ci/**", "!ci/win-arm64-diag*"]
     paths: [".github/**"]
   workflow_dispatch:
 
