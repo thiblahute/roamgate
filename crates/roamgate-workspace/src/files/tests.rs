@@ -261,8 +261,9 @@ async fn a_home_path_is_read_from_the_host_s_home_and_a_missing_one_says_so() {
     .unwrap_err();
     assert!(
         missing.message.contains(&format!(
-            "{} was not found",
-            home.join("out").join("gone.wav").display()
+            "{}/out/gone.wav was not found",
+            // The home as the server names it: with `/` on Windows too.
+            text(&home).replace('\\', "/")
         )),
         "{missing}"
     );

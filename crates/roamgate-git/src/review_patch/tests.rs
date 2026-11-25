@@ -42,11 +42,17 @@ fn range(base: &str, head: &str) -> Target {
     Target::range(base, head)
 }
 
+/// The real path as git prints it: `/` separators on Windows too.
 fn real(path: &Path) -> String {
-    fs::canonicalize(path)
+    let real = roamgate_base::paths::realpath(path)
         .unwrap()
         .to_string_lossy()
-        .into_owned()
+        .into_owned();
+    if cfg!(windows) {
+        real.replace('\\', "/")
+    } else {
+        real
+    }
 }
 
 #[tokio::test]
@@ -551,6 +557,9 @@ async fn a_review_s_state_changes_when_its_code_does() {
 }
 
 #[tokio::test]
+// Unix only: an agent's records are searched for POSIX paths (as the Bun
+// server did); a Windows machine's records name drive paths.
+#[cfg(unix)]
 async fn an_agent_s_session_record_brings_in_the_repositories_it_edits() {
     let work = tempfile::Builder::new()
         .prefix("roamgate-review-scan-")
