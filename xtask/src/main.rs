@@ -5,6 +5,8 @@ mod binary;
 mod compile;
 mod package;
 mod proof;
+mod sandbox;
+mod smoke;
 mod targets;
 mod verify;
 
@@ -29,6 +31,13 @@ Commands:
                                       earlier roamgate's `roamgate update`
                                       in a sandbox (roamgate-pi beside it),
                                       serve with it, then roll back
+  smoke <platform> [--archive <tar.xz>] [--container]
+                                      run a packaged target on this machine
+                                      in a sandbox: its roamgate-pi, then
+                                      the server with a login, /healthz,
+                                      the /ws hello and an agent-socket call
+                                      (--container: in the target's
+                                      container image of targets.toml)
   version [--next]                    print the workspace version (--next:
                                       the next patch, as a prerelease above
                                       the current one, for update proofs)
@@ -40,9 +49,11 @@ Options:
   --out <dir>              where packages go (default: target/dist)
   --builder <cargo|zigbuild|xwin>
                            override targets.toml's builder
-  --exec-prefix <command>  update-proof: run the sandbox's commands through
-                           this prefix (an emulated container)
-  --keep <dir>             update-proof: keep the sandbox in <dir>
+  --archive <tar.xz>       smoke: the package (default: the versioned
+                           archive in --out)
+  --exec-prefix <command>  update-proof, smoke: run the sandbox's commands
+                           through this prefix (a container)
+  --keep <dir>             update-proof, smoke: keep the sandbox in <dir>
 ";
 
 pub fn repo_root() -> PathBuf {
@@ -91,6 +102,8 @@ struct Args {
     out: Option<PathBuf>,
     builder: Option<Builder>,
     from: Option<PathBuf>,
+    archive: Option<PathBuf>,
+    container: bool,
     exec_prefix: Vec<String>,
     keep: Option<PathBuf>,
 }
@@ -109,6 +122,8 @@ fn parse(mut raw: impl Iterator<Item = String>) -> Result<Args> {
             "--web" => args.web = Some(value("--web")?.into()),
             "--out" => args.out = Some(value("--out")?.into()),
             "--from" => args.from = Some(value("--from")?.into()),
+            "--archive" => args.archive = Some(value("--archive")?.into()),
+            "--container" => args.container = true,
             "--keep" => args.keep = Some(value("--keep")?.into()),
             "--exec-prefix" => {
                 args.exec_prefix = value("--exec-prefix")?
@@ -233,6 +248,29 @@ fn run() -> Result<()> {
                 exec_prefix: args.exec_prefix.clone(),
                 keep: args.keep.clone().map(absolute).transpose()?,
             })?;
+        }
+        "smoke" => {
+            let [name] = args.names.as_slice() else {
+                bail!("smoke takes one platform");
+            };
+            let target = targets::select(&all, std::slice::from_ref(name))?.remove(0);
+            let archive = absolute(
+                args.archive
+                    .clone()
+                    .unwrap_or_else(|| out.join(target.versioned_archive(&version))),
+            )?;
+            let smoke = smoke::Smoke {
+                archive: &archive,
+                target: &target,
+                version: &version,
+                exec_prefix: args.exec_prefix.clone(),
+                keep: args.keep.clone().map(absolute).transpose()?,
+            };
+            match (&target.container, args.container) {
+                (Some(image), true) => smoke::run_in_container(&smoke, image)?,
+                (None, true) => bail!("{} has no container", target.platform),
+                (_, false) => smoke::run(&smoke)?,
+            }
         }
         "help" | "" => print!("{USAGE}"),
         other => bail!("unknown command {other}\n\n{USAGE}"),

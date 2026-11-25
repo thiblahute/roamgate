@@ -14,11 +14,13 @@
 #   cross     the builder used elsewhere (a Linux desktop building macOS)
 #   glibc     the oldest glibc the binary runs on (zigbuild links against it)
 #   runner    the CI runner that builds it
-#   check     the CI runner that runs it natively: its --version, and the
-#             update proof for an `update` target
+#   check     the CI runner that runs it natively: its smoke test (cargo
+#             xtask smoke), and the update proof for an `update` target
 #   update    `roamgate update` installs it: the updater knows the platform
 #   bun       the Bun compile target of the Pi sidecar roamgate-pi the
 #             package ships
+#   container a container image the check also smokes the package in (the
+#             system the target is for, when the runner is not it)
 
 [[target]]
 platform = "linux-x64"
@@ -44,6 +46,7 @@ runner = "ubuntu-latest"
 check = "ubuntu-latest"
 update = false
 bun = "bun-linux-x64-musl"
+container = "alpine:3.22"
 
 [[target]]
 platform = "linux-arm64"

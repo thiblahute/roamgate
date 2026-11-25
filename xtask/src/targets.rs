@@ -22,6 +22,9 @@ pub struct Target {
     pub check: String,
     pub update: bool,
     pub bun: String,
+    /// A container image the check also smokes the package in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
