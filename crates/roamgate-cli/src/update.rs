@@ -17,6 +17,8 @@ use serde_json::Value;
 
 use crate::BoxFuture;
 
+/// Roamgate's releases, whose `download/v<version>` holds a version's assets.
+pub const RELEASES_URL: &str = "https://github.com/powerfooI/roamgate/releases";
 pub const DEFAULT_UPDATE_BASE_URL: &str =
     "https://github.com/powerfooI/roamgate/releases/latest/download";
 pub const UPDATE_METADATA_MAX_BYTES: usize = 4096;

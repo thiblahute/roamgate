@@ -8,6 +8,7 @@ pub mod config;
 pub mod download;
 pub mod hardware;
 pub mod helper;
+pub mod helper_release;
 pub mod http;
 pub mod js;
 pub mod kokoro_language;

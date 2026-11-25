@@ -49,6 +49,7 @@ impl Test {
             ask: None,
             setup: Some(self.home.deps.clone()),
             interrupt: false,
+            helper_release: None,
         }
     }
 
@@ -108,7 +109,7 @@ async fn list_shows_the_hardware_each_part_s_models_and_the_tier() {
         "Proposed tier: light",
         "Speech recognition (--speech)",
         "kokoro-onnx",
-        "not found: build it",
+        "not found: `roamgate setup voice helper` downloads it",
     ] {
         assert!(out.contains(expected), "{expected} in {out}");
     }

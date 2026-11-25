@@ -54,7 +54,11 @@ checked) into the models directory and point voice.json at them. Run it
 again to change a model, switch tier, or free disk.
 
 Actions:
-  (none)            choose the models, download them, write voice.json
+  (none)            choose the models, download them, write voice.json,
+                    and download the voice helper of this release when it
+                    is not installed
+  helper            download the voice helper of this release (and its
+                    CUDA pack), replacing the one installed
   list              show the hardware, the models and what is installed
   remove-unused     delete the models in the models directory voice.json
                     no longer uses, and unfinished downloads
@@ -70,6 +74,9 @@ Options:
   --turn ID|none       end of turn, from the voice
   --text-turn ID|none  end of turn, from the words
   --helper PATH        the voice helper voice.json names
+  --no-helper-download do not download the voice helper
+  --cuda, --no-cuda    with the helper, its CUDA pack (default: when an
+                       NVIDIA GPU is found)
   --verify             check the checksums of files already in place
   --yes, -y            no questions: the choices as given
   --json               list as JSON
@@ -92,6 +99,16 @@ pub struct SetupCommandDeps {
     pub setup: Option<SetupDeps>,
     /// Stops a download on Ctrl-C.
     pub interrupt: bool,
+    /// Where a release's voice helper is looked for (a release's download
+    /// URL, or a mirror's); None: never (tests).
+    pub helper_release: Option<HelperRelease>,
+}
+
+/// Where releases are downloaded from.
+#[derive(Clone, Copy)]
+pub enum HelperRelease {
+    /// This version's release, or ROAMGATE_UPDATE_BASE_URL's mirror.
+    System,
 }
 
 impl SetupCommandDeps {
@@ -102,6 +119,7 @@ impl SetupCommandDeps {
             ask: terminal_ask(),
             setup: None,
             interrupt: true,
+            helper_release: Some(HelperRelease::System),
         }
     }
 }
@@ -296,7 +314,7 @@ fn list_state(out: &mut dyn Output, runtime: &CliRuntime, state: &Value, hardwar
         if helper["found"] == true {
             ""
         } else {
-            " (not found: build it with voice/helper/linux/build.sh, or cargo build --release in voice/helper)"
+            " (not found: `roamgate setup voice helper` downloads it when this release has one for this platform; else build it with voice/helper/linux/build.sh, or cargo build --release in voice/helper)"
         }
     ));
     if let Some(free) = state["freeBytes"].as_f64() {
@@ -486,7 +504,7 @@ fn is_word(answer: &str, short: &str, long: &str) -> bool {
     lower == short || lower == long
 }
 
-const SETUP_OPTIONS: [Opt; 12] = [
+const SETUP_OPTIONS: [Opt; 15] = [
     Opt::string("tier"),
     Opt::string("speech"),
     Opt::string("reread"),
@@ -497,6 +515,9 @@ const SETUP_OPTIONS: [Opt; 12] = [
     Opt::string("text-turn"),
     Opt::string("helper"),
     Opt::flag("verify"),
+    Opt::flag("no-helper-download"),
+    Opt::flag("cuda"),
+    Opt::flag("no-cuda"),
     Opt::flag("yes").short('y'),
     Opt::flag("json"),
 ];
@@ -512,6 +533,7 @@ async fn run_setup(
     if let Some(action) = action
         && action != "list"
         && action != "remove-unused"
+        && action != "helper"
     {
         return Err(Failure::Usage(format!("unknown action: {action}")));
     }
@@ -541,6 +563,16 @@ async fn run_setup(
             list_state(out, runtime, &state, &hardware);
         }
         return Ok(0);
+    }
+    if action == Some("helper") {
+        let path = parsed
+            .text("helper")
+            .filter(|helper| !helper.is_empty())
+            .map_or_else(|| setup.helper_path.clone(), std::path::PathBuf::from);
+        return match download_helper(runtime, deps, &parsed, &hardware, &path, out).await? {
+            true => Ok(0),
+            false => Ok(1),
+        };
     }
     if action == Some("remove-unused") {
         let unused = state["unused"].as_array().cloned().unwrap_or_default();
@@ -698,7 +730,12 @@ async fn run_setup(
         }
         Err(error) => return Err(Failure::Failed(error.message)),
     }
-    let after = voice_setup_state(&setup, None).map_err(Failure::Failed)?;
+    let mut after = voice_setup_state(&setup, None).map_err(Failure::Failed)?;
+    if after["helper"]["found"] != true && !parsed.flag("no-helper-download") {
+        let path = std::path::PathBuf::from(text_of(&after["helper"], "path"));
+        download_helper(runtime, deps, &parsed, &hardware, &path, out).await?;
+        after = voice_setup_state(&setup, None).map_err(Failure::Failed)?;
+    }
     if after["helper"]["found"] != true {
         out.log(&format!(
             "The voice helper is not at {} yet: build it (voice/helper/linux/build.sh on Linux) and install it there, or pass --helper.",
@@ -721,6 +758,110 @@ async fn run_setup(
         ));
     }
     Ok(0)
+}
+
+/// The base URL of this version's release assets: ROAMGATE_UPDATE_BASE_URL's
+/// mirror when set, else this version's GitHub release.
+fn release_base_url(runtime: &CliRuntime) -> Result<String, String> {
+    match roamgate_base::env::roamgate_env(runtime.env.as_ref(), "UPDATE_BASE_URL") {
+        Some(mirror) => crate::update::normalize_update_base_url(Some(&mirror)),
+        None => Ok(format!(
+            "{}/download/v{}",
+            crate::update::RELEASES_URL,
+            runtime.version
+        )),
+    }
+}
+
+/// Downloads this release's voice helper for this platform to `path`, with
+/// its CUDA pack when asked or when an NVIDIA GPU is found, after asking
+/// unless --yes. False when it was not installed (no helper in this
+/// release for this platform, declined, or no terminal to ask on).
+async fn download_helper(
+    runtime: &CliRuntime,
+    deps: &SetupCommandDeps,
+    parsed: &crate::args::Parsed,
+    hardware: &VoiceHardware,
+    path: &std::path::Path,
+    out: &mut dyn Output,
+) -> Result<bool, Failure> {
+    use roamgate_voice_server::helper_release::{
+        fetch_helper_manifest, helper_platform, install_helper_release,
+    };
+    if deps.helper_release.is_none() {
+        return Ok(false);
+    }
+    let Some(platform) = helper_platform(&runtime.platform, &runtime.arch) else {
+        out.log(&format!(
+            "Releases carry no voice helper for {}-{}.",
+            runtime.platform, runtime.arch
+        ));
+        return Ok(false);
+    };
+    let base = release_base_url(runtime).map_err(Failure::Failed)?;
+    let setup = setup_deps(runtime, deps);
+    let manifest =
+        match fetch_helper_manifest(&base, &platform, &runtime.version, setup.fetch.as_ref()).await
+        {
+            Ok(Some(manifest)) => manifest,
+            Ok(None) => {
+                out.log(&format!(
+                    "This release ({}) has no voice helper for {platform}.",
+                    runtime.version
+                ));
+                return Ok(false);
+            }
+            Err(error) => {
+                out.error(&format!("The voice helper could not be looked up: {error}"));
+                return Ok(false);
+            }
+        };
+    let nvidia = hardware.gpus.iter().any(|gpu| gpu.vendor == "nvidia");
+    let cuda =
+        manifest.cuda.is_some() && !parsed.flag("no-cuda") && (parsed.flag("cuda") || nvidia);
+    let size = manifest.helper.size
+        + manifest
+            .cuda
+            .as_ref()
+            .filter(|_| cuda)
+            .map_or(0.0, |pack| pack.size);
+    out.log(&format!(
+        "Voice helper {}{}: {} into {}",
+        manifest.version,
+        if cuda { " with its CUDA pack" } else { "" },
+        format_bytes(size),
+        display_path(path.parent().unwrap_or(path), runtime)
+    ));
+    if !parsed.flag("yes") {
+        let Some(ask) = &deps.ask else {
+            out.log("Pass --yes to download it without a terminal.");
+            return Ok(false);
+        };
+        let answer = ask("Download the voice helper? [Y/n] ".into()).await;
+        if is_word(roamgate_voice_server::js::trim(&answer), "n", "no") {
+            return Ok(false);
+        }
+    }
+    let options = roamgate_voice_server::download::DownloadOptions {
+        fetch: setup.fetch.clone(),
+        retry_delay_ms: setup.retry_delay_ms,
+        ..Default::default()
+    };
+    match install_helper_release(&base, &manifest, path, cuda, &options).await {
+        Ok(installed) => {
+            out.log(&format!(
+                "Installed the voice helper at {}{}.",
+                display_path(&installed.helper, runtime),
+                if installed.cuda {
+                    " with its CUDA pack"
+                } else {
+                    ""
+                }
+            ));
+            Ok(true)
+        }
+        Err(error) => Err(Failure::Failed(format!("the voice helper: {error}"))),
+    }
 }
 
 /// `roamgate setup ...`; returns the exit code.
