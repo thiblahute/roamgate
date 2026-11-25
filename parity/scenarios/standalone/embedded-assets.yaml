@@ -2,8 +2,8 @@ name: the release standalone serves its embedded assets and ignores ambient conf
 family: standalone
 tier: T2
 description: >
-  The release binary of this checkout (`bun run build:server`, built once by
-  the harness) runs from a directory holding a .env, a bunfig.toml and a
+  The release binary of this checkout (`cargo build --release`, built once
+  by the harness) runs from a directory holding a .env, a bunfig.toml and a
   preload that throws: none of them is read (the login stays the generated
   token, nothing preloads). Its embedded app shell, assets and manifest are
   served with the cache rules the source server has; bad paths are refused.
@@ -69,10 +69,10 @@ steps:
     expect:
       { status: 200, headers: { content-type: "{{contains:javascript}}" } }
   # The binary refuses the test clock outright.
-  - sh: ROAMGATE_TEST_CLOCK="$PWD/clock.sock" "${REPO}/server/roamgate" --port 0
+  - sh: ROAMGATE_TEST_CLOCK="$PWD/clock.sock" "${SERVER_BIN}" --port 0
     expect:
       exit: 1
-      stderr: "roamgate: ROAMGATE_TEST_CLOCK is only honoured when the server runs from source, never by the standalone binary.\n"
+      stderr: "roamgate: ROAMGATE_TEST_CLOCK is only honoured by a test build of the server, never by a release build.\n"
   - cli: [--version]
     expect: { exit: 0, stdout: "{{re:^roamgate [0-9]+\\.[0-9]+\\.[0-9]+\\n$}}" }
 contract_exceptions:
