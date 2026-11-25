@@ -7,6 +7,7 @@
 //! | [`paths`] | data paths and the legacy herdr-gui migration | config/data-paths |
 //! | [`node`] | node mode: the home's origin, the node's own data root | (none) |
 //! | [`private`] | 0700 directories, 0600 files, no symlinks, single links | the private-file checks |
+//! | [`process`] | whether a pid is alive | `process.kill(pid, 0)` |
 //! | [`json_store`] | `AtomicJsonStore`: versioned JSON files, tmp, fsync, rename | the tmp-and-rename writers |
 //! | [`sqlite`] | `SqliteDb::open`: PRAGMAs, user_version, safe path | the SQLite open paths |
 //! | [`lock`] | the mkdir lock proper-lockfile takes, shared with the Bun server | proper-lockfile |
@@ -40,6 +41,7 @@ pub mod node;
 pub mod paths;
 pub mod posix_shell;
 pub mod private;
+pub mod process;
 pub mod record;
 pub mod revoked_sessions;
 pub mod secrets;

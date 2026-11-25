@@ -21,25 +21,6 @@ impl Drop for HostLock {
     }
 }
 
-#[cfg(unix)]
-fn alive(pid: i32) -> bool {
-    if pid <= 0 {
-        return false;
-    }
-    match rustix::process::Pid::from_raw(pid) {
-        Some(pid) => match rustix::process::test_kill_process(pid) {
-            Ok(()) => true,
-            Err(error) => error == rustix::io::Errno::PERM,
-        },
-        None => false,
-    }
-}
-
-#[cfg(not(unix))]
-fn alive(_pid: i32) -> bool {
-    true
-}
-
 fn lock_name(host: &str) -> String {
     host.chars()
         .map(|c| {
@@ -81,7 +62,7 @@ pub fn acquire_host_lock(archive_dir: &Path, host: &str) -> std::io::Result<Opti
                     .unwrap_or_default();
                 // Number(""): 0, no holder.
                 let holder: i32 = text.trim().parse().unwrap_or(0);
-                if holder != 0 && alive(holder) && age < STALE {
+                if holder != 0 && roamgate_base::process::pid_alive(holder) && age < STALE {
                     return Ok(None);
                 }
                 let _ = std::fs::remove_file(&path);
