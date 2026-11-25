@@ -95,7 +95,10 @@ steps:
     socket: other
   - call: bridge.ping
     socket: main
-  - assert_file:
+  # The stop goes to the helper after the ping answers: its frame may land
+  # a moment later.
+  - retry: 5000
+    assert_file:
       path: "${ROOT}/fakes/roamgate-voice.frames.jsonl"
       jsonl:
         $contains:
