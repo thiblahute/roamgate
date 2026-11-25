@@ -16,6 +16,7 @@ test.skipIf(process.platform !== "win32")(
   "Windows plugin installer verifies and stages releases without Bun on PATH",
   async () => {
     const root = mkdtempSync(join(tmpdir(), "roamgate plugin installer "));
+    const t0 = Date.now(); const log = (m: string) => console.error(`[${Date.now() - t0}ms] ${m}`);
     let host: ReturnType<typeof Bun.serve> | undefined;
     try {
       for (const dir of ["scripts", "server", "assets"])
@@ -46,6 +47,7 @@ test.skipIf(process.platform !== "win32")(
         fixture,
         `if (process.argv[2] === "--version" || (process.argv[2] === "plugin" && process.argv[3] === "version" && !process.env.PLUGIN_REJECT_NATIVE)) console.log("roamgate 9.8.7"); else process.exit(2);`,
       );
+      log('compile');
       expect(
         Bun.spawnSync([
           process.execPath,
@@ -123,6 +125,7 @@ test.skipIf(process.platform !== "win32")(
         );
         const target = join(root, "server/roamgate.exe");
         if (failure !== "fresh") writeFileSync(target, "keep previous binary");
+        log(`case ${failure}`);
         const child = Bun.spawn(
           [
             powershell,

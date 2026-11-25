@@ -45,6 +45,7 @@ test.skipIf(process.platform !== "win32")(
   "the PowerShell installer verifies, installs beside a running roamgate and keeps the previous one",
   async () => {
     const root = mkdtempSync(join(tmpdir(), "roamgate installer "));
+    const t0 = Date.now(); const log = (m: string) => console.error(`[${Date.now() - t0}ms] ${m}`);
     let host: ReturnType<typeof Bun.serve> | undefined;
     let running: ReturnType<typeof Bun.spawn> | undefined;
     try {
@@ -64,7 +65,7 @@ test.skipIf(process.platform !== "win32")(
       mkdirSync(assets);
       mkdirSync(binaries);
       for (const version of ["1.0.0", "2.0.0"]) {
-        compileFixture(root, version, join(binaries, `${version}.exe`));
+        log(`compile ${version}`); compileFixture(root, version, join(binaries, `${version}.exe`)); log('compiled');
       }
 
       /** Packages `version` as the release archive `name`, as xtask does:
@@ -176,7 +177,7 @@ test.skipIf(process.platform !== "win32")(
 
       // A fresh install of the latest release.
       release(`roamgate-${platform}.zip`, "1.0.0");
-      let ran = await install();
+      let log("install"); ran = await install();
       expect(ran.exitCode, ran.stderr).toBe(0);
       expect(ran.stdout).toContain(
         `Installed roamgate 1.0.0 to ${join(installDir, "roamgate.exe")}`,
@@ -186,7 +187,7 @@ test.skipIf(process.platform !== "win32")(
       // Over a running roamgate.exe: renamed away, not overwritten.
       running = Bun.spawn([join(installDir, "roamgate.exe"), "wait"]);
       release(`roamgate-${platform}.zip`, "2.0.0");
-      ran = await install();
+      log("install"); ran = await install();
       expect(ran.exitCode, ran.stderr).toBe(0);
       expect(names()).toEqual([
         "roamgate-pi.exe",
@@ -198,9 +199,17 @@ test.skipIf(process.platform !== "win32")(
       expect(installed("roamgate-pi.exe")).toBe("roamgate 2.0.0");
       expect(installed("roamgate.exe.previous")).toBe("roamgate 1.0.0");
 
-      // A pinned version, from its own archive name.
+      // A pinned version, from its own archive name. While the old
+      // roamgate.exe.previous still runs, it cannot make way: refused,
+      // nothing moved.
       release(`roamgate-v1.0.0-${platform}.zip`, "1.0.0");
-      ran = await install({ ROAMGATE_VERSION: "1.0.0" });
+      log("install"); ran = await install({ ROAMGATE_VERSION: "1.0.0" });
+      expect(ran.exitCode).not.toBe(0);
+      expect(ran.stderr).toContain("is in use");
+      expect(installed("roamgate.exe")).toBe("roamgate 2.0.0");
+      running.kill();
+      await running.exited;
+      log("install"); ran = await install({ ROAMGATE_VERSION: "1.0.0" });
       expect(ran.exitCode, ran.stderr).toBe(0);
       expect(installed("roamgate.exe")).toBe("roamgate 1.0.0");
 
@@ -264,7 +273,7 @@ test.skipIf(process.platform !== "win32")(
       ];
       for (const [what, prepare, environment, message] of refusals) {
         prepare();
-        ran = await install(environment);
+        log("install"); ran = await install(environment);
         expect(ran.exitCode, what).not.toBe(0);
         expect(ran.stderr, what).toContain(message);
         expect(
@@ -276,7 +285,7 @@ test.skipIf(process.platform !== "win32")(
         ).toEqual(before);
       }
       unavailable = true;
-      ran = await install();
+      log("install"); ran = await install();
       expect(ran.exitCode).not.toBe(0);
       expect(installed("roamgate.exe")).toBe("roamgate 1.0.0");
     } finally {
