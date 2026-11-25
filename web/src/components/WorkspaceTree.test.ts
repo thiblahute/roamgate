@@ -258,17 +258,24 @@ if (process.env.ROAMGATE_WORKSPACE_STORAGE_DOM_TEST !== "1") {
           agents: null,
         }),
       );
-      const summary = spyOn(bridge, "call").mockImplementation(
-        async (method) => {
-          expect(method).toBe("connections.agent_sessions");
-          return { connections: snapshots };
-        },
+      // The sessions read, apart from the tree's other background reads:
+      // its Claude panes' task badges, batched on a timer set before the
+      // clock turned fake, may come at any time on a slow machine.
+      const summary = jest.fn(
+        async (): Promise<{ connections: ConnectionAgentSessions[] }> => ({
+          connections: snapshots,
+        }),
       );
+      const calls = spyOn(bridge, "call").mockImplementation(async (method) => {
+        if (method === "connections.agent_tasks") return { results: [] };
+        expect(method).toBe("connections.agent_sessions");
+        return summary();
+      });
       const navigate = spyOn(store, "focusWorkspaceSource").mockResolvedValue(
         true,
       );
       const localFocus = spyOn(store, "focusPane").mockResolvedValue(undefined);
-      mocks.push(summary, navigate, localFocus);
+      mocks.push(calls, navigate, localFocus);
       await act(async () =>
         __storeTesting.replaceState({
           ...store.get(),
