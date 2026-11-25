@@ -76,6 +76,12 @@
         "type": "directory"
       }
     },
+    "file-sizes": {
+      "kind": "drop",
+      "keys": ["size"],
+      "replace": "{{size}}",
+      "only": "number"
+    },
     "unordered-arrays": {
       "kind": "sort"
     },

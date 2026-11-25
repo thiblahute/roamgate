@@ -20,7 +20,7 @@
     "file": {
       "path": "$ROOT/xdg/muse/sessions/2026/01/01/muse-1/session.jsonl",
       "mtimeMs": "{{file-stat}}",
-      "size": 1039,
+      "size": "{{size}}",
       "identity": "{{file-stat}}",
       "changeToken": "{{file-stat}}",
       "sessionId": "muse-1"

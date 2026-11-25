@@ -148,11 +148,13 @@ steps:
     golden: grok-history
   - call: agent_session.get
     params: { pane_id: muse }
-    normalize: [run-paths, session-file-stat]
+    # Its file names the run root, whose length varies.
+    normalize: [run-paths, session-file-stat, file-sizes]
     golden: muse-session
   - call: agent_history.get
     params: { pane_id: muse }
-    normalize: [run-paths, session-file-stat]
+    # Its file names the run root, whose length varies.
+    normalize: [run-paths, session-file-stat, file-sizes]
     golden: muse-history
   - call: agent_session.get
     params: { pane_id: agy }
