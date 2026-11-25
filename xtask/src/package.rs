@@ -127,6 +127,9 @@ fn zip_archive(dir: &str, entries: &[(String, u32, &[u8])], mtime: u64) -> Resul
             .compression_level(Some(9))
             .last_modified_time(date)
             .unix_permissions(mode)
+            // Unix-made whatever host builds it: zip reads a DOS-made
+            // entry's mode as 0664, so a Windows build lost its modes.
+            .system(zip::System::Unix)
     };
     writer.add_directory(format!("{dir}/"), options(0o755))?;
     for (path, mode, data) in entries {
