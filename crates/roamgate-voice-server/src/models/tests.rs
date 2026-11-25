@@ -12,7 +12,7 @@ fn pocket() -> Vec<Value> {
 
 /// A path under the tests' `/models`, joined as the platform joins.
 fn at(relative: &str) -> String {
-    join_relative(Path::new("/models"), relative)
+    roamgate_base::paths::join_relative(Path::new("/models"), relative)
         .display()
         .to_string()
 }

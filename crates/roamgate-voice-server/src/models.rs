@@ -464,7 +464,7 @@ pub fn package_path(
         return Err(format!("{} is not installed", entry.name));
     };
     Ok(if entry.dir.is_empty() {
-        join_relative(
+        roamgate_base::paths::join_relative(
             root,
             entry.files.first().map_or("", |file| file.path.as_str()),
         )
@@ -499,16 +499,7 @@ pub const POCKET_VOICES: [PocketVoice; 2] = [
 pub const POCKET_MODEL: &str = "pocket-tts";
 
 pub fn pocket_model_dir(root: &Path, voice: &PocketVoice) -> PathBuf {
-    join_relative(root, voice.dir)
-}
-
-/// `root` and a catalog's `/`-separated relative path, joined part by part
-/// (one separator throughout on Windows).
-pub fn join_relative(root: &Path, relative: &str) -> PathBuf {
-    relative
-        .split('/')
-        .filter(|part| !part.is_empty())
-        .fold(root.to_path_buf(), |path, part| path.join(part))
+    roamgate_base::paths::join_relative(root, voice.dir)
 }
 
 /// voice.json's keys to set (Some) or remove (None), in the order set.
