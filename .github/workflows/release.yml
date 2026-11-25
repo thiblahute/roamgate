@@ -1,13 +1,16 @@
 name: Release
 
-# A run on a v* tag publishes that release. A run on any other ref (a
-# dispatch on a ci/** branch) is a dry run: it validates, builds, packages,
+# A run on a v* tag publishes that release. A run on any other ref (a push
+# of a ci/*release* branch, or a dispatch on a branch) is a dry run: it validates, builds, packages,
 # smokes and update-proves every target with the next patch version, and
 # publishes nothing: the publish job, the only one with write permissions,
 # runs only on refs/tags/v*.
 on:
   push:
     tags: ["v*"]
+    # Dry runs on a fork, where workflow_dispatch reaches only the
+    # workflows of the default branch.
+    branches: ["ci/*release*"]
   # Allows the Publish Release workflow (or a maintainer) to dispatch a run
   # on an existing tag ref, and a dry run on a branch.
   workflow_dispatch:
