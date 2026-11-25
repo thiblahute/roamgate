@@ -32,7 +32,7 @@ async fn connections(cli: &TestCli, args: &[&str], deps: &ConnectionsDeps) -> i3
 
 fn registry(cli: &TestCli) -> Value {
     serde_json::from_str(
-        &std::fs::read_to_string(cli.home().join(".config/roamgate/connections.json")).unwrap(),
+        &std::fs::read_to_string(cli.in_home(".config/roamgate/connections.json")).unwrap(),
     )
     .unwrap()
 }
@@ -70,8 +70,7 @@ async fn lists_the_implicit_default_from_the_service_config() {
     assert_eq!(listed["profiles"][0]["saved"], false);
     assert_eq!(
         listed["profiles"][0]["control_socket_path"],
-        cli.home()
-            .join(".config/herdr/herdr.sock")
+        cli.in_home(".config/herdr/herdr.sock")
             .display()
             .to_string()
     );
@@ -183,11 +182,7 @@ async fn rejects_invalid_profiles_as_usage_errors() {
             "Run `roamgate connections --help` for usage.",
         ]
     );
-    assert!(
-        !cli.home()
-            .join(".config/roamgate/connections.json")
-            .exists()
-    );
+    assert!(!cli.in_home(".config/roamgate/connections.json").exists());
 }
 
 #[tokio::test]
@@ -199,11 +194,7 @@ async fn refuses_edits_while_a_roamgate_listener_holds_its_own_copy() {
         1
     );
     assert!(cli.errors()[0].contains("would overwrite this change"));
-    assert!(
-        !cli.home()
-            .join(".config/roamgate/connections.json")
-            .exists()
-    );
+    assert!(!cli.in_home(".config/roamgate/connections.json").exists());
 }
 
 #[tokio::test]
@@ -219,7 +210,7 @@ async fn restarts_a_running_managed_service_with_restart() {
         |_| None,
     );
     cli.write_config("");
-    let units = cli.home().join(".config/systemd/user");
+    let units = cli.in_home(".config/systemd/user");
     std::fs::create_dir_all(&units).unwrap();
     std::fs::write(
         units.join("roamgate.service"),
@@ -315,8 +306,7 @@ async fn explicit_herdr_settings_stay_out_of_a_saved_registry() {
     assert_eq!(listed["profiles"][0]["saved"], false);
     assert_eq!(
         listed["profiles"][0]["control_socket_path"],
-        cli.home()
-            .join(".config/herdr/sessions/work/herdr.sock")
+        cli.in_home(".config/herdr/sessions/work/herdr.sock")
             .display()
             .to_string()
     );
@@ -325,11 +315,10 @@ async fn explicit_herdr_settings_stay_out_of_a_saved_registry() {
     assert_eq!(
         cli.output()[skip..],
         [
-            "~/.config/roamgate/connections.json".to_owned(),
+            cli.shown(".config/roamgate/connections.json"),
             format!(
                 "* legacy-default  local  {}  Default  [default, auto-connect, from service config]",
-                cli.home()
-                    .join(".config/herdr/sessions/work/herdr.sock")
+                cli.in_home(".config/herdr/sessions/work/herdr.sock")
                     .display()
             ),
             "  local           local  ".to_owned()

@@ -139,6 +139,19 @@ pub mod testing {
         }
     }
 
+    use roamgate_base::paths::join_relative as under;
+
+    /// How the test runtime's CLI shows `relative` under `home`:
+    /// `~/relative`, as on Linux, where the home is a Unix one; the whole
+    /// path where it is a Windows one (Windows' paths are not shortened).
+    pub fn shown(home: &Path, relative: &str) -> String {
+        if cfg!(windows) {
+            under(home, relative).display().to_string()
+        } else {
+            format!("~/{relative}")
+        }
+    }
+
     impl TestCli {
         /// Unknown commands fail like a missing service (4); captures
         /// answer 113 and no output, as launchctl for a missing job.
@@ -166,7 +179,7 @@ pub mod testing {
                 Recorder::new(move |argv| run(argv).unwrap_or(4))
                     .with_capture(move |argv| capture(argv).unwrap_or((113, String::new()))),
             );
-            let config_path = home.path().join(".config/roamgate/roamgate.env");
+            let config_path = under(home.path(), ".config/roamgate/roamgate.env");
             Self {
                 context: CliContext {
                     runtime,
@@ -181,6 +194,16 @@ pub mod testing {
 
         pub fn home(&self) -> &Path {
             self.home.path()
+        }
+
+        /// `relative` under the home, joined as this machine joins paths.
+        pub fn in_home(&self, relative: &str) -> PathBuf {
+            under(self.home(), relative)
+        }
+
+        /// How the CLI shows `relative` under the home ([`shown`]).
+        pub fn shown(&self, relative: &str) -> String {
+            shown(self.home(), relative)
         }
 
         /// Writes the service environment file (0600 in a 0700 directory).

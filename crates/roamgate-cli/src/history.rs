@@ -299,7 +299,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::context::testing::test_runtime;
+    use crate::context::testing::{shown, test_runtime};
 
     fn seeded() -> (tempfile::TempDir, std::path::PathBuf) {
         let home = tempfile::tempdir().unwrap();
@@ -345,12 +345,13 @@ mod tests {
     fn history_commit_writes_the_areas_status_shows_the_repo() {
         let (home, data) = seeded();
         let runtime = test_runtime(home.path());
+        let history = shown(home.path(), ".config/roamgate/history");
         let printed = run(&runtime, Some("desk"), &["commit"]);
         assert_eq!((printed.code, printed.stderr.as_str()), (0, ""));
         assert!(
             printed
                 .stdout
-                .contains("Committed in ~/.config/roamgate/history (1 commit)"),
+                .contains(&format!("Committed in {history} (1 commit)")),
             "{}",
             printed.stdout
         );
@@ -358,17 +359,14 @@ mod tests {
         assert!(data.join("history/settings/title_suffix.json").exists());
         let again = run(&runtime, Some("desk"), &["commit"]);
         assert_eq!(again.code, 0);
-        assert_eq!(
-            again.stdout,
-            "Nothing changed in ~/.config/roamgate/history.\n"
-        );
+        assert_eq!(again.stdout, format!("Nothing changed in {history}.\n"));
         let status = run(&runtime, Some("desk"), &["status"]);
         assert_eq!(status.code, 0);
         assert!(status.stdout.contains("Local history: on"));
         assert!(
             status
                 .stdout
-                .contains("Location: ~/.config/roamgate/history (default)")
+                .contains(&format!("Location: {history} (default)"))
         );
         assert!(
             regex::Regex::new(r"Last commit: .* settings: title_suffix, version; work: 1 item")
@@ -409,7 +407,10 @@ mod tests {
         assert_eq!(status.code, 0);
         assert_eq!(
             status.stdout,
-            "Local history: off\nLocation: ~/.config/roamgate/history (default)\nNo repository there yet.\n"
+            format!(
+                "Local history: off\nLocation: {} (default)\nNo repository there yet.\n",
+                shown(home.path(), ".config/roamgate/history")
+            )
         );
     }
 

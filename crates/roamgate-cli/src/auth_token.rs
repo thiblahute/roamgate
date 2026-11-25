@@ -207,6 +207,9 @@ mod print_tests {
         }
     }
 
+    // Unix rules over this machine's own temporary home: a Unix home's.
+    // The Windows rules have their test below.
+    #[cfg(unix)]
     #[test]
     fn prints_the_default_token_command_with_trailing_home_separators() {
         let home = tempfile::tempdir().unwrap();

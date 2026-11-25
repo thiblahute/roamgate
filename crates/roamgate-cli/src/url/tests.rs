@@ -11,7 +11,7 @@ fn token() -> String {
 
 fn write_token(cli: &TestCli) {
     std::fs::write(
-        cli.home().join(".config/roamgate/auth-token"),
+        cli.in_home(".config/roamgate/auth-token"),
         format!("{}\n", token()),
     )
     .unwrap();

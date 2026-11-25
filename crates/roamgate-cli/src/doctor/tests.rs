@@ -53,7 +53,7 @@ async fn doctor(cli: &TestCli, deps: &DoctorDeps, args: &[&str]) -> Ran {
 }
 
 fn write_token(cli: &TestCli, contents: &str) {
-    std::fs::write(cli.home().join(".config/roamgate/auth-token"), contents).unwrap();
+    std::fs::write(cli.in_home(".config/roamgate/auth-token"), contents).unwrap();
 }
 
 #[tokio::test]
@@ -124,7 +124,7 @@ async fn reports_an_unreachable_herdr_with_the_setup_command() {
     };
     let ran = doctor(&cli, &deps, &["--json"]).await;
     assert_eq!(ran.code, 1);
-    let socket = cli.home().join(".config/herdr/herdr.sock");
+    let socket = cli.in_home(".config/herdr/herdr.sock");
     assert!(
         ran.check("Herdr")["detail"]
             .as_str()
@@ -205,7 +205,7 @@ async fn warns_about_a_certificate_that_expires_soon() {
 async fn flags_an_invalid_connection_registry() {
     let cli = TestCli::new();
     cli.write_config("");
-    let registry = cli.home().join(".config/roamgate/connections.json");
+    let registry = cli.in_home(".config/roamgate/connections.json");
     std::fs::write(&registry, "{").unwrap();
     #[cfg(unix)]
     {
@@ -246,8 +246,14 @@ async fn prints_a_readable_summary() {
     assert_eq!(
         output[..4],
         [
-            "ok    Roamgate        1.2.3 on linux-x64, ~/bin/roamgate".to_owned(),
-            "ok    Service config  ~/.config/roamgate/roamgate.env".to_owned(),
+            format!(
+                "ok    Roamgate        1.2.3 on linux-x64, {}",
+                cli.shown("bin/roamgate")
+            ),
+            format!(
+                "ok    Service config  {}",
+                cli.shown(".config/roamgate/roamgate.env")
+            ),
             "warn  Login           no login token yet".to_owned(),
             "                      It is created by `roamgate service install` or the first start."
                 .to_owned(),
@@ -288,7 +294,7 @@ async fn a_loaded_but_crashed_launch_agent_is_not_reported_as_running() {
         },
     );
     cli.write_config("");
-    let agents = cli.home().join("Library/LaunchAgents");
+    let agents = cli.in_home("Library/LaunchAgents");
     std::fs::create_dir_all(&agents).unwrap();
     std::fs::write(agents.join("dev.roamgate.plist"), "<plist/>").unwrap();
     let deps = DoctorDeps {
