@@ -40,7 +40,31 @@ pub use record::{RECORD_BODY_LIMIT, RecordedSocket};
 const RENDERED_PREFIX: &str = "/rendered/";
 
 /// Where the core is: the peer while one is connected.
-pub type CoreLink = watch::Receiver<Option<Peer>>;
+pub type CoreLink = watch::Receiver<CoreState>;
+
+/// The core as its supervisor (`run_core`) last saw it.
+#[derive(Clone, Default)]
+pub enum CoreState {
+    /// Starting, or restarting after it ended: requests wait for it.
+    #[default]
+    Starting,
+    /// Connected over its channel.
+    Up(Peer),
+    /// Its last start failed (the front could not listen on its channel,
+    /// spawn it or hear its hello): requests fail at once until a later
+    /// start succeeds.
+    Down,
+}
+
+impl CoreState {
+    /// The peer while the core is connected.
+    pub fn peer(&self) -> Option<&Peer> {
+        match self {
+            Self::Up(peer) => Some(peer),
+            Self::Starting | Self::Down => None,
+        }
+    }
+}
 
 /// A browser socket the core serves, by the front's number.
 enum Socket {
@@ -311,12 +335,22 @@ impl Front {
         }
     }
 
-    async fn peer(&self) -> Option<Peer> {
+    /// The core's peer, waiting while it starts; else the 503's text.
+    async fn peer(&self) -> Result<Peer, &'static str> {
+        const STARTING: &str = "the server is starting";
         let mut core = self.core.clone();
-        let connected = core.wait_for(|peer| peer.as_ref().is_some_and(|peer| !peer.is_closed()));
-        match tokio::time::timeout(self.core_wait, connected).await {
-            Ok(Ok(peer)) => peer.clone(),
-            _ => None,
+        let settled = core.wait_for(|state| match state {
+            CoreState::Up(peer) => !peer.is_closed(),
+            CoreState::Down => true,
+            CoreState::Starting => false,
+        });
+        match tokio::time::timeout(self.core_wait, settled).await {
+            Ok(Ok(state)) => match &*state {
+                CoreState::Up(peer) => Ok(peer.clone()),
+                CoreState::Down => Err("the server's core is not running"),
+                CoreState::Starting => Err(STARTING),
+            },
+            _ => Err(STARTING),
         }
     }
 
@@ -467,8 +501,9 @@ impl Front {
 
     /// An `http` to the core, the request as the browser sent it.
     async fn forward(&self, parts: Parts, body: Body, client_ip: String) -> http::Response<Body> {
-        let Some(peer) = self.peer().await else {
-            return plain(503, "the server is starting");
+        let peer = match self.peer().await {
+            Ok(peer) => peer,
+            Err(text) => return plain(503, text),
         };
         let has_body = !matches!(parts.method, http::Method::GET | http::Method::HEAD);
         let receiver = has_body.then(|| {
@@ -505,8 +540,9 @@ impl Front {
         body: Body,
         client_ip: String,
     ) -> http::Response<Body> {
-        let Some(peer) = self.peer().await else {
-            return plain(503, "the server is starting");
+        let peer = match self.peer().await {
+            Ok(peer) => peer,
+            Err(text) => return plain(503, text),
         };
         let mut request = http::Request::from_parts(parts, body);
         let accepted = match roamgate_ws::upgrade::accept(&mut request, true) {
