@@ -7,6 +7,12 @@ use std::process::ExitCode;
 
 use roamgate::{Options, parse_args};
 
+/// mimalloc, not the system's: glibc's per-thread arenas kept what the
+/// large transcripts' reads let go of (a core at 5 GB resident for 0.7 GB
+/// in use).
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

@@ -20,6 +20,7 @@ base64 = "0.22"
 bytes = "1"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 http = "1"
+mimalloc = { version = "0.1", default-features = false }
 roamgate-activity = { path = "../roamgate-activity" }
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-archive = { path = "../roamgate-archive" }
