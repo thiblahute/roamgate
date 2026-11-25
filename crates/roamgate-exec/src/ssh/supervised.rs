@@ -448,6 +448,10 @@ mod tests {
     use super::*;
     use roamgate_base::clock::TokioClock;
 
+    /// A child stopped by SIGTERM: 128 + 15 on Unix; Windows has no
+    /// signals, its process ends by TerminateProcess with exit code 1.
+    const TERMINATED: i32 = if cfg!(windows) { 1 } else { 128 + 15 };
+
     #[tokio::test]
     async fn a_real_child_reports_its_exit_and_a_bounded_stderr_tail() {
         let script = format!(
@@ -484,7 +488,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(child.exited().await, Ok(128 + 15));
+        assert_eq!(child.exited().await, Ok(TERMINATED));
         // A kill after the exit does nothing.
         assert_eq!(child.kill(KillSignal::Kill), Ok(()));
     }
@@ -506,7 +510,7 @@ mod tests {
                 .await
         );
         child.kill(KillSignal::Term).unwrap();
-        assert_eq!(child.exited().await, Ok(128 + 15));
+        assert_eq!(child.exited().await, Ok(TERMINATED));
 
         // Output that ends without the line.
         let silent = SupervisedSsh::spawn_relay(

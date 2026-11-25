@@ -283,6 +283,8 @@ async fn a_repository_with_no_commit_yet_reads_its_files_as_new() {
 }
 
 #[tokio::test]
+// Unix only: Windows file names cannot hold `*`.
+#[cfg(unix)]
 async fn glob_characters_in_a_name_are_taken_literally() {
     let repo = repository();
     fs::write(repo.root.join("x*.txt"), "star\n").unwrap();
