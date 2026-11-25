@@ -316,14 +316,20 @@ impl Inner {
             "explicit_legacy_override": explicit_legacy_override,
         });
         let standalone = standalone(cx)?.clone();
+        // A node records no activity, has no settings of its own and no
+        // review agents: the home's.
+        let node = roamgate_base::node::active();
         // No Bun recorder to stop first: the core's records now.
-        let activity = standalone.call("internal.activity.start", json!({}), Ctx::default());
+        let activity =
+            (!node).then(|| standalone.call("internal.activity.start", json!({}), Ctx::default()));
         let inner = self.clone();
         let settings_cx = cx.clone();
         tokio::spawn(async move {
-            // What a settings change is compared against.
-            super::standalone::prime_settings(&layer, &settings_cx).await;
-            super::standalone::runtime::start_review_agents(&layer, &settings_cx);
+            if !node {
+                // What a settings change is compared against.
+                super::standalone::prime_settings(&layer, &settings_cx).await;
+                super::standalone::runtime::start_review_agents(&layer, &settings_cx);
+            }
             if let Err(error) = standalone
                 .call("internal.host.start", host_start, Ctx::default())
                 .await
@@ -337,6 +343,9 @@ impl Inner {
             inner.started.send_replace(true);
         });
         tokio::spawn(async move {
+            let Some(activity) = activity else {
+                return;
+            };
             if let Err(error) = activity.await {
                 tracing::warn!(
                     scope = "activity",
@@ -358,7 +367,11 @@ impl Inner {
             .clone();
         let into = clients.clone();
         standalone.set_push_sink(Arc::new(move |push| into.deliver(&push)));
-        super::standalone::feed::register(cx);
+        let node = roamgate_base::node::active();
+        // A node's notifications are the home's feed.
+        if !node {
+            super::standalone::feed::register(cx);
+        }
         // A family taken from Bun first has it let go of its part: with no
         // Bun, there is nothing to let go of.
         for target in [
@@ -378,6 +391,10 @@ impl Inner {
             .layer
             .get_or_init(|| Arc::new(Layer::new(self.host.clone(), clients, cx.clock.clone())));
         super::standalone::register(standalone, layer);
+        // A node runs no Claude mod hub: the home's review family has it.
+        if node {
+            return;
+        }
         // The Claude mod hub runs here: the core owns review and
         // conversation (index.ts `switchModHub`, its families heard of a
         // moment after this one).
@@ -440,8 +457,13 @@ impl Inner {
                 &ProcessEnv,
             ),
             herdr_task_notifications: config.task_notification_source == "herdr",
+            node: crate::node::advertisement(),
         };
         clients.send(open.socket_id, hello.line(), "hello", None);
+        // A node's page has the home's forwards, on the home's socket.
+        if roamgate_base::node::active() {
+            return json!({"accepted": true, "transport": "ws"});
+        }
         let forwards = match self.layer.get() {
             Some(layer) => super::standalone::forwards::hello(layer),
             None => json!({"forwards": []}),
@@ -662,6 +684,11 @@ impl Inner {
             }
         };
         let method = request.method.as_str();
+        // A node leaves the shared families to its home.
+        if roamgate_base::node::active() && crate::node::home_method(method) {
+            let error = crate::node::served_by_home(method);
+            return send(publisher.error(&error.message, error.code.as_deref(), "node-refused"));
+        }
         let Ok(standalone) = standalone(cx) else {
             return send(publisher.error("no standalone core", None, "core-error"));
         };
@@ -802,7 +829,15 @@ impl Inner {
         }
         // A rendered review's page, before the gate (its token is its
         // credential).
+        if path == "/api/node" {
+            return Ok(match crate::node::advertisement() {
+                Some(node) => json_response(200, &json!({ "node": node }), Vec::new()),
+                None => HttpResponse::status(404),
+            });
+        }
+        // The rendered reviews are the home's.
         if path.starts_with("/rendered/")
+            && !roamgate_base::node::active()
             && let Some(layer) = self.layer.get()
         {
             return Ok(super::standalone::rendered_http(layer, &request, body)

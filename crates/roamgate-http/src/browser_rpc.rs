@@ -198,11 +198,14 @@ pub struct Hello<'a> {
     pub file_reveal: bool,
     /// Task notifications come from Herdr's semantic stream.
     pub herdr_task_notifications: bool,
+    /// A node's page is told of it (`{home, connection_id, version}`): the
+    /// home serves everything but this machine's own connection.
+    pub node: Option<Value>,
 }
 
 impl Hello<'_> {
     pub fn line(&self) -> String {
-        json!({
+        let mut hello = json!({
             "hello": true,
             "socket": self.socket,
             "bridge_protocol_version": 2,
@@ -217,8 +220,11 @@ impl Hello<'_> {
                 "list_delta": true,
                 "herdr_task_notifications": self.herdr_task_notifications,
             },
-        })
-        .to_string()
+        });
+        if let Some(node) = &self.node {
+            hello["node"] = node.clone();
+        }
+        hello.to_string()
     }
 }
 

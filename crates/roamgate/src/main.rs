@@ -22,7 +22,11 @@ async fn main() -> ExitCode {
         Options::Core => {
             let env = roamgate_base::env::ProcessEnv;
             let families = if roamgate_sidecar::core::standalone_on(&env) {
-                roamgate::standalone_families()
+                if roamgate_base::node::active() {
+                    roamgate::node::node_families()
+                } else {
+                    roamgate::standalone_families()
+                }
             } else {
                 roamgate::core_families()
             };

@@ -484,9 +484,16 @@ impl Composition {
             remote_platform,
             connection_logger,
         );
-        renamer.start();
-        if source == TaskNotificationSource::Herdr {
-            tasks.listen(client_socket_path);
+        // A node renames no tab and publishes no task notification: the
+        // home does both for this machine, over its SSH connection.
+        let node = roamgate_base::node::active();
+        if node {
+            tasks.disposed.store(true, Ordering::SeqCst);
+        } else {
+            renamer.start();
+            if source == TaskNotificationSource::Herdr {
+                tasks.listen(client_socket_path);
+            }
         }
         Arc::new(Self {
             bridge,
@@ -500,7 +507,9 @@ impl Composition {
     pub(crate) fn herdr_event(&self, event: &Value) {
         let events = self.tasks.tracker.lock().unwrap().handle_herdr_event(event);
         self.tasks.events(events);
-        self.renamer.handle_herdr_event(event);
+        if !roamgate_base::node::active() {
+            self.renamer.handle_herdr_event(event);
+        }
         if event.get("event").and_then(Value::as_str) == Some("workspace.focused") {
             self.bridge.refresh_popup_observer_focus();
         }

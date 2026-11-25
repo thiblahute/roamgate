@@ -57,6 +57,9 @@ pub struct DataContext {
     pub platform: Platform,
     /// APPDATA (Windows).
     pub app_data: Option<PathBuf>,
+    /// A node's own data root (`ROAMGATE_DATA_ROOT`), instead of
+    /// `<config>/roamgate`; nothing is migrated into it.
+    pub root: Option<PathBuf>,
 }
 
 fn other(message: String) -> io::Error {
@@ -151,20 +154,27 @@ impl DataContext {
             home,
             platform,
             app_data: env.var("APPDATA").map(PathBuf::from),
+            root: crate::node::data_root(env),
         }
     }
 
+    /// The data root is `ROAMGATE_DATA_ROOT` of the process when set (a
+    /// node's), else `<config>/roamgate` of `home`.
     pub fn new(home: impl Into<PathBuf>, platform: Platform, app_data: Option<PathBuf>) -> Self {
         Self {
             home: home.into(),
             platform,
             app_data,
+            root: crate::node::data_root(&crate::env::ProcessEnv),
         }
     }
 
     /// `<config>/roamgate`: APPDATA (or ~/AppData/Roaming) on Windows,
     /// ~/.config elsewhere.
     pub fn data_root(&self) -> PathBuf {
+        if let Some(root) = &self.root {
+            return root.clone();
+        }
         let base = match self.platform {
             Platform::Windows => self
                 .app_data
@@ -327,6 +337,11 @@ impl DataContext {
     /// ~/.config on Windows too; a cleared connection registry
     /// (`connections.json.legacy-cleared`) never comes back.
     pub fn default_data_file(&self, file: DataFile) -> io::Result<PathBuf> {
+        if self.root.is_some() {
+            let path = self.data_root().join(file.name());
+            self.assert_safe_data_path(&path)?;
+            return Ok(path);
+        }
         let legacy_root = match file {
             DataFile::AuthToken => self.legacy_data_root(),
             _ => self.home.join(".config").join("herdr-gui"),

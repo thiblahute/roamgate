@@ -42,6 +42,23 @@
         "herdr_task_notifications": { "type": "boolean" }
       },
       "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "description": "a machine's node (`roamgate node --listen`): the home that serves everything but this machine's own connection",
+      "required": ["home", "connection_id", "version"],
+      "properties": {
+        "home": {
+          "type": "string",
+          "description": "the home's origin, no path"
+        },
+        "connection_id": {
+          "type": "string",
+          "description": "the node's one connection, `local`"
+        },
+        "version": { "type": "string" }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

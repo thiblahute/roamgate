@@ -576,7 +576,9 @@ impl Runtime {
         let status = GitStatus::new(conn.clone(), cx.clock.clone(), GIT_STATUS_COLD_BUDGET);
         let resolve = resolver(&files, &conn);
         let disposed = Arc::new(AtomicBool::new(false));
-        let auto_sync = (!conn.is_windows()).then(|| {
+        // A node's checkouts are synced by the home, which keeps the
+        // results in its settings.
+        let auto_sync = (!conn.is_windows() && !roamgate_base::node::active()).then(|| {
             let invalidate: Invalidate = {
                 let status = status.clone();
                 Arc::new(move |root: &str| status.invalidate_root(root))
@@ -1343,7 +1345,8 @@ impl CoreFamily for WorkspaceFamily {
             return;
         }
         tokio::spawn(self.stop_all());
-        if owned {
+        // The workspace arrangement is the home's (its settings.json).
+        if owned && !roamgate_base::node::active() {
             self.start_tree(cx);
         }
     }

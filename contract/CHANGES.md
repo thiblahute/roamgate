@@ -6,6 +6,29 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.40
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+A machine's node (Mac node phase 3; Rust only): `roamgate node --listen
+<host:port> --home <origin>` runs the front and its standalone core again
+with `ROAMGATE_NODE_HOME` (the home's origin) and `ROAMGATE_DATA_ROOT` (its
+own data root, default `~/.config/roamgate-node`, in place of
+`<config>/roamgate`, nothing migrated into it) and one local connection,
+id `local`, to this machine's Herdr. The hello on its `/ws` carries
+`node: {home, connection_id, version}` (push/hello.json) and an authed
+`GET /api/node` answers `{node}` (404 outside a node). Its core serves the
+front, host, workspace and agent_sessions families; every other family
+keeps its name but answers `served_by_home` (calls), 404 with that code
+(paths) and runs no background work, and the front refuses the same way
+`settings.*`, `bridge.ui_settings.*`, `bridge.workspace_tree.*`,
+`forward.*`, the connections' registry changes and `bridge.time_report`.
+A node registers no notification feed, Claude mod hub or review agents,
+records no activity, installs no Claude start hook, renames no tab,
+publishes no task notification and runs no workspace auto-sync or
+arrangement; its hello is not followed by the forwards. The server and
+the browser surface of a home are unchanged; the inventory too.
+
 ## 1.39
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

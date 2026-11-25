@@ -5,6 +5,7 @@
 //! |---|---|---|
 //! | [`env`](mod@env) | `ROAMGATE_*` over `HERDR_GUI_*`, an empty value counting | config/environment |
 //! | [`paths`] | data paths and the legacy herdr-gui migration | config/data-paths |
+//! | [`node`] | node mode: the home's origin, the node's own data root | (none) |
 //! | [`private`] | 0700 directories, 0600 files, no symlinks, single links | the private-file checks |
 //! | [`json_store`] | `AtomicJsonStore`: versioned JSON files, tmp, fsync, rename | the tmp-and-rename writers |
 //! | [`sqlite`] | `SqliteDb::open`: PRAGMAs, user_version, safe path | the SQLite open paths |
@@ -33,6 +34,7 @@ pub mod json_store;
 pub mod lock;
 pub mod log;
 pub mod loop_stall;
+pub mod node;
 pub mod paths;
 pub mod private;
 pub mod record;

@@ -324,7 +324,15 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
     }
     let settings_path = roamgate_base::settings::settings_path(env.as_ref(), &data)
         .unwrap_or_else(|_| data.data_root().join(DataFile::Settings.name()));
+    // A node's title is its own (`roamgate node --title-suffix`): it has
+    // no settings of its own.
+    let node_title = env
+        .var(crate::node::listen::TITLE_SUFFIX_ENV)
+        .filter(|_| roamgate_base::node::home(env.as_ref()).is_some());
     let title_suffix = Box::new(move || {
+        if let Some(title) = &node_title {
+            return title.clone();
+        }
         let raw = std::fs::read_to_string(&settings_path)
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())

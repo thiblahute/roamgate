@@ -154,7 +154,8 @@ pub struct ServerSpec {
     #[serde(default)]
     pub start: Option<bool>,
     /// The server to run: `standalone` (the release binary of this
-    /// checkout, built once, build.rs), or a command line (`${REPO}` named
+    /// checkout, built once, build.rs), `node` (its debug `roamgate node`,
+    /// the scenario's `args` after it), or a command line (`${REPO}` named
     /// in it); default `ROAMGATE_SERVER_CMD`.
     #[serde(default)]
     pub command: Option<String>,
@@ -310,6 +311,12 @@ pub fn options(scenario: &Scenario) -> Result<RunOptions> {
         None => Some(crate::run::server_command().0),
         Some("standalone") => Some(vec![
             crate::build::standalone()?.to_string_lossy().into_owned(),
+        ]),
+        // A machine's node (`roamgate node --listen`): this checkout's
+        // debug `roamgate`.
+        Some("node") => Some(vec![
+            crate::build::core()?.to_string_lossy().into_owned(),
+            "node".into(),
         ]),
         Some(line) => Some(
             line.split_whitespace()

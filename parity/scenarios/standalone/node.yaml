@@ -1,0 +1,116 @@
+name: a node serves its own connection to the browser and leaves every shared family to its home
+family: standalone
+tier: T2
+description: >
+  `roamgate node --listen 127.0.0.1:0 --home https://home.example` (Mac node
+  phase 3) runs the same front and standalone core with its own data root
+  (~/.config/roamgate-node) and one local connection, id `local`, to this
+  machine's Herdr. Its hello and GET /api/node name the home; topology,
+  terminals, files and git of its connection are served; the shared
+  families (Work, reviews, settings, notifications, history...) answer
+  `served_by_home`; no shared job runs (no activity recorder, Claude mod
+  hub, review agent socket, Claude start hook, tab renamer or auto-sync) and
+  nothing is written under ~/.config/roamgate, ~/.claude or ~/.local/bin.
+platforms: [linux, macos]
+server:
+  command: node
+  args: [--listen, "127.0.0.1:0", --home, "https://home.example/"]
+  clock: false
+  herdr:
+    endpoint: true
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/repo", focused: true }]
+    screens: { p1: "node $ " }
+steps:
+  - sh: >
+      mkdir -p repo && cd repo && git init -q -b main && echo hello > notes.txt &&
+      git add notes.txt && git -c user.name=t -c user.email=t@example.com commit -qm one
+  - http: GET /api/node
+    cookie: false
+    expect: { status: 401 }
+  - login: {}
+  - http: GET /api/node
+    expect:
+      status: 200
+      json:
+        node:
+          {
+            home: "https://home.example",
+            connection_id: local,
+            version: "{{string}}",
+          }
+  - connect:
+      expect_hello:
+        {
+          hello: true,
+          default_connection_id: local,
+          node: { home: "https://home.example", connection_id: local },
+        }
+  - call: connections.list
+    reply:
+      {
+        default_connection_id: local,
+        connections: [{ id: local, type: local }],
+      }
+  - call: workspace.list
+    reply: { workspaces: [{ workspace_id: w1, label: repo }] }
+  - call: pane.list
+    params: { workspace_id: w1 }
+    reply: { panes: [{ pane_id: p1 }] }
+  - call: file.read
+    params: { workspace_id: w1, path: notes.txt }
+    reply: "{{any}}"
+  - call: git.diff_summary
+    params: { workspace_id: w1 }
+    reply: "{{any}}"
+  - call: terminal.attach
+    params: { terminal_id: term-p1, pane_id: p1, cols: 80, rows: 24 }
+    reply: "{{any}}"
+  - expect_push: terminal
+  - call: terminal.detach
+    params: { terminal_id: term-p1 }
+    reply: { ok: true }
+  - call: bridge.work.list
+    error: { code: served_by_home }
+  - call: review.list
+    error: { code: served_by_home }
+  - call: settings.get
+    error: { code: served_by_home }
+  - call: bridge.ui_settings.update
+    params: { key: theme, value: dark }
+    error: { code: served_by_home }
+  - call: bridge.notifications.status
+    error: { code: served_by_home }
+  - call: agent_chat.send
+    params: { pane_id: p1, text: hi }
+    error: { code: served_by_home }
+  - call: connections.create
+    params:
+      {
+        profile:
+          {
+            id: x,
+            label: x,
+            type: local,
+            control_socket_path: "${ROOT}/x.sock",
+            client_socket_path: "${ROOT}/x-client.sock",
+            auto_connect: false,
+          },
+      }
+    error: { code: served_by_home }
+  - http: GET /api/history
+    expect: { status: 404, json: { code: served_by_home } }
+  - http: GET /api/instance-settings
+    expect: { status: 404, json: { code: served_by_home } }
+  - assert_file: { path: .config/roamgate-node/connections.json }
+  - expect_log:
+      lacks:
+        - the Claude mod hub
+        - agent socket listening
+        - claude start hook
+        - the recorder did not start
+        - the connections did not start
+        - auto-sync
+  - assert_absent: "${HOME}/.config/roamgate"
+  - assert_absent: "${HOME}/.claude"
+  - assert_absent: "${HOME}/.local/bin"

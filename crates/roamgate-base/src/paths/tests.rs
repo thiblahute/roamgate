@@ -51,6 +51,36 @@ fn data_roots_respect_appdata() {
     assert!(!settings.exists());
 }
 
+/// A node's data root replaces `~/.config/roamgate`: its files are its
+/// own, and nothing of the home-style or legacy roots is copied in.
+#[test]
+fn a_node_data_root_takes_nothing_from_the_home_style_roots() {
+    let home = tempfile::tempdir().unwrap();
+    let root = home.path();
+    write(&root.join(".config/roamgate/settings.json"), "{}\n", 0o600);
+    write(
+        &root.join(".config/herdr-gui/connections.json"),
+        "{}\n",
+        0o600,
+    );
+    let node_root = root.join(".config/roamgate-node");
+    let env = [
+        ("HOME", root.to_str().unwrap()),
+        (crate::node::DATA_ROOT_ENV, node_root.to_str().unwrap()),
+    ];
+    let context = DataContext::from_env(&env);
+    assert_eq!(context.data_root(), node_root);
+    for file in [
+        DataFile::Settings,
+        DataFile::Connections,
+        DataFile::AuthToken,
+    ] {
+        let path = context.default_data_file(file).unwrap();
+        assert_eq!(path, node_root.join(file.name()));
+        assert!(!path.exists(), "{}", file.name());
+    }
+}
+
 #[test]
 fn legacy_data_is_copied_without_resetting_credentials() {
     for platform in [Platform::Unix, Platform::Windows] {

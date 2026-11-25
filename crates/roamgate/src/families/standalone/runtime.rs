@@ -524,6 +524,10 @@ fn take_events(layer: &Layer, cx: &FamilyContext, args: &Value) -> Result<Vec<Va
 /// there), the Claude mods' tools, and the sockets it listens on. Told
 /// when it changed, after each status change and every second.
 pub(crate) fn send_review_agents(layer: &Arc<Layer>, cx: &FamilyContext) {
+    // A node's agents use the home's review family, over its SSH link.
+    if roamgate_base::node::active() {
+        return;
+    }
     let local = !cfg!(windows);
     let hosts = layer.review_agent_hosts.lock().unwrap().clone();
     let mut channels = serde_json::Map::new();
@@ -589,6 +593,9 @@ fn setup_remote_review_agent(
     host: &str,
     control_path: &str,
 ) {
+    if roamgate_base::node::active() {
+        return;
+    }
     // Until it is set up again, comments are not typed for a missing
     // client.
     layer.review_agent_hosts.lock().unwrap().remove(id);
@@ -768,6 +775,11 @@ fn connection_status(
 /// settings get the hook that hands a `claude` started in a terminal to
 /// conversation mode, while the setting says so.
 pub(super) async fn ensure_claude_start_hook(layer: &Layer, cx: &FamilyContext, id: &str) {
+    // A node never touches Claude's settings: the home installs the hook
+    // over its SSH connection.
+    if roamgate_base::node::active() {
+        return;
+    }
     let Ok(Some(lease)) = layer.ready(id) else {
         return;
     };
