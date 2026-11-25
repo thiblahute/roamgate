@@ -19,6 +19,11 @@ on:
 permissions:
   contents: read
 
+# A newer push of the same branch replaces a run still going.
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -36,6 +41,7 @@ jobs:
     outputs:
       targets: ${{ steps.targets.outputs.targets }}
       version: ${{ steps.targets.outputs.version }}
+      packages: ${{ steps.targets.outputs.packages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -46,9 +52,22 @@ jobs:
         run: |
           echo "targets=$(cargo xtask targets --json)" >> "$GITHUB_OUTPUT"
           echo "version=$(cargo xtask version --next)" >> "$GITHUB_OUTPUT"
+          # A ci/** push runs the checks only, unless its branch is about
+          # the packages (the fork's runners are few): ci/*package*,
+          # ci/*smoke*, ci/*full*, ci/ci-runners-*.
+          packages=true
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            case "$GITHUB_REF_NAME" in
+              ci/*package* | ci/*smoke* | ci/*full* | ci/ci-runners-*) ;;
+              ci/*) packages=false ;;
+            esac
+          fi
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
 
   web:
     name: Web app
+    needs: targets
+    if: needs.targets.outputs.packages == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -70,6 +89,7 @@ jobs:
   package:
     name: Package ${{ matrix.target.platform }}
     needs: [targets, web]
+    if: needs.targets.outputs.packages == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -115,6 +135,7 @@ jobs:
   check:
     name: Smoke ${{ matrix.target.platform }}
     needs: [targets, web, package]
+    if: needs.targets.outputs.packages == 'true'
     strategy:
       fail-fast: false
       matrix:

@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# A newer push of the same branch replaces a run still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+
 jobs:
   validate:
     runs-on: ubuntu-latest
