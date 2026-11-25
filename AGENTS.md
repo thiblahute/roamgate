@@ -33,7 +33,7 @@ the root manifest. Keep runtime dependencies in their owning workspace.
 - `bun run build`: build the frontend and the release server binary.
 - `cargo xtask targets`: list the release targets of `targets.toml`.
 - `cargo xtask package <platform...|all>`: build, package and verify release
-  targets (versioned and latest `tar.xz`, checksums and update manifests in
+  targets (versioned and latest `tar.xz` archives, `.zip` on Windows, checksums and update manifests in
   `target/dist`); run `bun run build:web` first.
 - `cargo xtask update-proof <platform> --from <roamgate>`: install a package
   through an earlier binary's `roamgate update` in a sandbox.
@@ -53,10 +53,7 @@ the root manifest. Keep runtime dependencies in their owning workspace.
 - `bun run typecheck:quick`: the same checks with `tsc` and no dependency
   rebuild. See [local validation](CONTRIBUTING.md#validation).
 - `bun run precommit`: run formatting, lint, full type checks, and `test:quick`.
-- Rust: `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D
-  warnings`, and `cargo nextest run --locked` (the parity suite is
-  `cargo test -p roamgate-parity`; see `CONTRIBUTING.md`).
-- `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings` and
+- `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D warnings` and
   `cargo test` (or `cargo nextest run`): the Rust checks; `cargo test -p
   roamgate-parity --test scenarios` runs the parity suite against this
   checkout's debug `roamgate` (`ROAMGATE_SERVER_CMD` names another server).
