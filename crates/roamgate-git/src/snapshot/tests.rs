@@ -50,6 +50,9 @@ fn repository() -> Repo {
     let root = dir.path().to_path_buf();
     git(&root, &["init", "-q"]);
     git(&root, &["config", "core.bigFileThreshold", "1"]);
+    // Snapshots take the files' bytes unfiltered: Git for Windows' system
+    // autocrlf would check files out with CRLF, unlike their blobs.
+    git(&root, &["config", "core.autocrlf", "false"]);
     Repo { _dir: dir, root }
 }
 
@@ -647,10 +650,22 @@ impl Runner for Disconnecting {
             let Invocation::Ssh { command, .. } = &request.invocation else {
                 panic!("not an SSH run: {request:?}");
             };
-            let argv = vec!["sh".to_owned(), "-lc".to_owned(), command.clone()];
+            // Through stdin on Windows, as the snapshot runs locally there:
+            // Git Bash does not get this script whole as one argument.
+            let (argv, input) = if cfg!(windows) {
+                (
+                    vec!["sh".to_owned(), "-l".to_owned(), "-s".to_owned()],
+                    Some(command.clone().into_bytes()),
+                )
+            } else {
+                (
+                    vec!["sh".to_owned(), "-lc".to_owned(), command.clone()],
+                    None,
+                )
+            };
             *self.remote.lock().unwrap() = Some(tokio::spawn(async move {
                 LocalRunner::system()
-                    .run_local(&argv, None, Duration::from_secs(30))
+                    .run_local(&argv, input.as_deref(), Duration::from_secs(30))
                     .await
             }));
             Err(RunError(
