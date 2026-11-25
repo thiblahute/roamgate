@@ -10,7 +10,7 @@
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
-use roamgate_base::env::{Env, ProcessEnv};
+use roamgate_base::env::ProcessEnv;
 use roamgate_channel::family::FamilyContext;
 use roamgate_channel::protocol::RpcError;
 use roamgate_claude::plugin::{ClaudeModAction, claude_mod_host_script, claude_mod_integration};
@@ -220,11 +220,12 @@ impl Sockets {
     /// Starts the socket on the service just opened.
     pub fn start(&mut self, cx: &FamilyContext, service: ReviewService) {
         self.stop();
-        let home = ProcessEnv.var("HOME").unwrap_or_default();
+        // HOME, USERPROFILE on Windows.
+        let home = roamgate_base::paths::DataContext::from_env(&ProcessEnv).home;
         self.socket = Some(AgentSocket::new(AgentSocketOptions {
             service,
             directory: review_directory(&ProcessEnv),
-            home: home.into(),
+            home,
             host: Arc::new(ReverseSocketHost { cx: cx.clone() }),
             claude_mod: Some(Arc::new(super::claude_mod::SwitchMods {
                 reverse: ReverseMods { cx: cx.clone() },
