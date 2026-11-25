@@ -19,6 +19,10 @@
 #   update    `roamgate update` installs it: the updater knows the platform
 #   bun       the Bun compile target of the Pi sidecar roamgate-pi the
 #             package ships
+#   release_updates
+#             false: the last published release's `roamgate update` does
+#             not install it, so its update proof starts from a build of
+#             this checkout (default true)
 #   container a container image the check also smokes the package in (the
 #             system the target is for, when the runner is not it)
 
@@ -46,6 +50,7 @@ runner = "ubuntu-latest"
 check = "ubuntu-latest"
 update = false
 bun = "bun-linux-x64-musl"
+release_updates = false
 container = "alpine:3.22"
 
 [[target]]
@@ -98,6 +103,7 @@ runner = "ubuntu-latest"
 check = "windows-latest"
 update = false
 bun = "bun-windows-x64"
+release_updates = false
 
 [[target]]
 platform = "windows-arm64"
@@ -110,3 +116,4 @@ runner = "ubuntu-latest"
 check = "windows-11-arm"
 update = false
 bun = "bun-windows-arm64"
+release_updates = false

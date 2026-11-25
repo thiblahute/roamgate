@@ -1,0 +1,35 @@
+name: Package a target's earlier build
+description: >
+  For a target the last published release cannot update (targets.toml
+  release_updates = false): the package again, at a version below the one
+  packaged, as the artifact update-from-<platform>. The check's update
+  proof updates its roamgate to the package. Run after cargo xtask package.
+
+inputs:
+  platform:
+    description: The target's platform
+    required: true
+  version:
+    description: The version just packaged
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Package the earlier build
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        # This checkout's version, or below the release this run makes.
+        from="$(cargo xtask version)"
+        if [ "$from" = "$VERSION" ]; then from="$VERSION-0"; fi
+        cargo xtask package "$PLATFORM" --version "$from" --out target/dist-from
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        # Not roamgate-*: the release publishes those artifacts.
+        name: update-from-${{ inputs.platform }}
+        path: target/dist-from/roamgate-${{ inputs.platform }}.*
+        if-no-files-found: error
+        retention-days: 7

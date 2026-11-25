@@ -21,6 +21,11 @@ inputs:
   update:
     description: Whether `roamgate update` installs the target
     required: true
+  release-updates:
+    description: >
+      Whether the last published release's updater installs the target;
+      if not, the proof updates the artifact update-from-<platform>
+    required: true
   token:
     description: A token for gh release download
     required: true
@@ -62,29 +67,42 @@ runs:
         export PATH="$HOME/.cargo/bin:$PATH"
         cargo xtask smoke "$PLATFORM" --version "$VERSION" --container
     # Existing installs update in place: the last published release's
-    # binary updates itself to this package in a sandbox.
-    - name: Update the last release to it
+    # binary updates itself to this package in a sandbox, or, for a target
+    # no release can update yet, an earlier build of this checkout.
+    - if: inputs.update == 'true' && inputs.release-updates != 'true'
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      with:
+        name: update-from-${{ inputs.platform }}
+        path: target/dist-from
+    - name: Update an earlier roamgate to it
       if: inputs.update == 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
         PLATFORM: ${{ inputs.platform }}
         VERSION: ${{ inputs.version }}
+        RELEASE_UPDATES: ${{ inputs.release-updates }}
+        CONTAINER: ${{ inputs.container }}
         # Releases are published upstream; a fork has none to update from.
         RELEASES_REPO: powerfooI/roamgate
       run: |
         export PATH="$HOME/.cargo/bin:$PATH"
-        # The latest release but the one this run publishes.
-        previous="$(gh release list --repo "$RELEASES_REPO" --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '[.[] | select(.tagName != env.GITHUB_REF_NAME)][0].tagName // ""')"
-        if [ -z "$previous" ]; then
-          echo "No earlier release to update from."
-          exit 0
+        if [ "$RELEASE_UPDATES" = true ]; then
+          # The latest release but the one this run publishes.
+          previous="$(gh release list --repo "$RELEASES_REPO" --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '[.[] | select(.tagName != env.GITHUB_REF_NAME)][0].tagName // ""')"
+          if [ -z "$previous" ]; then
+            echo "No earlier release to update from."
+            exit 0
+          fi
+          from="$RUNNER_TEMP/previous"
+          mkdir -p "$from"
+          gh release download "$previous" --repo "$RELEASES_REPO" \
+            --pattern "roamgate-$PLATFORM.tar.xz" --dir "$from"
+          archive="$from/roamgate-$PLATFORM.tar.xz"
+        else
+          archive="$(ls target/dist-from/roamgate-"$PLATFORM".tar.xz target/dist-from/roamgate-"$PLATFORM".zip 2>/dev/null | head -n 1)"
         fi
-        from="$RUNNER_TEMP/previous"
-        mkdir -p "$from"
-        gh release download "$previous" --repo "$RELEASES_REPO" \
-          --pattern "roamgate-$PLATFORM.tar.xz" --dir "$from"
-        tar -xJf "$from/roamgate-$PLATFORM.tar.xz" -C "$from" "roamgate-$PLATFORM/roamgate"
-        cargo xtask update-proof "$PLATFORM" \
-          --from "$from/roamgate-$PLATFORM/roamgate" \
-          --version "$VERSION"
+        # In the target's container when it has one (musl: Alpine).
+        set -- --archive "$archive" --version "$VERSION"
+        if [ -n "$CONTAINER" ]; then set -- "$@" --container; fi
+        cargo xtask update-proof "$PLATFORM" "$@"

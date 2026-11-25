@@ -99,6 +99,11 @@ jobs:
         env:
           VERSION: ${{ needs.targets.outputs.version }}
         run: cargo xtask package "${{ matrix.target.platform }}" --version "$VERSION"
+      - if: matrix.target.update && !matrix.target.release_updates
+        uses: ./.github/actions/update-from
+        with:
+          platform: ${{ matrix.target.platform }}
+          version: ${{ needs.targets.outputs.version }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: rust-roamgate-${{ matrix.target.platform }}
@@ -134,4 +139,5 @@ jobs:
           version: ${{ needs.targets.outputs.version }}
           container: ${{ matrix.target.container }}
           update: ${{ matrix.target.update }}
+          release-updates: ${{ matrix.target.release_updates }}
           token: ${{ github.token }}
