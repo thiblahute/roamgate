@@ -303,7 +303,7 @@ mod tests {
         let (_dir, root) = checkout();
         let (options, calls) = recording("win32");
         let result = reveal_local_path(&root, "docs/guide.md", &options).unwrap();
-        let file = format!("{root}/docs/guide.md");
+        let file = path_text(&Path::new(&root).join("docs").join("guide.md"));
         assert_eq!(
             result,
             FileRevealResult {
@@ -322,7 +322,7 @@ mod tests {
         let (_dir, root) = checkout();
         let (options, calls) = recording("darwin");
         let result = reveal_local_path(&root, "docs", &options).unwrap();
-        let docs = format!("{root}/docs");
+        let docs = path_text(&Path::new(&root).join("docs"));
         assert_eq!(
             result,
             FileRevealResult {

@@ -45,7 +45,12 @@ fn reads_relative_and_absolute_file_previews() {
     let absolute = read_local_file(text(root), text(&outside)).unwrap();
     assert_eq!(absolute.decoded.text.as_deref(), Some("outside"));
     assert!(!absolute.decoded.binary);
-    assert!(absolute.path.ends_with(&format!("/{outside_name}")));
+    let separator = std::path::MAIN_SEPARATOR;
+    assert!(
+        absolute
+            .path
+            .ends_with(&format!("{separator}{outside_name}"))
+    );
     fs::remove_file(&outside).unwrap();
 }
 
@@ -93,7 +98,8 @@ fn reads_directory_previews_instead_of_rejecting_them() {
     assert!(!relative.truncated);
     let absolute = read_local_file(text(root), text(&root.join("src"))).unwrap();
     assert_eq!(absolute.kind.as_deref(), Some("directory"));
-    assert!(absolute.path.ends_with("/src"));
+    let separator = std::path::MAIN_SEPARATOR;
+    assert!(absolute.path.ends_with(&format!("{separator}src")));
 }
 
 #[test]
