@@ -46,7 +46,7 @@ pub fn resolve_archive_dir(
 /// A warning when both the default directory and the legacy one exist.
 pub fn legacy_archive_warning(archive_dir: &Path) -> Option<String> {
     let text = archive_dir.to_string_lossy();
-    if !text.ends_with(&format!("/{ARCHIVE_DIR_NAME}")) {
+    if archive_dir.file_name() != Some(std::ffi::OsStr::new(ARCHIVE_DIR_NAME)) {
         return None;
     }
     let legacy = archive_dir.parent()?.join(LEGACY_ARCHIVE_DIR_NAME);

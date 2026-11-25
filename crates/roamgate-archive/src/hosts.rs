@@ -584,6 +584,9 @@ pub(crate) mod tests {
     }
 
     #[test]
+    // Unix only: the pull's local destination is a Unix path; rsync reads
+    // a Windows drive path (C:...) as a remote host.
+    #[cfg(unix)]
     fn a_pull_compresses_every_rsync_transfer() {
         let recorder = Recorder {
             calls: Mutex::new(Vec::new()),
