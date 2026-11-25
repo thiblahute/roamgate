@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use roamgate_base::paths::DataContext;
+use roamgate_base::paths::{DataContext, join_relative};
 use roamgate_exec::service::{
     RunCommand, ServicePlatform, WindowsTaskQuery, argv, escape_systemd_exec_path,
     launchd_job_running, powershell_literal, query_windows_task, resolve_service_platform,
@@ -62,7 +62,7 @@ pub fn resolve_service_paths(
     if platform == ServicePlatform::Systemd {
         return ServicePaths {
             config,
-            definition: home.join(".config/systemd/user/roamgate.service"),
+            definition: join_relative(home, ".config/systemd/user/roamgate.service"),
             task_name: None,
             stdout_log: None,
             stderr_log: None,
@@ -70,12 +70,11 @@ pub fn resolve_service_paths(
     }
     ServicePaths {
         config,
-        definition: home
-            .join("Library/LaunchAgents")
+        definition: join_relative(home, "Library/LaunchAgents")
             .join(format!("{SERVICE_LABEL}.plist")),
         task_name: None,
-        stdout_log: Some(home.join("Library/Logs/roamgate.stdout.log")),
-        stderr_log: Some(home.join("Library/Logs/roamgate.stderr.log")),
+        stdout_log: Some(join_relative(home, "Library/Logs/roamgate.stdout.log")),
+        stderr_log: Some(join_relative(home, "Library/Logs/roamgate.stderr.log")),
     }
 }
 
@@ -103,9 +102,9 @@ pub fn resolve_legacy_service_paths(
     ServicePaths {
         config,
         definition: if platform == ServicePlatform::Systemd {
-            home.join(".config/systemd/user/herdr-gui.service")
+            join_relative(home, ".config/systemd/user/herdr-gui.service")
         } else {
-            home.join("Library/LaunchAgents/dev.herdr.herdr-gui.plist")
+            join_relative(home, "Library/LaunchAgents/dev.herdr.herdr-gui.plist")
         },
         task_name: None,
         stdout_log: None,
@@ -266,8 +265,14 @@ pub(crate) fn is_published_legacy_definition(
         ServicePlatform::Launchd => render_launchd_service(
             &binary,
             &ServicePaths {
-                stdout_log: Some(runtime.home.join("Library/Logs/herdr-gui.stdout.log")),
-                stderr_log: Some(runtime.home.join("Library/Logs/herdr-gui.stderr.log")),
+                stdout_log: Some(join_relative(
+                    &runtime.home,
+                    "Library/Logs/herdr-gui.stdout.log",
+                )),
+                stderr_log: Some(join_relative(
+                    &runtime.home,
+                    "Library/Logs/herdr-gui.stderr.log",
+                )),
                 ..paths.clone()
             },
         ),
