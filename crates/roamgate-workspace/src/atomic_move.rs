@@ -37,11 +37,8 @@ pub fn rename_file_exclusive(source: &Path, target: &Path) -> Result<(), Workspa
 #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
 fn rename_noreplace(source: &Path, target: &Path) -> std::io::Result<()> {
     use rustix::fs::{CWD, RenameFlags, renameat_with};
-    #[cfg(target_vendor = "apple")]
-    let flags = RenameFlags::EXCL;
-    #[cfg(not(target_vendor = "apple"))]
-    let flags = RenameFlags::NOREPLACE;
-    renameat_with(CWD, source, CWD, target, flags).map_err(std::io::Error::from)
+    // rustix names macOS's `RENAME_EXCL` `NOREPLACE` too.
+    renameat_with(CWD, source, CWD, target, RenameFlags::NOREPLACE).map_err(std::io::Error::from)
 }
 
 /// Windows: a second name, then the first one gone; the link fails when
