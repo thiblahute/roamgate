@@ -206,6 +206,8 @@ pub(crate) struct State {
     drain_scheduled: bool,
     steer_missed: Option<RunRef>,
     recovering: bool,
+    /// A resume was asked while one ran.
+    resume_again: bool,
     awaiting_recovery: bool,
     action_work: Option<(u64, Work)>,
     prepared_actions: HashMap<String, Arc<Prepared>>,
@@ -514,6 +516,7 @@ impl AssistantService {
             drain_scheduled: false,
             steer_missed: None,
             recovering: false,
+            resume_again: false,
             awaiting_recovery: false,
             action_work: None,
             prepared_actions: HashMap::new(),

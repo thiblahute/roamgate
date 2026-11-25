@@ -716,16 +716,33 @@ impl Inner {
 
     /// `resume()`: the turn the bridge was running when it stopped, run
     /// again on its original workspaces and model.
+    /// Resumes the saved turn; asked again while a resume runs (the
+    /// connections became ready meanwhile), it tries once more after it,
+    /// unless that one resumed.
     pub(super) async fn resume_turn(self: &Arc<Self>) -> AssistantResult<()> {
+        loop {
+            self.resume_turn_once().await?;
+            if !std::mem::take(&mut self.lock().resume_again) {
+                return Ok(());
+            }
+        }
+    }
+
+    async fn resume_turn_once(self: &Arc<Self>) -> AssistantResult<()> {
         let (pending, controller) = {
             let mut s = self.lock();
             let Some(pending) = s.active_run.clone() else {
                 return Ok(());
             };
-            if s.disposed || s.recovering || !s.awaiting_recovery {
+            if s.recovering {
+                s.resume_again = true;
+                return Ok(());
+            }
+            if s.disposed || !s.awaiting_recovery {
                 return Ok(());
             }
             s.recovering = true;
+            s.resume_again = false;
             (pending, s.turn_controller.clone().unwrap_or_default())
         };
         let signal = Some(&controller);
@@ -817,6 +834,11 @@ impl Inner {
             return Ok(());
         }
         let not_ready = matches!(error, AssistantError::RecoveryNotReady(_));
+        tracing::warn!(
+            error = error.message(),
+            not_ready,
+            "Ranger recovery did not resume"
+        );
         if not_ready {
             s.set_error("Waiting for the original workspace connections to resume Ranger...");
         } else {
