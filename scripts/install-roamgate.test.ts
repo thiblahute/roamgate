@@ -38,13 +38,18 @@ function createInstallerFixture(
   checksumName?: string,
   product: "roamgate" | "herdr-gui" = "roamgate",
   piSidecar = false,
+  // A Linux libc for the installer's ldd to report (a fake ldd).
+  libc?: "musl" | "glibc",
 ) {
   const root = mkdtempSync(join(tmpdir(), "roamgate-installer-test-"));
   temporaryRoots.push(root);
   const assets = join(root, "assets");
   const fakeBin = join(root, "bin");
   const installDir = join(root, "install");
-  const platform = currentReleasePlatform();
+  const platform =
+    libc === "musl"
+      ? `${currentReleasePlatform()}-musl`
+      : currentReleasePlatform();
   const packageDir = `${product}-${platform}`;
   const archiveName = `${packageDir}.tar.xz`;
   const packagePath = join(assets, packageDir);
@@ -102,6 +107,15 @@ cp "$FIXTURE_DIR/\${url##*/}" "$out"
     { mode: 0o755 },
   );
   chmodSync(fakeCurl, 0o755);
+  if (libc) {
+    writeFileSync(
+      join(fakeBin, "ldd"),
+      libc === "musl"
+        ? "#!/bin/sh\necho 'musl libc (x86_64)'\necho 'Version 1.2.5'\nexit 1\n"
+        : "#!/bin/sh\necho 'ldd (GNU libc) 2.39'\n",
+      { mode: 0o755 },
+    );
+  }
 
   return { root, assets, fakeBin, installDir, product };
 }
@@ -243,6 +257,34 @@ describe("release installer", () => {
       "legacy Studio binary\n",
     );
   });
+
+  test.skipIf(process.platform !== "linux" || process.arch !== "x64")(
+    "picks the musl package where ldd is musl's, the glibc one where it is glibc's",
+    () => {
+      const musl = createInstallerFixture(undefined, "roamgate", true, "musl");
+      const result = runInstaller(musl);
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
+      expect(result.stdout.toString()).toContain(
+        "Downloading roamgate for linux-x64-musl...",
+      );
+      expect(result.stdout.toString()).toContain("apk add libstdc++ libgcc");
+      expect(readFileSync(join(musl.installDir, "roamgate-pi"), "utf8")).toBe(
+        "pi 9.8.7\n",
+      );
+      // A glibc ldd keeps the glibc package.
+      const glibc = createInstallerFixture(
+        undefined,
+        "roamgate",
+        false,
+        "glibc",
+      );
+      const installed = runInstaller(glibc);
+      expect(installed.exitCode, installed.stderr.toString()).toBe(0);
+      expect(installed.stdout.toString()).toContain(
+        "Downloading roamgate for linux-x64...",
+      );
+    },
+  );
 
   test("installs roamgate-pi beside roamgate and keeps the previous one", () => {
     const fixture = createInstallerFixture(undefined, "roamgate", true);
