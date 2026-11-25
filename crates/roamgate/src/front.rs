@@ -17,7 +17,6 @@ use roamgate_base::session_secret::{
     load_or_create_session_secret, revoked_sessions_path, session_secret_path_from_env,
 };
 use roamgate_base::settings::Settings;
-use roamgate_channel::peer::Peer;
 use roamgate_cli::auth_token::auth_token_print_command;
 use roamgate_cli::herdr::HerdrCli;
 use roamgate_cli::server_config::load_server_config_with_help;
@@ -60,7 +59,7 @@ fn public_dir(args: &[String], env: &dyn Env) -> PathBuf {
 fn serve_front_clock(
     clock: roamgate_base::clock::TestClock,
     path: &std::path::Path,
-    core: watch::Receiver<Option<Peer>>,
+    core: roamgate_http::front::CoreLink,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let _ = std::fs::remove_file(path);
@@ -78,7 +77,7 @@ fn serve_front_clock(
                     }
                     let reply = roamgate_base::clock::answer(&clock, &line).await;
                     if line.trim().starts_with("advance") && !reply.starts_with("error") {
-                        let peer = core.borrow().clone();
+                        let peer = core.borrow().peer().cloned();
                         if let Some(peer) = peer.filter(|peer| !peer.is_closed()) {
                             let to = roamgate_base::clock::Clock::now(&clock);
                             let _ = peer
@@ -334,7 +333,7 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
     }
     let channel = roamgate_channel::transport::channel_address(&runtime_dir, std::process::id());
     let own_exe = std::env::current_exe().unwrap_or_default();
-    let (link, core) = watch::channel(None);
+    let (link, core) = watch::channel(roamgate_http::front::CoreState::Starting);
     let mut clock_server = None;
     // The environment file's entries reach the core as the front's own.
     let mut core_env: Vec<(String, String)> = overrides.into_iter().collect();

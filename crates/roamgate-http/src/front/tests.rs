@@ -88,7 +88,7 @@ impl Handler for FakeCore {
 struct Setup {
     front: Arc<Front>,
     core: Arc<FakeCore>,
-    _link: watch::Sender<Option<Peer>>,
+    _link: watch::Sender<CoreState>,
     _public: tempfile::TempDir,
 }
 
@@ -102,7 +102,7 @@ async fn setup_with(with_core: bool, node_origins: NodeOrigins) -> Setup {
     let public = tempfile::tempdir().unwrap();
     std::fs::write(public.path().join("index.html"), "<title>Roamgate</title>").unwrap();
     std::fs::write(public.path().join("app.js"), "export {};").unwrap();
-    let (link, rx) = watch::channel(None);
+    let (link, rx) = watch::channel(CoreState::Starting);
     let sockets = Sockets::default();
     let core = Arc::new(FakeCore::default());
     if with_core {
@@ -122,7 +122,7 @@ async fn setup_with(with_core: bool, node_origins: NodeOrigins) -> Setup {
             PeerOptions::core(shared(&clock)),
         );
         std::mem::forget(_core_peer);
-        link.send(Some(front_peer)).unwrap();
+        link.send(CoreState::Up(front_peer)).unwrap();
     }
     let mut front = Front::new(
         auth,
@@ -211,6 +211,41 @@ async fn health_login_and_the_gate_are_the_front_s() {
         )
         .await;
     assert_eq!(waiting.status(), 503);
+}
+
+#[tokio::test]
+async fn a_core_that_could_not_start_fails_requests_and_sockets_at_once() {
+    let mut setup = setup(false).await;
+    setup._link.send_replace(CoreState::Down);
+    // Long enough that a wait would be the test's timeout.
+    Arc::get_mut(&mut setup.front).unwrap().core_wait = std::time::Duration::from_secs(3600);
+    let front = &setup.front;
+    let cookie = login(front).await;
+    let upgrade = request(
+        "GET",
+        "/ws",
+        &[
+            ("cookie", &cookie),
+            ("connection", "Upgrade"),
+            ("upgrade", "websocket"),
+            ("sec-websocket-version", "13"),
+            ("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ=="),
+        ],
+        "",
+    );
+    for each in [
+        request("GET", "/api/anything", &[("cookie", &cookie)], ""),
+        upgrade,
+    ] {
+        let answer = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            front.handle(each, "127.0.0.1".into()),
+        )
+        .await
+        .expect("answered at once");
+        assert_eq!(answer.status(), 503);
+        assert_eq!(text(answer).await, "the server's core is not running");
+    }
 }
 
 #[tokio::test]
