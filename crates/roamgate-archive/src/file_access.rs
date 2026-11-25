@@ -32,6 +32,21 @@ struct Resolved {
     id: i64,
 }
 
+/// `path` under `root`, `/`-separated as the archive keeps it (Windows
+/// paths come with `\`); None outside it.
+fn relative_to(path: &str, root: &Path) -> Option<String> {
+    let prefix = format!("{}/", root.to_string_lossy());
+    if let Some(relpath) = path.strip_prefix(&prefix) {
+        return Some(relpath.to_owned());
+    }
+    if cfg!(windows) {
+        let relpath = Path::new(path).strip_prefix(root).ok()?;
+        let relpath = relpath.to_string_lossy().replace('\\', "/");
+        return (!relpath.is_empty()).then_some(relpath);
+    }
+    None
+}
+
 fn resolve(
     path: &str,
     settings: &ArchiveSettings,
@@ -43,10 +58,10 @@ fn resolve(
             continue;
         }
         let root = agent.root_for(&runtime.home_dir, &|name: &str| runtime.var(name));
-        let prefix = format!("{}/", root.to_string_lossy());
-        let Some(relpath) = path.strip_prefix(&prefix) else {
+        let Some(relpath) = relative_to(path, &root) else {
             continue;
         };
+        let relpath = relpath.as_str();
         if existing_archive_db(archive_dir).is_none() {
             return Ok(None);
         }
