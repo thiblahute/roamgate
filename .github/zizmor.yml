@@ -1,0 +1,6 @@
+# zizmor's configuration (the Lint workflows workflow).
+rules:
+  # The local actions are named by path (./.github/actions/...), which
+  # actionlint and every runner understand.
+  self-repository:
+    disable: true

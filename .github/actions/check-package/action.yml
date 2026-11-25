@@ -28,10 +28,12 @@ inputs:
 runs:
   using: composite
   steps:
-    # Not every runner image has Rust.
+    # Not every runner image has Rust; rustup puts it in ~/.cargo/bin,
+    # which each step below puts first on its PATH.
     - name: Install Rust
       shell: bash
       run: |
+        export PATH="$HOME/.cargo/bin:$PATH"
         if command -v cargo >/dev/null; then exit 0; fi
         case "$RUNNER_OS-$RUNNER_ARCH" in
           Windows-ARM64) curl -sSfLo "$RUNNER_TEMP/rustup-init.exe" https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe ;;
@@ -39,24 +41,26 @@ runs:
         esac
         if [ "$RUNNER_OS" = Windows ]; then
           "$RUNNER_TEMP/rustup-init.exe" -y --profile minimal
-          echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
         else
           curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
         fi
     - name: Smoke-test the package
       shell: bash
       env:
         PLATFORM: ${{ inputs.platform }}
         VERSION: ${{ inputs.version }}
-      run: cargo xtask smoke "$PLATFORM" --version "$VERSION"
+      run: |
+        export PATH="$HOME/.cargo/bin:$PATH"
+        cargo xtask smoke "$PLATFORM" --version "$VERSION"
     - name: Smoke-test the package in its container
       if: inputs.container != ''
       shell: bash
       env:
         PLATFORM: ${{ inputs.platform }}
         VERSION: ${{ inputs.version }}
-      run: cargo xtask smoke "$PLATFORM" --version "$VERSION" --container
+      run: |
+        export PATH="$HOME/.cargo/bin:$PATH"
+        cargo xtask smoke "$PLATFORM" --version "$VERSION" --container
     # Existing installs update in place: the last published release's
     # binary updates itself to this package in a sandbox.
     - name: Update the last release to it
@@ -69,6 +73,7 @@ runs:
         # Releases are published upstream; a fork has none to update from.
         RELEASES_REPO: powerfooI/roamgate
       run: |
+        export PATH="$HOME/.cargo/bin:$PATH"
         # The latest release but the one this run publishes.
         previous="$(gh release list --repo "$RELEASES_REPO" --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '[.[] | select(.tagName != env.GITHUB_REF_NAME)][0].tagName // ""')"
         if [ -z "$previous" ]; then

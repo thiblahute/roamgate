@@ -148,7 +148,9 @@ jobs:
           builder: ${{ matrix.target.builder }}
       - name: Build, package and verify
         shell: bash
-        run: cargo xtask package "${{ matrix.target.platform }}" --version "${{ needs.targets.outputs.version }}"
+        env:
+          VERSION: ${{ needs.targets.outputs.version }}
+        run: cargo xtask package "${{ matrix.target.platform }}" --version "$VERSION"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: rust-roamgate-${{ matrix.target.platform }}

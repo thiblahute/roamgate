@@ -36,11 +36,11 @@ runs:
       with:
         tool: cargo-xwin
     # cargo-xwin drives clang-cl, lld-link and llvm-lib, which only LLVM's
-    # own bin directory has under those names.
+    # own bin directory has under those names: linked onto the PATH.
     - if: inputs.builder == 'xwin'
       name: Install LLVM
       shell: bash
       run: |
         sudo apt-get update -qq
         sudo apt-get install -y --no-install-recommends clang lld llvm
-        llvm-config --bindir >> "$GITHUB_PATH"
+        sudo ln -sf "$(llvm-config --bindir)"/* /usr/local/bin/
