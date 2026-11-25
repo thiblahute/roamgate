@@ -83,6 +83,16 @@ steps:
             allowed_workspaces: [{ connection_id: healthy, workspace_id: w1 }],
           },
       }
+    # Until the core heard of the connection the server just made
+    # ready, it drops a workspace of it.
+    reply:
+      {
+        config:
+          {
+            allowed_workspaces: [{ connection_id: healthy, workspace_id: w1 }],
+          },
+      }
+    retry: 10000
   - call: bridge.assistant.send
     params:
       {
