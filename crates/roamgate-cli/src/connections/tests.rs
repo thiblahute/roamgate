@@ -321,12 +321,15 @@ async fn explicit_herdr_settings_stay_out_of_a_saved_registry() {
                 cli.in_home(".config/herdr/sessions/work/herdr.sock")
                     .display()
             ),
+            // The saved local profile is this machine's: a named pipe on
+            // Windows.
             "  local           local  ".to_owned()
-                + &cli
-                    .home()
-                    .join(".config/herdr/herdr.sock")
-                    .display()
-                    .to_string()
+                + &roamgate_herdr::client::native_socket_path(
+                    &cli.in_home(".config/herdr/herdr.sock")
+                        .display()
+                        .to_string(),
+                    if cfg!(windows) { "win32" } else { "linux" },
+                )
                 + "  Local  [auto-connect]",
             "  lab             ssh    me@lab  lab".to_owned(),
         ]

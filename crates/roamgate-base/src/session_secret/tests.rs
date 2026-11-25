@@ -363,10 +363,7 @@ fn an_old_orphan_lock_times_out_and_is_never_stolen() {
     let original = fs::read_to_string(&path).unwrap();
     let lock = lock_path(&path);
     fs::create_dir(&lock).unwrap();
-    fs::File::open(&lock)
-        .unwrap()
-        .set_modified(std::time::UNIX_EPOCH)
-        .unwrap();
+    filetime::set_file_mtime(&lock, filetime::FileTime::from_unix_time(0, 0)).unwrap();
     let start = std::time::Instant::now();
     let error = load(home.path(), &[PASSWORD, PIN], &path).unwrap_err();
     assert!(

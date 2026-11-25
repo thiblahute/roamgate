@@ -71,7 +71,7 @@ fn finds_the_newest_session_for_the_exact_working_directory() {
     let found = find_grok_session_for_cwd("/workspace/repo", root.path()).unwrap();
     assert_eq!(found.session_id, "newer");
     assert_eq!(found.file.model_name.as_deref(), Some("grok-4.5"));
-    assert!(found.file.path.ends_with("newer/chat_history.jsonl"));
+    assert!(Path::new(&found.file.path).ends_with("newer/chat_history.jsonl"));
 }
 
 #[test]

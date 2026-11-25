@@ -336,11 +336,16 @@ mod tests {
             let profile: Value =
                 serde_json::from_str(&std::fs::read_to_string(output.join("cpu.json")).unwrap())
                     .unwrap();
+            // Windows has no sampler: the capture says so.
             assert!(
                 profile["functions"]
                     .as_str()
                     .unwrap()
-                    .contains("Sampling rate:")
+                    .contains(if cfg!(unix) {
+                        "Sampling rate:"
+                    } else {
+                        "CPU sampling is not available on Windows"
+                    })
             );
             assert!(profile["stackTraces"]["traces"].is_array());
             let summary = std::fs::read_to_string(output.join("summary.txt")).unwrap();

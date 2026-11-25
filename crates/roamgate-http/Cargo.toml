@@ -46,6 +46,8 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 rustix = { version = "1", features = ["process"] }
 
 [dev-dependencies]
+# Ages files and directories alike, Windows included.
+filetime = "0.2"
 tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
 tokio = { version = "1", features = ["full", "test-util"] }
