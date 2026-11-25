@@ -9,6 +9,7 @@
     "includes": [
       "**",
       "!contract/assets/**",
+      "!LICENSES/**",
       "!contract/tools/catalog.json",
       "!contract/perf/baseline.json",
       "!contract/vectors/tool-params.json",

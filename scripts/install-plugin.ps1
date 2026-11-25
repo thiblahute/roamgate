@@ -14,7 +14,8 @@ switch ($architecture) {
 }
 Get-Command tar.exe -CommandType Application -ErrorAction Stop | Out-Null
 $packageDir = "roamgate-$platform"
-$archiveName = "roamgate-v$version-$platform.tar.xz"
+# Windows packages are zip: tar.exe reads no xz before Windows 11.
+$archiveName = "roamgate-v$version-$platform.zip"
 $releaseBase = "https://github.com/powerfooI/roamgate/releases/download/v$version"
 $environment = [Environment]::GetEnvironmentVariables()
 $customReleaseBase = if ($environment.Contains('ROAMGATE_RELEASE_BASE_URL')) {
@@ -46,12 +47,12 @@ try {
     throw 'Package checksum mismatch'
   }
   # The Pi sidecar beside the binary; releases before the Rust build have none.
-  $members = @(& tar.exe -tJf $archive)
+  $members = @(& tar.exe -tf $archive)
   if ($LASTEXITCODE -ne 0) { throw 'Could not read the Roamgate package' }
   $hasPi = $members -contains "$packageDir/roamgate-pi.exe"
   $wanted = @("$packageDir/VERSION", "$packageDir/roamgate.exe")
   if ($hasPi) { $wanted += "$packageDir/roamgate-pi.exe" }
-  & tar.exe -xJf $archive -C $staging @wanted
+  & tar.exe -xf $archive -C $staging @wanted
   if ($LASTEXITCODE -ne 0) { throw 'Could not extract the Roamgate package' }
   $extracted = Join-Path $staging $packageDir
   $binary = Join-Path $extracted 'roamgate.exe'

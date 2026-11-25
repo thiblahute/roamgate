@@ -3,6 +3,7 @@
 
 mod binary;
 mod compile;
+mod notices;
 mod package;
 mod proof;
 mod sandbox;
@@ -25,6 +26,7 @@ Commands:
   web                                 build the web app (bun run build:web)
   build <platform...|all>             build roamgate for targets
   package <platform...|all>           build, package and verify targets
+                                      (needs cargo-about, notices.rs)
   verify <platform...|all>            check packaged targets
   update-proof <platform> --from <roamgate> | --archive <package>
                [--container]
@@ -218,7 +220,14 @@ fn run() -> Result<()> {
             for target in &selected {
                 let binary = compile::build(&build, target)?;
                 let pi = compile::build_pi(&root, target)?;
-                package::write_package(&out, target, &binary, &pi, &version)?;
+                let notices = notices::generate(
+                    &root,
+                    target,
+                    &version,
+                    &compile::pi_metafile(&pi),
+                    &compile::target_dir(&root).join("xtask"),
+                )?;
+                package::write_package(&out, target, &binary, &pi, &notices, &version)?;
                 verify::verify(&out, target, &version)?;
             }
             for target in &selected {
