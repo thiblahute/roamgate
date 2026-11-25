@@ -96,6 +96,8 @@ test.skipIf(process.platform !== "win32")(
       const installerEnv = {
         ...process.env,
         PATH: `${join(process.env.SystemRoot!, "System32")};${join(process.env.SystemRoot!, "System32/WindowsPowerShell/v1.0")}`,
+        // Windows PowerShell's own modules, not the job's pwsh 7 ones.
+        PSModulePath: undefined,
       };
       for (failure of [
         "fresh",
@@ -204,7 +206,8 @@ test.skipIf(process.platform !== "win32")(
         `${archive}.sha256`,
         `${createHash("sha256").update(readFileSync(archive)).digest("hex")}  ${archiveName}\n`,
       );
-      const withPi = Bun.spawnSync(
+      // Spawned, not spawnSync: the mirror answers from this process.
+      const withPiChild = Bun.spawn(
         [
           powershell,
           "-NoProfile",
@@ -219,9 +222,14 @@ test.skipIf(process.platform !== "win32")(
             ...installerEnv,
             ROAMGATE_RELEASE_BASE_URL: `http://127.0.0.1:${host.port}`,
           },
+          stderr: "pipe",
         },
       );
-      expect(withPi.exitCode, withPi.stderr.toString()).toBe(0);
+      const withPi = {
+        exitCode: await withPiChild.exited,
+        stderr: await new Response(withPiChild.stderr).text(),
+      };
+      expect(withPi.exitCode, withPi.stderr).toBe(0);
       expect(readdirSync(join(root, "server")).sort()).toEqual([
         "roamgate-pi.exe",
         "roamgate.exe",
