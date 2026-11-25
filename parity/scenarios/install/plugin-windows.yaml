@@ -1,0 +1,21 @@
+name: the Windows plugin installer verifies and stages releases without Bun on PATH
+ledger:
+  - "scripts/install-plugin.windows.test.ts > Windows plugin installer verifies and stages releases without Bun on PATH"
+family: install
+tier: T2
+description: >
+  scripts/install-plugin.ps1 run by Windows PowerShell with only System32 on
+  PATH, against releases fake-models serves (plugin-windows.sh): a fresh
+  install, a reinstall, the legacy mirror variable, and every refusal
+  (checksum, checksum name, VERSION, no native plugin commands, a failed
+  download) keeping the previous binary; an empty ROAMGATE_RELEASE_BASE_URL
+  meaning the official release; the Pi sidecar installed beside it.
+platforms: [windows]
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/plugin-windows.sh"
+    env: { REPO: "${REPO}", FAKE_HTTP: "${FAKE_HTTP}" }
+    within_ms: 180000
+    expect: { exit: 0, stdout_contains: ok }
