@@ -92,11 +92,14 @@ test("CI and release jobs install once from the workspace root", () => {
       jobs: Record<
         string,
         {
+          uses?: string;
           steps: { run?: string; "working-directory"?: string }[];
         }
       >;
     };
     for (const [name, job] of Object.entries(workflow.jobs)) {
+      // A reusable workflow's call: rust-checks.yml is checked on its own.
+      if (job.uses) continue;
       const installs = job.steps.filter((step) =>
         step.run?.includes("bun install"),
       );

@@ -64,6 +64,13 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: bun run precommit
 
+  # The Rust workspace's checks on Linux, macOS and Windows, as the Rust
+  # workflow runs them on pull requests: a tag never publishes untested.
+  checks:
+    name: Rust checks
+    needs: validate
+    uses: ./.github/workflows/rust-checks.yml
+
   targets:
     name: Targets
     needs: validate
@@ -179,7 +186,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [validate, package, check]
+    needs: [validate, checks, package, check]
     # Only a v* tag publishes; a dry run on a branch stops before this job.
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest

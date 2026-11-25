@@ -91,11 +91,18 @@ test("the installers name targets.toml's platforms", () => {
   );
 });
 
-test("the Rust workflow takes its matrix from targets.toml and pins its actions", () => {
-  const workflow = Bun.YAML.parse(read(".github/workflows/rust.yml")) as {
+test("the Rust workflows take their matrix from targets.toml and pin their actions", () => {
+  for (const file of ["rust.yml", "rust-checks.yml"]) {
+    checkRustWorkflow(file);
+  }
+});
+
+function checkRustWorkflow(file: string) {
+  const workflow = Bun.YAML.parse(read(`.github/workflows/${file}`)) as {
     jobs: Record<
       string,
       {
+        uses?: string;
         "timeout-minutes": number;
         strategy?: { matrix: { target: string } };
         steps: {
@@ -106,12 +113,18 @@ test("the Rust workflow takes its matrix from targets.toml and pins its actions"
       }
     >;
   };
-  for (const name of ["package", "check"]) {
+  const matrixJobs = file === "rust.yml" ? ["package", "check"] : [];
+  for (const name of matrixJobs) {
     expect(workflow.jobs[name].strategy?.matrix.target).toBe(
       "${{ fromJSON(needs.targets.outputs.targets) }}",
     );
   }
   for (const job of Object.values(workflow.jobs)) {
+    // A call of a reusable workflow (rust-checks.yml) has its own jobs.
+    if (job.uses) {
+      expect(job.uses).toStartWith("./.github/workflows/");
+      continue;
+    }
     expect(job["timeout-minutes"]).toBeGreaterThan(0);
     for (const step of job.steps) {
       // A local action (.github/actions) is this checkout's own.
@@ -122,4 +135,4 @@ test("the Rust workflow takes its matrix from targets.toml and pins its actions"
       }
     }
   }
-});
+}
