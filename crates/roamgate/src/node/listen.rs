@@ -355,7 +355,9 @@ mod tests {
 
     #[test]
     fn a_node_s_files_are_its_own() {
-        let env = [("HOME", "/Users/u")];
+        // Absolute paths: a drive's on Windows.
+        let home = abs("/Users/u");
+        let env = [("HOME", home.as_str())];
         let options = parse(
             &words(&[
                 "--listen",
@@ -370,15 +372,15 @@ mod tests {
         assert_eq!(options.home, "https://home.example");
         assert_eq!(
             options.config_dir,
-            PathBuf::from("/Users/u/.config/roamgate-node")
+            PathBuf::from(abs("/Users/u/.config/roamgate-node"))
         );
         assert_eq!(
             options.data_dir,
-            PathBuf::from("/Users/u/.local/share/roamgate-node")
+            PathBuf::from(abs("/Users/u/.local/share/roamgate-node"))
         );
         assert_eq!(
             options.socket_path,
-            PathBuf::from("/Users/u/.config/herdr/herdr.sock")
+            PathBuf::from(abs("/Users/u/.config/herdr/herdr.sock"))
         );
         let env = environment(&options);
         let get = |name: &str| {
@@ -386,7 +388,10 @@ mod tests {
                 .find(|(key, _)| key == name)
                 .map(|(_, value)| value.as_str())
         };
-        assert_eq!(get(DATA_ROOT_ENV), Some("/Users/u/.config/roamgate-node"));
+        assert_eq!(
+            get(DATA_ROOT_ENV),
+            Some(options.config_dir.display().to_string().as_str())
+        );
         assert_eq!(get(NODE_HOME_ENV), Some("https://home.example"));
         assert_eq!(get("ROAMGATE_WORK_DIR"), Some(""));
         let registry = connections_registry(&options);
@@ -398,15 +403,15 @@ mod tests {
                 "--listen=8790",
                 "--home=https://h",
                 "--config-dir",
-                "/n/c",
-                "--data-dir=/n/d",
+                &abs("/n/c"),
+                &format!("--data-dir={}", abs("/n/d")),
             ]),
             &env_of(&[("HOME", "/h")]),
         )
         .unwrap();
         assert_eq!(custom.port, 8790);
-        assert_eq!(custom.config_dir, PathBuf::from("/n/c"));
-        assert_eq!(custom.data_dir, PathBuf::from("/n/d"));
+        assert_eq!(custom.config_dir, PathBuf::from(abs("/n/c")));
+        assert_eq!(custom.data_dir, PathBuf::from(abs("/n/d")));
         assert!(parse(&words(&["--home", "https://h"]), &env_of(&[("HOME", "/h")])).is_err());
         assert!(
             parse(
@@ -415,6 +420,15 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    /// `path`, absolute on this platform: on drive C: on Windows.
+    fn abs(path: &str) -> String {
+        if cfg!(windows) {
+            format!("C:{path}")
+        } else {
+            path.to_owned()
+        }
     }
 
     fn env_of(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {

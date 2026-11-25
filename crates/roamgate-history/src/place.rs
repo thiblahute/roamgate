@@ -186,7 +186,12 @@ mod tests {
     #[test]
     fn history_is_on_at_data_history_unless_the_settings_or_the_environment_say() {
         let none: [(&str, &str); 0] = [];
-        let home = Path::new("/home/u");
+        // An absolute home: a drive's on Windows.
+        let home = Path::new(if cfg!(windows) {
+            r"C:\home\u"
+        } else {
+            "/home/u"
+        });
         assert_eq!(
             history_place(None, Path::new("/d"), &none, home).unwrap(),
             HistoryPlace {
@@ -218,7 +223,7 @@ mod tests {
             .unwrap(),
             HistoryPlace {
                 enabled: true,
-                location: "/home/u/keep".into(),
+                location: home.join("keep"),
                 default_location: "/x".into(),
             }
         );

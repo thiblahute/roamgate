@@ -188,7 +188,7 @@ fn fixture() -> A {
 
 fn fixture_for(pane_id: &str) -> A {
     let dir = tempfile::tempdir().unwrap();
-    let root = std::fs::canonicalize(dir.path())
+    let root = roamgate_base::paths::realpath(dir.path())
         .unwrap()
         .to_string_lossy()
         .into_owned();

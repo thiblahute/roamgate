@@ -24,9 +24,9 @@ struct Repository {
 fn temp(prefix: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::Builder::new()
         .prefix(prefix)
-        .tempdir_in("/tmp")
+        .tempdir_in(roamgate_base::paths::short_temp_root())
         .unwrap();
-    let path = dir.path().canonicalize().unwrap();
+    let path = roamgate_base::paths::realpath(dir.path()).unwrap();
     (dir, path)
 }
 
@@ -38,7 +38,7 @@ fn repository() -> Repository {
     let (clone_dir, clones) = temp("rg-clone-");
     let root = clones.join("repo");
     git(
-        Path::new("/tmp"),
+        &clones,
         &[
             "clone",
             "-q",
