@@ -96,6 +96,9 @@
     Assert-Regular $path 'install target exists but is not a regular file'
   }
 
+  # What earlier installs moved aside while it ran, if nothing runs it now.
+  Get-ChildItem -LiteralPath $installDir -Force -Filter '.roamgate*.previous.stale-*' -ErrorAction SilentlyContinue |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
   $staging = Join-Path $installDir ('.roamgate-install-' + [IO.Path]::GetRandomFileName())
   New-Item -ItemType Directory -Path $staging | Out-Null
   try {
@@ -160,7 +163,13 @@
       $previous = "$path.previous"
       if (Test-Path -LiteralPath $previous) {
         try { Remove-Item -LiteralPath $previous -Force } catch {
-          Fail "$previous is in use: stop the roamgate running from it and retry"
+          # Still running (a pane's roamgate-hold.exe is a hard link of it):
+          # Windows lets it be renamed, not removed. A later install
+          # removes it once nothing runs it.
+          $aside = Join-Path $installDir (".$(Split-Path -Leaf $previous).stale-$PID-" + [IO.Path]::GetRandomFileName())
+          try { [IO.File]::Move($previous, $aside) } catch {
+            Fail "$previous is in use: stop the roamgate running from it and retry"
+          }
         }
       }
       if (Test-Path -LiteralPath $path) {

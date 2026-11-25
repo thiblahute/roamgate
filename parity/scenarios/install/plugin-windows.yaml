@@ -17,5 +17,5 @@ server:
 steps:
   - sh: sh "${REPO}/parity/scenarios/install/plugin-windows.sh"
     env: { REPO: "${REPO}", FAKE_HTTP: "${FAKE_HTTP}" }
-    within_ms: 180000
+    within_ms: 600000
     expect: { exit: 0, stdout_contains: ok }

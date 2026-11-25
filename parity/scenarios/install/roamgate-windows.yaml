@@ -7,8 +7,8 @@ description: >
   scripts/install-roamgate.ps1 run by Windows PowerShell with only System32
   on PATH, against zip releases fake-models serves (roamgate-windows.sh): a
   fresh install, an install over a running roamgate.exe that becomes
-  roamgate.exe.previous, a pinned version refused while that previous one
-  runs and installed once it stops, and every refusal (checksum, VERSION,
+  roamgate.exe.previous, a pinned version while that previous one runs (it
+  moves aside, and the next install removes it once it stops), and every refusal (checksum, VERSION,
   binary version, pinned version, insecure or credentialed mirror, bad
   version) keeping the installation as it was.
 platforms: [windows]
