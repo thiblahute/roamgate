@@ -2881,6 +2881,7 @@ dependencies = [
  "mimalloc",
  "reqwest",
  "roamgate-activity",
+ "roamgate-agent-client",
  "roamgate-agents",
  "roamgate-archive",
  "roamgate-assistant",
@@ -2934,6 +2935,23 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "roamgate-agent-client"
+version = "0.0.0"
+dependencies = [
+ "fancy-regex 0.17.0",
+ "httparse",
+ "libc",
+ "regex",
+ "roamgate-base",
+ "roamgate-protocol",
+ "rustix",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -3161,6 +3179,7 @@ dependencies = [
  "hex",
  "indexmap",
  "regex",
+ "roamgate-agent-client",
  "roamgate-agents",
  "roamgate-base",
  "roamgate-claude",
