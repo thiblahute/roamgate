@@ -778,6 +778,7 @@ async fn actual_timeout_during_phase_retains_ownership_and_blocks_retries() {
                         &format!("{pause}\ntree=$(git write-tree)"),
                     )
                 } else {
+                    let script = script.replace("publish() {", "ls -laR \"$quarantine/objects\" >&2; cat \"$quarantine/hashes\" \"$quarantine/trees\" >&2; echo SHELL=$0 BASH=$BASH_VERSION >&2; exit 7\npublish() {");
                     script.replace(
                         "    target=\"$objects/$prefix/$name\"",
                         &format!("{pause}\n    target=\"$objects/$prefix/$name\""),

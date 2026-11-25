@@ -93,6 +93,7 @@ steps:
   # in either order: both are due in the same advance.
   - herdr_calls: { method: agent.prompt, count: 2 }
     retry: 10000
+  - herdr_calls: { method: agent.prompt, count: 99 }
   - herdr_calls:
       method: agent.prompt
       where:

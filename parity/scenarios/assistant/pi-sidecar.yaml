@@ -189,7 +189,7 @@ steps:
   - stop: { signal: TERM }
   # No browser, get or send takes part in resuming the saved run.
   - start: {}
-  - http_fake_calls: { fake: anthropic, count: 3 }
+  - sh: sleep 20; cat ranger/state.json; cat pi-sidecar.starts; exit 1
     retry: 25000
   - assert_file:
       path: "${ROOT}/ranger/state.json"
