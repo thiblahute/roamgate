@@ -1,3 +1,5 @@
+import { routeHttpUrl } from "./httpRoute";
+
 export function connectionHttpPath(
   connectionId: string,
   endpoint: string,
@@ -7,10 +9,10 @@ export function connectionHttpPath(
   const suffix = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const path = `/api/connections/${encodeURIComponent(connectionId)}${suffix}`;
   if (connectionGeneration === undefined || connectionGeneration === null) {
-    return path;
+    return routeHttpUrl(path);
   }
   if (!Number.isSafeInteger(connectionGeneration) || connectionGeneration < 0) {
     throw new Error("invalid connection_generation");
   }
-  return `${path}?connection_generation=${connectionGeneration}`;
+  return routeHttpUrl(`${path}?connection_generation=${connectionGeneration}`);
 }

@@ -125,6 +125,7 @@ import {
 } from "./shortcutPreferences";
 import { OVERLAY_TAB_DEFAULT_LABEL, overlayTabOf } from "./overlayTabs";
 import { OverlayTabFrame } from "./components/OverlayTab";
+import { NodeHomeStatus } from "./components/NodeHomeStatus";
 import { requestOverlayFullscreenToggle } from "./overlayGeometry";
 import { SHORTCUT_NUMBERS } from "./shortcutBindings";
 import { activeTerminalInput, blurActiveInput } from "./activeTerminalInput";
@@ -6232,6 +6233,7 @@ export default function App() {
           <ConnectionSwitcher />
         </div>
         <div className="topbar-actions">
+          <NodeHomeStatus />
           {needsYouCount ? (
             <button
               type="button"

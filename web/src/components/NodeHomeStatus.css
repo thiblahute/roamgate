@@ -1,0 +1,20 @@
+.node-home-status {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.node-home-status.is-signin {
+  color: var(--text-strong);
+  font-weight: 600;
+  background: var(--accent-soft);
+}
+
+.node-home-status.is-unreachable {
+  padding: 2px 8px;
+  border: 1px solid var(--danger-border);
+  border-radius: 6px;
+  color: var(--danger-text);
+  background: var(--danger-soft);
+}

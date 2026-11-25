@@ -1,3 +1,4 @@
+import { routeHttpUrl } from "./httpRoute";
 /**
  * Dictation into the message box: the microphone streams to the voice
  * socket in its dictation mode (server/src/http/voice-socket.ts), the raw
@@ -79,7 +80,7 @@ export function insertDictation(
 
 /** The voice socket's URL from this page. */
 function socketUrl(): URL {
-  const url = new URL("/api/voice/ws", location.href);
+  const url = new URL(routeHttpUrl("/api/voice/ws"), location.href);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url;
 }

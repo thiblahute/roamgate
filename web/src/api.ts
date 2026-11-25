@@ -16,6 +16,7 @@ import {
   type RpcCallOptions,
   type RpcLane,
 } from "./rpcLanes";
+import { RoutedBridge } from "./routedBridge";
 import { clearSavedTerminalComposerDrafts } from "./terminalComposer";
 import type { MrCachePush } from "../../shared/forge";
 import { MR_PUSH_KINDS, type MrReviewsPush } from "../../shared/mrReviews";
@@ -570,6 +571,17 @@ function isBridgeHello(value: unknown): value is BridgeHello {
   return true;
 }
 
+/** Where a bridge's socket goes, for a socket other than the page's own. */
+export interface BridgeSocketOptions {
+  /** The socket's URL; the page's own `/ws` without it. */
+  url?: () => string;
+  /**
+   * The server closed the socket for a logout (4001). Without it the page
+   * signs out and goes to its login page.
+   */
+  onLoggedOut?: () => void;
+}
+
 /**
  * Client for the local herdr-gui bridge (WebSocket).
  *
@@ -654,6 +666,7 @@ export class Bridge {
   constructor(
     private readonly connectTimeoutMs = CONNECT_TIMEOUT_MS,
     private readonly reconnectDelayMs = 1500,
+    private readonly options: BridgeSocketOptions = {},
   ) {}
 
   get status() {
@@ -922,7 +935,7 @@ export class Bridge {
     this.setStatus("connecting");
     let ws: WebSocket;
     try {
-      ws = new WebSocket(wsUrl());
+      ws = new WebSocket(this.options.url?.() ?? wsUrl());
     } catch {
       this.handleDisconnect(null, "bridge connection could not be opened");
       return;
@@ -959,6 +972,11 @@ export class Bridge {
     };
     ws.onclose = (event) => {
       if (this.ws !== ws) return;
+      if (event?.code === 4001 && this.options.onLoggedOut) {
+        this.disconnect("logged out");
+        this.options.onLoggedOut();
+        return;
+      }
       if (event?.code === 4001) {
         clearSavedTerminalComposerDrafts();
         this.disconnect("logged out");
@@ -1950,4 +1968,10 @@ export class Bridge {
   }
 }
 
-export const bridge = new Bridge();
+/**
+ * The page's bridge: one socket to the server that served the page, and on
+ * a page a Roamgate node served, a second one to its home (routedBridge.ts).
+ */
+export const bridge = new RoutedBridge(
+  (options) => new Bridge(CONNECT_TIMEOUT_MS, 1500, options),
+);

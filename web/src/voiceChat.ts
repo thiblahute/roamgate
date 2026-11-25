@@ -1,3 +1,4 @@
+import { routeHttpUrl } from "./httpRoute";
 import type { HistoryEntry } from "./components/agentHistory";
 import { parseVoiceMessage } from "../../shared/voiceMessage";
 import { isThreadWrite, roamgateWrite } from "../../shared/toolSummary";
@@ -449,7 +450,7 @@ export class VoiceLink {
   }: {
     call?: CallOptions;
   } = {}): Promise<VoiceLink> {
-    const url = new URL("/api/voice/ws", location.href);
+    const url = new URL(routeHttpUrl("/api/voice/ws"), location.href);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const holder: { link: VoiceLink | null } = { link: null };
     const channel = await VoiceChannel.open({

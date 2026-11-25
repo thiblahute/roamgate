@@ -1,3 +1,4 @@
+import { routeHttpUrl } from "../httpRoute";
 import {
   type CSSProperties,
   createContext,
@@ -406,9 +407,12 @@ export function reviewImageUrl(source: string): string | null {
     /\/images\/([0-9a-f]{16})\/([0-9a-f]{16}\.(?:png|jpg|gif|webp))$/.exec(
       path,
     );
-  if (match) return `/api/review/image?session=${match[1]}&name=${match[2]}`;
+  if (match)
+    return routeHttpUrl(
+      `/api/review/image?session=${match[1]}&name=${match[2]}`,
+    );
   return LOCAL_IMAGE.test(path) && !FORGE_UPLOAD.test(path)
-    ? `/api/review/image?path=${encodeURIComponent(path)}`
+    ? routeHttpUrl(`/api/review/image?path=${encodeURIComponent(path)}`)
     : null;
 }
 

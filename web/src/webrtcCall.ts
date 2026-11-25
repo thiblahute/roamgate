@@ -1,3 +1,4 @@
+import { routeHttpUrl } from "./httpRoute";
 /**
  * A voice call as a WebRTC call with the voice helper
  * (voice/helper/src/call.rs, server/src/http/voice-socket.ts): the helper's
@@ -1289,7 +1290,10 @@ export class WebRtcCall {
    * `call_token`: a `token` parameter is the generated login token's.
    */
   private signallingUrl(): string {
-    const url = new URL("/api/voice/call/signalling", location.href);
+    const url = new URL(
+      routeHttpUrl("/api/voice/call/signalling"),
+      location.href,
+    );
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     url.searchParams.set("call", String(this.id));
     url.searchParams.set("call_token", this.token);

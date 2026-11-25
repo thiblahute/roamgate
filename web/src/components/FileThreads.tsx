@@ -1,3 +1,4 @@
+import { routeHttpUrl } from "../httpRoute";
 import {
   type CSSProperties,
   type ReactNode,
@@ -367,7 +368,7 @@ function snapshotUrl(thread: ReviewThread): string | null {
     ? /\/([0-9a-f]{16})\/([0-9a-f]{16}\.(?:png|jpg|gif|webp))$/.exec(path)
     : null;
   return match
-    ? `/api/review/image?session=${match[1]}&name=${match[2]}`
+    ? routeHttpUrl(`/api/review/image?session=${match[1]}&name=${match[2]}`)
     : null;
 }
 

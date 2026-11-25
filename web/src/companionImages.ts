@@ -1,3 +1,4 @@
+import { routeHttpUrl } from "./httpRoute";
 import { bridge, type ConnectionSummary } from "./api";
 import { messageImagePieces } from "./chatImages";
 import { downscaleImage } from "./imageDownscale";
@@ -43,7 +44,7 @@ export async function uploadCompanionImage(file: File): Promise<string> {
 
 /** Where an image of this host shows, by its absolute path. */
 export function companionImageUrl(path: string): string {
-  return `/api/voice/image?path=${encodeURIComponent(path)}`;
+  return routeHttpUrl(`/api/voice/image?path=${encodeURIComponent(path)}`);
 }
 
 // An absolute path to an image file, as a word of its own (or quoted).
