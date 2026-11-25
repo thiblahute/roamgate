@@ -111,6 +111,15 @@ fn exists(path: &str) -> bool {
     Path::new(path).exists()
 }
 
+/// A program at `path`: on Windows also its `.exe` when the path names
+/// none, as starting it finds it.
+fn program_exists(path: &str) -> bool {
+    exists(path)
+        || (cfg!(windows)
+            && Path::new(path).extension().is_none()
+            && exists(&format!("{path}.exe")))
+}
+
 /// JavaScriptCore's words for JSON it cannot parse, as far as serde tells
 /// (the message after "JSON Parse error: " is not byte-identical).
 pub fn json_parse_error(error: &serde_json::Error) -> String {
@@ -456,7 +465,7 @@ fn check(path: &str, config: Map<String, Value>) -> Result<VoiceConfig, String> 
         else {
             return bad(format!("{key} is required"));
         };
-        if !exists(value) {
+        if !program_exists(value) {
             return Err(format!("{key} not found: {value}"));
         }
     }
