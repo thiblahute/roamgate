@@ -210,7 +210,13 @@ impl AgentSocket {
 
     /// The socket of a key, listening or not. Unix socket paths are short
     /// (104 bytes on macOS): the key is hashed.
+    /// On Windows this host's is the well-known `review.sock` itself:
+    /// `AF_UNIX` there does not follow a link to a socket.
     pub fn socket_path_for(&self, key: &str) -> PathBuf {
+        #[cfg(windows)]
+        if key == LOCAL_SOCKET_KEY {
+            return self.0.home.join(REVIEW_HOME_DIR).join("review.sock");
+        }
         socket_path_in(&self.0.socket_directory, key)
     }
 
@@ -268,11 +274,16 @@ impl AgentSocket {
         }
         create_dir_mode(&self.0.socket_directory, 0o700)?;
         set_mode(&self.0.socket_directory, 0o700)?;
+        // Nothing to stage where the socket is the well-known path.
+        let staged = staged && !(cfg!(windows) && socket_key == LOCAL_SOCKET_KEY);
         let path = if staged {
             self.staged_path(socket_key)
         } else {
             self.socket_path_for(socket_key)
         };
+        if let Some(parent) = path.parent() {
+            create_dir_mode(parent, 0o700)?;
+        }
         let _ = std::fs::remove_file(&path);
         let listener = roamgate_base::local_socket::Listener::bind(&path)?;
         set_mode(&path, 0o600)?;
@@ -1580,6 +1591,10 @@ impl AgentSocket {
             tracing::warn!(error = %error, "claude mod files not written");
         }
         let link = base.join("review.sock");
+        // Windows' socket is the well-known path itself.
+        if link == path {
+            return Ok(());
+        }
         let current = std::fs::symlink_metadata(&link)
             .ok()
             .filter(|m| m.file_type().is_symlink())

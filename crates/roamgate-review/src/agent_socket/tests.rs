@@ -1180,12 +1180,14 @@ async fn an_ssh_connection_named_local_has_its_own_socket() {
         .map(|c| c["connectionId"].clone())
         .collect();
     assert_eq!(held, vec![json!("local"), json!("desktop")]);
-    // Stopping the Mac's socket leaves the desktop's link in place.
+    // Stopping the Mac's socket leaves the desktop's in place.
     s.agent.stop(Some("local"));
+    #[cfg(unix)]
     assert_eq!(
         std::fs::read_link(s.socket()).unwrap(),
         s.agent.socket_path(LOCAL_SOCKET_KEY).unwrap()
     );
+    assert!(s.socket().exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
