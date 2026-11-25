@@ -134,6 +134,10 @@ checksum = "b6f5a061950541f419e1cccc3559e2154779140d8d051a4cfad395481fc081cd"
 # A call's ICE addresses (call.rs): getifaddrs.
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+# A call's ICE addresses (call.rs) on Windows: its adapters'.
+if-addrs = "0.15"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # osxprocesstapsrc (processtap.rs): CATapDescription and its dictionaries.
 objc2 = "0.6"

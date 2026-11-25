@@ -675,8 +675,27 @@ fn interface_addresses() -> Vec<String> {
     addresses
 }
 
+/// On Windows, the same from its adapters (if-addrs): operationally up,
+/// not loopback nor link-local, IPv4.
+#[cfg(windows)]
+fn interface_addresses() -> Vec<String> {
+    let mut addresses: Vec<String> = if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|interface| interface.is_oper_up() && !interface.is_loopback())
+        .filter_map(|interface| match interface.ip() {
+            std::net::IpAddr::V4(ip) if !ip.is_link_local() => Some(ip.to_string()),
+            _ => None,
+        })
+        .collect();
+    addresses.sort();
+    addresses.dedup();
+    addresses.push("127.0.0.1".to_string());
+    addresses
+}
+
 /// Elsewhere, the agent's own choice.
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn interface_addresses() -> Vec<String> {
     Vec::new()
 }
