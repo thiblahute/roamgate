@@ -629,7 +629,12 @@ async fn session_file_for(
         return Ok(found.map(|d| d.file));
     }
     if session.kind == "path" {
-        let path = resolve(&session.value).to_string_lossy().into_owned();
+        // A remote host's absolute path is POSIX, whatever this machine is.
+        let path = if files.remote() && session.value.starts_with('/') {
+            roamgate_base::paths::resolve_posix(&session.value)
+        } else {
+            resolve(&session.value).to_string_lossy().into_owned()
+        };
         return files.stat_file(&path).await;
     }
     if agent == "muse" {

@@ -294,7 +294,7 @@ async fn finds_ids_under_a_profile_agent_session_directory() {
     write(&path, "{}\n");
     let found = omp(root.path(), &[], "session-d").await;
     assert_eq!(found["status"], json!("ok"));
-    assert_eq!(found["path"], json!(text(&path)));
+    assert_eq!(found["path"], json!(text(&crate::paths::normalize(&path))));
 }
 
 #[tokio::test]
@@ -312,7 +312,7 @@ async fn finds_ids_in_the_default_xdg_omp_session_directory() {
     )
     .await;
     assert_eq!(found["status"], json!("ok"));
-    assert_eq!(found["path"], json!(text(&path)));
+    assert_eq!(found["path"], json!(text(&crate::paths::normalize(&path))));
 }
 
 /// A remote host's files, each stat answering the path asked.
