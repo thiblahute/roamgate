@@ -277,8 +277,31 @@ fn private_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// A scenario's path under HOME. `.config/roamgate/...` names the data
+/// root, which is `%APPDATA%\roamgate` on Windows ([`data_root`]), and an
+/// agent client there is its `.exe`.
+pub fn home_path(home: &Path, relative: &Path) -> PathBuf {
+    // The agent clients are executables there: `roamgate-review.exe`.
+    let bin = Path::new(".cache").join("roamgate").join("bin");
+    if cfg!(windows) && relative.parent() == Some(bin.as_path()) && relative.extension().is_none() {
+        return home.join(relative.with_extension("exe"));
+    }
+    let data = Path::new(".config").join("roamgate");
+    match relative.strip_prefix(&data) {
+        Ok(rest) if cfg!(windows) => {
+            let root = data_root(home);
+            if rest.as_os_str().is_empty() {
+                root
+            } else {
+                root.join(rest)
+            }
+        }
+        _ => home.join(relative),
+    }
+}
+
 fn write_seed(home: &Path, file: &SeedFile) -> Result<()> {
-    let path = home.join(&file.path);
+    let path = home_path(home, Path::new(&file.path));
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -359,11 +382,28 @@ impl Run {
             }
             write_seed(&home, &file)?;
         }
-        // Seeds name the run's paths (${ROOT}, ${HOME}) too.
+        // Seeds name the run's paths (${ROOT}, ${HOME}) too: in their
+        // strings, so that a Windows path's `\` stays text, not a JSON escape.
         let expand_seed = |seed: &HerdrSeed| -> Result<HerdrSeed> {
-            Ok(serde_json::from_str(&expand(&serde_json::to_string(
-                seed,
-            )?))?)
+            fn walk(value: &mut serde_json::Value, expand: &dyn Fn(&str) -> String) {
+                match value {
+                    serde_json::Value::String(text) => *text = expand(text),
+                    serde_json::Value::Array(items) => {
+                        items.iter_mut().for_each(|item| walk(item, expand));
+                    }
+                    serde_json::Value::Object(map) => {
+                        let entries = std::mem::take(map);
+                        for (key, mut item) in entries {
+                            walk(&mut item, expand);
+                            map.insert(expand(&key), item);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let mut value = serde_json::to_value(seed)?;
+            walk(&mut value, &expand);
+            Ok(serde_json::from_value(value)?)
         };
         let herdr = match &options.herdr {
             Some(seed) => Some(FakeHerdr::start(&root.join("herdr"), &expand_seed(seed)?).await?),

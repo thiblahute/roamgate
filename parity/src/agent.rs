@@ -17,10 +17,10 @@ pub fn socket_path(home: &Path) -> PathBuf {
 
 /// Where the server installs its client under a HOME.
 pub fn client_path(home: &Path) -> PathBuf {
-    home.join(".cache")
-        .join("roamgate")
-        .join("bin")
-        .join("roamgate-review")
+    crate::run::home_path(
+        home,
+        &Path::new(".cache/roamgate/bin").join("roamgate-review"),
+    )
 }
 
 /// The Python client SSH hosts get (contract/assets/python).

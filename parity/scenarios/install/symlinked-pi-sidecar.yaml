@@ -6,6 +6,9 @@ tier: T2
 description: >
   The release installer refuses an install directory whose roamgate-pi is a
   symlink, before it changes anything.
+# The POSIX installers (scripts/install-*.sh); Windows installs with
+# install-plugin.ps1 (plugin-windows.yaml).
+platforms: [linux, macos]
 server:
   herdr: false
   start: false
