@@ -14,17 +14,18 @@ pub fn runnable(path: &Path) -> bool {
     let Ok(meta) = std::fs::metadata(path) else {
         return false;
     };
-    if !meta.is_file() || meta.len() == 0 {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        rustix::fs::access(path, rustix::fs::Access::EXEC_OK).is_ok()
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    meta.is_file() && meta.len() > 0 && executable(path)
+}
+
+#[cfg(unix)]
+fn executable(path: &Path) -> bool {
+    rustix::fs::access(path, rustix::fs::Access::EXEC_OK).is_ok()
+}
+
+/// No execute bit on Windows: any file runs.
+#[cfg(not(unix))]
+fn executable(_path: &Path) -> bool {
+    true
 }
 
 /// The host-spawn to run: `override_path` when given (ROAMGATE_HOST_SPAWN;
