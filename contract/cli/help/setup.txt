@@ -6,7 +6,11 @@ checked) into the models directory and point voice.json at them. Run it
 again to change a model, switch tier, or free disk.
 
 Actions:
-  (none)            choose the models, download them, write voice.json
+  (none)            choose the models, download them, write voice.json,
+                    and download the voice helper of this release when it
+                    is not installed
+  helper            download the voice helper of this release (and its
+                    CUDA pack), replacing the one installed
   list              show the hardware, the models and what is installed
   remove-unused     delete the models in the models directory voice.json
                     no longer uses, and unfinished downloads
@@ -22,6 +26,9 @@ Options:
   --turn ID|none       end of turn, from the voice
   --text-turn ID|none  end of turn, from the words
   --helper PATH        the voice helper voice.json names
+  --no-helper-download do not download the voice helper
+  --cuda, --no-cuda    with the helper, its CUDA pack (default: when an
+                       NVIDIA GPU is found)
   --verify             check the checksums of files already in place
   --yes, -y            no questions: the choices as given
   --json               list as JSON
