@@ -65,6 +65,49 @@ pub async fn connect(path: &Path) -> io::Result<Stream> {
     }
 }
 
+/// A connected local socket that blocks, each read and write within the
+/// timeout it was given (`roamgate-review` and `roamgate-hold`, which run
+/// no async runtime).
+pub struct BlockingStream {
+    #[cfg(unix)]
+    inner: std::os::unix::net::UnixStream,
+    #[cfg(windows)]
+    inner: socket2::Socket,
+}
+
+/// Connects to the Unix socket at `path` (`AF_UNIX` on Windows too, as
+/// [`connect`]), each read and write then failing with `TimedOut` or
+/// `WouldBlock` after `timeout`.
+pub fn connect_blocking(path: &Path, timeout: std::time::Duration) -> io::Result<BlockingStream> {
+    #[cfg(unix)]
+    let inner = std::os::unix::net::UnixStream::connect(path)?;
+    #[cfg(windows)]
+    let inner = {
+        let socket = socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)?;
+        socket.connect(&socket2::SockAddr::unix(path)?)?;
+        socket
+    };
+    inner.set_read_timeout(Some(timeout))?;
+    inner.set_write_timeout(Some(timeout))?;
+    Ok(BlockingStream { inner })
+}
+
+impl io::Read for BlockingStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl io::Write for BlockingStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 #[cfg(windows)]
 pub use windows::{PipeListener, connect_pipe};
 
@@ -245,6 +288,33 @@ mod tests {
         client.read_to_string(&mut reply).await.unwrap();
         assert_eq!(reply, "pong");
         assert_eq!(&server.await.unwrap(), b"ping");
+    }
+
+    /// The blocking client of `roamgate-review` reaches the same listener.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_blocking_client_reaches_a_listener_at_a_path() {
+        use std::io::{Read, Write};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.sock");
+        let listener = Listener::bind(&path).unwrap();
+        let server = tokio::spawn(async move {
+            let mut stream = listener.accept().await.unwrap();
+            let mut line = [0u8; 4];
+            stream.read_exact(&mut line).await.unwrap();
+            stream.write_all(b"pong").await.unwrap();
+            stream.shutdown().await.unwrap();
+        });
+        let reply = tokio::task::spawn_blocking(move || {
+            let mut client = connect_blocking(&path, std::time::Duration::from_secs(10)).unwrap();
+            client.write_all(b"ping").unwrap();
+            let mut reply = String::new();
+            client.read_to_string(&mut reply).unwrap();
+            reply
+        })
+        .await
+        .unwrap();
+        assert_eq!(reply, "pong");
+        server.await.unwrap();
     }
 
     #[cfg(windows)]
