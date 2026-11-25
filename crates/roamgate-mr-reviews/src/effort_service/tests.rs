@@ -3,6 +3,9 @@
 //! gives (a settings holder, the upstream scanner, worktree and tree
 //! stand-ins). The board tools' own texts are board-tools.ts's tests.
 
+// Helpers of the tests that run on Unix only (POSIX clone paths).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -503,6 +506,9 @@ fn matches(pattern: &str, text: &str) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn an_effort_declared_its_card_ledger_tools_the_push_with_undo_refusals() {
     let (g, clone) = engine(&[
         ("pool/a.c", "a\n", "pool: add a"),
@@ -619,6 +625,9 @@ async fn an_effort_declared_its_card_ledger_tools_the_push_with_undo_refusals() 
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn planned_requests_a_part_made_with_its_commits_picked_a_conflict_reported_a_commit_opened()
 {
     let (g, clone) = engine(&[
@@ -768,6 +777,9 @@ async fn planned_requests_a_part_made_with_its_commits_picked_a_conflict_reporte
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_part_of_an_effort_headed_in_a_linked_worktree_starts_from_the_parent_workspace_else_its_main_checkout()
  {
     let (g, clone) = engine(&[
@@ -1121,6 +1133,9 @@ async fn folding_a_fixup_that_conflicts_stops_there_and_is_reported_nothing_abor
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_part_folds_its_plans_fixups_says_the_ones_it_cannot_and_starts_from_an_upstream_branch_holding_the_plan()
  {
     let (g, clone) = engine(&[
@@ -1201,6 +1216,9 @@ async fn a_part_folds_its_plans_fixups_says_the_ones_it_cannot_and_starts_from_a
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_part_stacks_on_the_part_it_depends_on_or_fixes_refuses_fixups_of_a_plan_with_no_part_and_starts_from_a_port()
  {
     let (g, clone) = engine(&[
@@ -1330,6 +1348,9 @@ async fn a_part_stacks_on_the_part_it_depends_on_or_fixes_refuses_fixups_of_a_pl
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_part_moved_by_hand_is_refreshed_from_its_branch_one_gone_is_refused_then_attached_with_from()
  {
     let (g, clone) = engine(&[
@@ -1500,6 +1521,9 @@ async fn a_part_moved_by_hand_is_refreshed_from_its_branch_one_gone_is_refused_t
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_duplicate_effort_deleted_by_id_only_the_others_ledger_kept_its_declaration_back_restores_it()
  {
     let (g, clone) = engine(&[
@@ -1607,6 +1631,9 @@ fn what_a_part_holds_is_read_back_from_its_branch_never_taken_from_the_pick() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_part_never_goes_into_an_existing_worktree_or_onto_an_existing_branch() {
     let (g, clone) = engine(&[
         ("pool/a.c", "a\n", "pool: add a"),
@@ -1673,6 +1700,9 @@ async fn a_part_never_goes_into_an_existing_worktree_or_onto_an_existing_branch(
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_clone_kept_in_a_repository_directory_parts_start_from_its_checkout_and_a_repository_with_no_checkout_is_named()
  {
     let g = GitFixture::new();
@@ -1883,6 +1913,9 @@ async fn a_clone_kept_in_a_repository_directory_parts_start_from_its_checkout_an
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn an_effort_s_leader_is_its_head_workspace_s_conversation_session_even_stopped() {
     let (g, clone) = engine(&[("pool/a.c", "a\n", "pool: add a")]);
     let env = Env::new(

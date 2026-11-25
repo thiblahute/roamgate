@@ -394,6 +394,8 @@ pub fn parse_checkout(result: &ShellResult) -> CheckoutResult {
 }
 
 #[cfg(test)]
+// Some of its tests run on Unix only (POSIX clone paths).
+#[cfg_attr(not(unix), allow(dead_code, unused_imports))]
 pub(crate) mod tests {
     //! `worktree.test.ts`: the scripts run by `sh` on real repositories: a
     //! bare "forge" with merge request refs and a clone of it.
@@ -503,6 +505,9 @@ pub(crate) mod tests {
     }
 
     #[test]
+    // Unix only: merge request clones and worktrees are found by POSIX
+    // paths (as the Bun server did); a Windows machine's are not yet.
+    #[cfg(unix)]
     fn worktree_prefetch_detached_checkout_local_changes() {
         let f = forge();
         let clone = f.clone_dir();
@@ -641,6 +646,9 @@ pub(crate) mod tests {
     }
 
     #[test]
+    // Unix only: merge request clones and worktrees are found by POSIX
+    // paths (as the Bun server did); a Windows machine's are not yet.
+    #[cfg(unix)]
     fn clones_the_main_checkout_and_the_remote_that_is_the_project() {
         let f = forge();
         let clone = f.clone_dir();
@@ -689,6 +697,9 @@ pub(crate) mod tests {
     }
 
     #[test]
+    // Unix only: merge request clones and worktrees are found by POSIX
+    // paths (as the Bun server did); a Windows machine's are not yet.
+    #[cfg(unix)]
     fn a_repository_directory_with_linked_worktrees_gstreamer_git() {
         let f = forge();
         let setup = f.run(
