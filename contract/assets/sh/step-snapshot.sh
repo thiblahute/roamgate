@@ -36,7 +36,14 @@ trap 'trap - EXIT; exit 1' HUP INT TERM
 printf '%s\n' "$$" > "$quarantine/owner-pid"
 # Fail closed if this shell cannot enforce the per-file disk bound.
 # (512-byte blocks in sh, 1 KiB in bash: either holds a 50 MB file.)
-ulimit -f 131072 || fail 'file size limits unavailable'
+# Git for Windows' shell (MSYS/Cygwin) cannot set the limit at all: there,
+# dd's count and the total budget below still bound every copy.
+if ! ulimit -f 131072 2>/dev/null; then
+  case $(uname -s) in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) fail 'file size limits unavailable';;
+  esac
+fi
 case "$objects$git_dir" in *'
 '*) fail 'object directory contains a newline';; esac
 mkdir "$quarantine/objects" "$quarantine/objects/info" "$quarantine/files" "$quarantine/sources"
