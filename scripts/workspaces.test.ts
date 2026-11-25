@@ -67,7 +67,16 @@ test("CI keeps the complete non-browser validation gate", () => {
     "bun check -p tsconfig.json && bun check -p web/tsconfig.json && bun check -p server/tsconfig.json",
   );
   expect(scripts["test:browser"]).toBeUndefined();
-  expect(Object.keys(workflow.jobs)).toEqual(["validate"]);
+  expect(Object.keys(workflow.jobs)).toEqual(["validate", "windows-scripts"]);
+  // The Windows job runs the installer tests the Linux gate skips.
+  expect(
+    workflow.jobs["windows-scripts"].steps.flatMap((step) =>
+      step.run ? [step.run] : [],
+    ),
+  ).toEqual([
+    "bun install --frozen-lockfile",
+    "bun test scripts/install-plugin.windows.test.ts scripts/install-roamgate.windows.test.ts",
+  ]);
   expect(workflow.jobs.validate.if).toBeUndefined();
   expect(
     workflow.jobs.validate.steps.flatMap((step) =>
