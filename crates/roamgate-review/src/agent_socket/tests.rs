@@ -948,6 +948,10 @@ async fn a_conversation_holders_log_chunk_may_pass_the_agent_limit() {
     let s = setup();
     // A chunk with a line past a megabyte: read, not refused (no
     // conversation mode here, so 503).
+    // Written as far as the socket takes it, then the answer read, as for
+    // a refusal: hyper's client failed the body write with EPIPE on
+    // GitHub's Linux runners, where only the status says what the server
+    // did (413 unread, 503 read).
     let chunk = json!({
         "pane": "w1:p1",
         "holder_id": "a".repeat(32),
@@ -955,7 +959,10 @@ async fn a_conversation_holders_log_chunk_may_pass_the_agent_limit() {
         "end": 10,
         "data": "x".repeat(REVIEW_AGENT_MAX_BODY_BYTES + 1),
     });
-    assert_eq!(post_json(&s.socket(), "hold_output", chunk).await.0, 503);
+    assert_eq!(
+        post_refused(&s.socket(), "hold_output", &chunk.to_string()).await,
+        503
+    );
     // Past its own limit it is refused unread too.
     let huge = "x".repeat(HOLD_OUTPUT_MAX_BODY_BYTES + 1);
     assert_eq!(post_refused(&s.socket(), "hold_output", &huge).await, 413);
