@@ -143,12 +143,19 @@ if (process.env.ROAMGATE_PR_CARD_CACHE_DOM_TEST !== "1") {
         container.querySelector("section")?.getAttribute("aria-busy"),
       ).toBe("true");
       expect(title()).toBe("GitLab #12965");
-      // Another device refreshed it: the server pushes the new answer.
-      (
-        bridge as never as { helloAcceptedForSocket: boolean }
-      ).helloAcceptedForSocket = true;
+      // Another device refreshed it: the server pushes the new answer,
+      // on the socket of the server that served the page.
+      const socket = (
+        bridge as never as {
+          page: {
+            helloAcceptedForSocket: boolean;
+            onMessage: (raw: string) => void;
+          };
+        }
+      ).page;
+      socket.helloAcceptedForSocket = true;
       await React.act(async () => {
-        (bridge as never as { onMessage: (raw: string) => void }).onMessage(
+        socket.onMessage(
           JSON.stringify({
             forge_cache: {
               kind: "card",
