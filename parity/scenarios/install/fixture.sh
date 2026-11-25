@@ -12,13 +12,14 @@
 #   PLUGIN_FAILURE the plugin binary's failure (none, native-command,
 #                  native-exit)
 #   PI_SIDECAR     1: the package has roamgate-pi beside the binary
+#   PLATFORM       the release's platform (default: this machine's)
 set -eu
 product=$1
 os=$(uname -s)
 arch=$(uname -m)
 case "$os" in Linux) os=linux ;; Darwin) os=darwin ;; esac
 case "$arch" in x86_64 | amd64) arch=x64 ;; aarch64 | arm64) arch=arm64 ;; esac
-platform=$os-$arch
+platform=${PLATFORM:-$os-$arch}
 if [ -n "${ARCHIVE_VERSION:-}" ]; then
   archive_name=$product-v$ARCHIVE_VERSION-$platform.tar.xz
 else

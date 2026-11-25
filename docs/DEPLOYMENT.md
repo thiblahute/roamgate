@@ -68,8 +68,9 @@ where the server looks for it.
 
 On Linux/macOS, the checksum-verifying installer writes `~/.local/bin/roamgate`
 and `~/.local/bin/roamgate-pi`. On Linux x86-64 it installs the musl build when
-`ldd` is musl's (Alpine); its `roamgate-pi` needs `libstdc++` and `libgcc`
-(`apk add libstdc++ libgcc`):
+`ldd` is musl's (Alpine); there the installer and `roamgate update` need
+`curl`, and `roamgate-pi` needs `libstdc++` and `libgcc`
+(`apk add curl libstdc++ libgcc`):
 
 ```bash
 curl -fsSL \

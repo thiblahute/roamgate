@@ -1,0 +1,48 @@
+name: the installer picks the musl package where ldd is musl's, the glibc one where it is glibc's
+ledger:
+  - "scripts/install-roamgate.test.ts > picks the musl package where ldd is musl's, the glibc one where it is glibc's"
+family: install
+tier: T2
+description: >
+  The release installer (scripts/install-roamgate.sh) on a Linux x86-64 whose
+  ldd says musl (a fake uname and ldd first on PATH) downloads the
+  linux-x64-musl release fake-models serves (fixture.sh), installs it with
+  its roamgate-pi and says what that needs on Alpine; where ldd says glibc it
+  takes the linux-x64 release.
+platforms: [linux, macos]
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+    env: { PI_SIDECAR: "1", PLATFORM: linux-x64-musl }
+  - sh: sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+    env: { PLATFORM: linux-x64 }
+  - sh: >-
+      mkdir -p musl glibc &&
+      printf '#!/bin/sh\ncase "${1:-}" in -s) echo Linux ;; -m) echo x86_64 ;; *) echo Linux ;; esac\n' > musl/uname &&
+      cp musl/uname glibc/uname &&
+      printf '#!/bin/sh\necho "musl libc (x86_64)"\nexit 1\n' > musl/ldd &&
+      printf '#!/bin/sh\necho "ldd (GNU libc) 2.39"\n' > glibc/ldd &&
+      chmod 755 musl/uname musl/ldd glibc/uname glibc/ldd
+  - sh: PATH="$PWD/musl:$PATH" sh "${REPO}/scripts/install-roamgate.sh"
+    env:
+      ROAMGATE_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      ROAMGATE_INSTALL_DIR: "${ROOT}/install-musl"
+    expect:
+      exit: 0
+      stdout_contains: "Downloading roamgate for linux-x64-musl...\n"
+  - sh: PATH="$PWD/musl:$PATH" sh "${REPO}/scripts/install-roamgate.sh" | grep -c "apk add libstdc++ libgcc"
+    env:
+      ROAMGATE_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      ROAMGATE_INSTALL_DIR: "${ROOT}/install-musl"
+    expect: { exit: 0, stdout: "1\n" }
+  - sh: ./install-musl/roamgate-pi
+    expect: { exit: 0, stdout: "pi 9.8.7\n" }
+  - sh: PATH="$PWD/glibc:$PATH" sh "${REPO}/scripts/install-roamgate.sh"
+    env:
+      ROAMGATE_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      ROAMGATE_INSTALL_DIR: "${ROOT}/install-glibc"
+    expect:
+      exit: 0
+      stdout_contains: "Downloading roamgate for linux-x64...\n"

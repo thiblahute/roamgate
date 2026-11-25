@@ -513,6 +513,7 @@ scripts/install-roamgate.test.ts	legacy checksum failure preserves the existing 
 scripts/install-roamgate.test.ts	prefers Roamgate variables, including empty VERSION for latest	scenario:parity/scenarios/install/roamgate-variables-win.yaml	
 scripts/install-roamgate.test.ts	rejects an explicitly empty Roamgate installation directory	scenario:parity/scenarios/install/empty-install-dir.yaml	
 scripts/install-roamgate.test.ts	verifies, backs up, and installs the expected platform package	scenario:parity/scenarios/install/install-and-back-up.yaml	
+scripts/install-roamgate.test.ts	picks the musl package where ldd is musl's, the glibc one where it is glibc's	scenario:parity/scenarios/install/musl.yaml	
 scripts/install-roamgate.test.ts	installs roamgate-pi beside roamgate and keeps the previous one	scenario:parity/scenarios/install/pi-sidecar.yaml	
 scripts/install-roamgate.test.ts	a release without roamgate-pi leaves none, its previous one kept	scenario:parity/scenarios/install/pi-sidecar-dropped.yaml	
 scripts/install-roamgate.test.ts	a previous release without roamgate-pi leaves no previous one	scenario:parity/scenarios/install/pi-sidecar-first.yaml	
@@ -520,6 +521,7 @@ scripts/install-roamgate.test.ts	refuses to replace a symlinked roamgate-pi	scen
 scripts/install-roamgate.test.ts	rejects filenames supplied by an untrusted checksum file	scenario:parity/scenarios/install/untrusted-checksum-name.yaml	
 scripts/install-roamgate.test.ts	refuses to replace a symlinked install target	scenario:parity/scenarios/install/symlinked-target.yaml	
 scripts/install-roamgate.test.ts	rejects unauthenticated non-loopback release mirrors	scenario:parity/scenarios/install/insecure-mirror.yaml	
+scripts/install-roamgate.windows.test.ts	the PowerShell installer verifies, installs beside a running roamgate and keeps the previous one	scenario:parity/scenarios/install/roamgate-windows.yaml	
 scripts/lint.test.ts	lint rejects conditional, repeated, nested and non-component Hooks	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/lint.test.ts	dependency warnings retain scope and existing ESLint suppressions	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/lint.test.ts	lint preserves recommended TypeScript rules and ESLint option defaults	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them

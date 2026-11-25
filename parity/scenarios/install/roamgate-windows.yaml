@@ -1,0 +1,22 @@
+name: the Windows release installer verifies, installs beside a running roamgate and keeps the previous one
+ledger:
+  - "scripts/install-roamgate.windows.test.ts > the PowerShell installer verifies, installs beside a running roamgate and keeps the previous one"
+family: install
+tier: T2
+description: >
+  scripts/install-roamgate.ps1 run by Windows PowerShell with only System32
+  on PATH, against zip releases fake-models serves (roamgate-windows.sh): a
+  fresh install, an install over a running roamgate.exe that becomes
+  roamgate.exe.previous, a pinned version refused while that previous one
+  runs and installed once it stops, and every refusal (checksum, VERSION,
+  binary version, pinned version, insecure or credentialed mirror, bad
+  version) keeping the installation as it was.
+platforms: [windows]
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/roamgate-windows.sh"
+    env: { REPO: "${REPO}", FAKE_HTTP: "${FAKE_HTTP}" }
+    within_ms: 900000
+    expect: { exit: 0, stdout_contains: ok }

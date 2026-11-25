@@ -32,15 +32,17 @@ if (process.argv[2] === "--version" || (process.argv[2] === "plugin" && process.
 TS
 bun build --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig fixture.ts \
   --outfile "$(win "$PWD/assets/$package/roamgate.exe")" >/dev/null
-archive_name=roamgate-v9.8.7-$platform.tar.xz
+archive_name=roamgate-v9.8.7-$platform.zip
 archive=$releases/$archive_name
-# pack <VERSION's version> <file>: the package as the release ships it.
+# pack <VERSION's version> <file>: the package as the release ships it (a
+# zip: Windows' tar.exe reads no xz before Windows 11).
 pack() {
   printf 'roamgate %s %s\n' "$1" "$platform" >"$PWD/assets/$package/VERSION"
-  "$tar" --options xz:compression-level=0 -C "$(win "$PWD/assets")" -cJf "$(win "$2")" "$package"
+  rm -f "$2"
+  "$tar" -a -C "$(win "$PWD/assets")" -cf "$(win "$2")" "$package"
 }
-pack 9.8.7 "$PWD/valid.tar.xz"
-pack 9.8.6 "$PWD/invalid.tar.xz"
+pack 9.8.7 "$PWD/valid.zip"
+pack 9.8.6 "$PWD/invalid.zip"
 # checksum <digest> <name>
 checksum() { printf '%s  %s\n' "$1" "$2" >"$archive.sha256"; }
 digest_of() { sha256sum "$1" | cut -d' ' -f1; }
@@ -48,11 +50,11 @@ digest_of() { sha256sum "$1" | cut -d' ' -f1; }
 target=$root/server/roamgate.exe
 # install [env options and variables]: the installer under PowerShell.
 install() {
-  env "$@" PATH="$system:$system/WindowsPowerShell/v1.0" "$powershell" -NoProfile \
+  env -u PSModulePath "$@" PATH="$system:$system/WindowsPowerShell/v1.0" "$powershell" -NoProfile \
     -NonInteractive -ExecutionPolicy Bypass -File "$(win "$root/scripts/install-plugin.ps1")"
 }
 for case in fresh none legacy-mirror checksum checksum-name metadata native-command download; do
-  if [ "$case" = metadata ]; then cp invalid.tar.xz "$archive"; else cp valid.tar.xz "$archive"; fi
+  if [ "$case" = metadata ]; then cp invalid.zip "$archive"; else cp valid.zip "$archive"; fi
   digest=$(digest_of "$archive")
   case "$case" in
     checksum) checksum "$(printf '0%.0s' $(seq 64))" "$archive_name" ;;
