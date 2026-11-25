@@ -10,9 +10,10 @@ name: Rust
 on:
   pull_request:
   # ci/** branches run it on a fork, where workflow_dispatch reaches only
-  # the workflows of the default branch.
+  # the workflows of the default branch; a ci/*release* branch runs the
+  # release dry run instead, which checks the same and more.
   push:
-    branches: [main, "ci/**"]
+    branches: [main, "ci/**", "!ci/*release*"]
   workflow_dispatch:
 
 permissions:
