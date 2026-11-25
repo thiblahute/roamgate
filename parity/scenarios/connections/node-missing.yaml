@@ -66,9 +66,10 @@ steps:
     advance_every: 50
     reply: { state: ready, type: ssh }
     save: { generation: /result/generation }
+  # A missing program exits 127, or 126 under macOS' bash 3.2.
   - expect_log:
-      contains:
-        ["node unavailable, using the SSH tunnel", "the node exited 127"]
+      contains: ["node unavailable, using the SSH tunnel"]
+      matches: "the node exited 12[67]"
       lacks: ["node link up"]
   - call: workspace.list
     connection_id: mac

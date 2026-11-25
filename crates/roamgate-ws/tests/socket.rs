@@ -386,6 +386,9 @@ async fn closes_a_reader_that_stops_past_the_hard_limit_with_an_exact_count() {
     assert!(read > 0 && read < BACKPRESSURE_HARD_LIMIT_BYTES, "{read}");
 }
 
+// Linux only: it fills the loopback socket's kernel buffers, whose sizes
+// differ on macOS, where it hangs; the flow's own test holds the rule.
+#[cfg(target_os = "linux")]
 #[tokio::test(start_paused = true)]
 async fn closes_a_socket_whose_buffer_stops_draining_for_30_seconds() {
     let (address, mut sockets) = server().await;
