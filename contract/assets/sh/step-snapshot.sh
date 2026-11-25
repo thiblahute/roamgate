@@ -32,9 +32,13 @@ for directory in "$git_dir" "$(git rev-parse --git-common-dir)"; do
 done
 quarantine="$git_dir/roamgate-last-step-capture"
 mkdir "$quarantine" 2>/dev/null || fail "capture locked at $quarantine; see docs/ARCHITECTURE.md"
-cleanup() { rm -rf "$quarantine"; }
+# A signal leaves the quarantine to its owner: a child may still write
+# there. The flag, not only `trap - EXIT`, which bash 3.2 (macOS' sh)
+# does not honour from inside another trap.
+signalled=
+cleanup() { if [ -z "$signalled" ]; then rm -rf "$quarantine"; fi; }
 trap cleanup EXIT
-trap 'trap - EXIT; exit 1' HUP INT TERM
+trap 'signalled=1; trap - EXIT; exit 1' HUP INT TERM
 printf '%s\n' "$$" > "$quarantine/owner-pid"
 # Fail closed if this shell cannot enforce the per-file disk bound.
 # (512-byte blocks in sh, 1 KiB in bash: either holds a 50 MB file.)
