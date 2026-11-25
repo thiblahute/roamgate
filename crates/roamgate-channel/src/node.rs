@@ -154,7 +154,7 @@ type Socket = tokio::net::UnixStream;
 
 #[cfg(unix)]
 async fn connect(path: &std::path::Path) -> io::Result<Socket> {
-    tokio::net::UnixStream::connect(path).await
+    roamgate_base::unix_socket::connect(path).await
 }
 
 #[cfg(not(unix))]

@@ -43,6 +43,8 @@ rustix = { version = "1", features = ["fs", "process"] }
 async-io = "2"
 futures-io = "0.3"
 socket2 = "0.6"
+# Junctions, the short aliases of long socket paths (unix_socket).
+windows-sys = { version = "0.61", features = ["Win32_System_IO"] }
 
 [dev-dependencies]
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
