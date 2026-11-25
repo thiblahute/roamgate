@@ -7,6 +7,7 @@ pub mod cli;
 pub mod families;
 pub mod front;
 pub mod front_tls;
+pub mod node;
 pub mod owners_cmd;
 pub mod reviews_cmd;
 
@@ -38,6 +39,10 @@ pub enum Options {
     Core,
     /// `roamgate owners ...`: the owners table (hidden, temporary).
     Owners(Vec<String>),
+    /// `roamgate node ...`: a machine's node (the Mac's): `--listen` serves
+    /// its own connection to the browser beside the home, `--stdio` the
+    /// home's link over ssh ([`node`]).
+    Node(Vec<String>),
     /// A management command (`roamgate <command> [arguments]`, `help`
     /// included): its name and the words after it.
     Command(String, Vec<String>),
@@ -61,6 +66,7 @@ pub fn parse_args(args: &[String]) -> Result<Options, String> {
             Some(extra) => Err(format!("unknown argument {extra}")),
         },
         Some("owners") => Ok(Options::Owners(args[1..].to_vec())),
+        Some("node") => Ok(Options::Node(args[1..].to_vec())),
         Some("front") => Ok(Options::Server(args[1..].to_vec())),
         Some(command) if !command.starts_with('-') => {
             Ok(Options::Command(command.to_owned(), args[1..].to_vec()))
@@ -197,6 +203,10 @@ mod tests {
             Ok(Options::Server(args(&["--port", "9"])))
         );
         assert_eq!(parse_args(&args(&["core"])), Ok(Options::Core));
+        assert_eq!(
+            parse_args(&args(&["node", "--stdio"])),
+            Ok(Options::Node(args(&["--stdio"])))
+        );
         assert_eq!(
             parse_args(&args(&["core", "x"])),
             Err("unknown argument x".into())
