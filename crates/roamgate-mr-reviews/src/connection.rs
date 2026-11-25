@@ -213,16 +213,18 @@ pub mod fixture {
         pub fn new() -> GitFixture {
             let dir = tempfile::Builder::new()
                 .prefix("rg-git-")
-                .tempdir_in("/tmp")
+                .tempdir_in(roamgate_base::paths::short_temp_root())
                 .unwrap();
-            let root = dir.path().canonicalize().unwrap();
+            let root = crate::worktree::tests::git_form(dir.path());
             let home = root.join("home");
             std::fs::create_dir(&home).unwrap();
+            // file:///C:/x on Windows, file:///x elsewhere.
+            let forge = root.display().to_string();
+            let slash = if forge.starts_with('/') { "" } else { "/" };
             std::fs::write(
                 home.join(".gitconfig"),
                 format!(
-                    "[user]\n\tname = Test\n\temail = test@example.org\n[url \"file://{}/forge/\"]\n\tinsteadOf = https://{FORGE_HOST}/\n[init]\n\tdefaultBranch = main\n[advice]\n\tdetachedHead = false\n",
-                    root.display()
+                    "[user]\n\tname = Test\n\temail = test@example.org\n[url \"file://{slash}{forge}/forge/\"]\n\tinsteadOf = https://{FORGE_HOST}/\n[init]\n\tdefaultBranch = main\n[advice]\n\tdetachedHead = false\n"
                 ),
             )
             .unwrap();

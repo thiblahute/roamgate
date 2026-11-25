@@ -72,7 +72,7 @@ exit 0
     async fn commands_a_host_refuses_past_its_sessions_wait_and_run_over_the_master() {
         let directory = tempfile::Builder::new()
             .prefix("rg-ssh-refused-")
-            .tempdir_in("/tmp")
+            .tempdir_in(roamgate_base::paths::short_temp_root())
             .unwrap();
         let bin = directory.path().join("bin");
         let state = directory.path().join("state");

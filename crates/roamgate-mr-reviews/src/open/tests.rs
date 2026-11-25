@@ -278,7 +278,7 @@ fn sh(script: &str, dir: &Path) -> ShellResult {
 #[tokio::test]
 async fn worktree_workspace_review_checkout_asks_for_a_clone_when_none() {
     let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path().canonicalize().unwrap();
+    let dir = crate::worktree::tests::git_form(tmp.path());
     // The "forge": a bare repository with merge request refs.
     let setup = sh(
         r#"
@@ -297,7 +297,7 @@ async fn worktree_workspace_review_checkout_asks_for_a_clone_when_none() {
     cd .. && git clone -q --no-local forge.git clone
     git -C clone remote rename origin upstream
     git -C clone remote set-url upstream https://gitlab.example.org/group/app.git
-    git -C clone config "url.$PWD/forge.git.insteadOf" https://gitlab.example.org/group/app.git
+    git -C clone config "url.$(pwd -W 2>/dev/null || pwd)/forge.git.insteadOf" https://gitlab.example.org/group/app.git
     git -C clone remote add mine git@gitlab.example.org:me/app.git
   "#,
         &dir,

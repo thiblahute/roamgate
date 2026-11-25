@@ -520,7 +520,7 @@ mod sweep {
     fn tempdir(prefix: &str) -> tempfile::TempDir {
         tempfile::Builder::new()
             .prefix(prefix)
-            .tempdir_in("/tmp")
+            .tempdir_in(roamgate_base::paths::short_temp_root())
             .unwrap()
     }
 
