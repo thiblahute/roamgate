@@ -277,6 +277,30 @@ fn private_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// A seeded file's text with the run's paths: in a JSON or JSONL file,
+/// inside its strings, escaped as JSON (a Windows path's `\`).
+fn expand_file(text: &str, expand: &dyn Fn(&str) -> String) -> String {
+    let json = |line: &str| serde_json::from_str::<serde_json::Value>(line).is_ok();
+    let structured = json(text)
+        || (text.lines().any(|line| !line.trim().is_empty())
+            && text
+                .lines()
+                .all(|line| line.trim().is_empty() || json(line)));
+    let expanded = expand(text);
+    if !structured || expanded == text {
+        return expanded;
+    }
+    // Every placeholder's value, escaped as a JSON string's content.
+    let pattern = regex::Regex::new(r"\$\{[A-Za-z0-9_]+\}").expect("regex");
+    pattern
+        .replace_all(text, |found: &regex::Captures| {
+            let value = expand(&found[0]);
+            let quoted = serde_json::to_string(&value).expect("a string");
+            quoted[1..quoted.len() - 1].to_owned()
+        })
+        .into_owned()
+}
+
 /// A scenario's path under HOME. `.config/roamgate/...` names the data
 /// root, which is `%APPDATA%\roamgate` on Windows ([`data_root`]), and an
 /// agent client there is its `.exe`.
@@ -378,7 +402,7 @@ impl Run {
             let mut file = file.clone();
             file.path = expand(&file.path);
             if let Ok(text) = std::str::from_utf8(&file.content) {
-                file.content = expand(text).into_bytes();
+                file.content = expand_file(text, &expand).into_bytes();
             }
             write_seed(&home, &file)?;
         }
