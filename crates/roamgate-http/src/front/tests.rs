@@ -93,6 +93,10 @@ struct Setup {
 }
 
 async fn setup(with_core: bool) -> Setup {
+    setup_with(with_core, NodeOrigins::default()).await
+}
+
+async fn setup_with(with_core: bool, node_origins: NodeOrigins) -> Setup {
     let clock = ManualClock::at(NOW);
     let auth = Auth::new(AuthConfig::new(SECRET, &"a".repeat(64)), shared(&clock)).unwrap();
     let public = tempfile::tempdir().unwrap();
@@ -128,6 +132,7 @@ async fn setup(with_core: bool) -> Setup {
         sockets,
     );
     front.core_wait = std::time::Duration::from_millis(50);
+    front.node_origins = node_origins;
     let front = Arc::new(front);
     Setup {
         front,
@@ -380,4 +385,85 @@ async fn a_standalone_core_s_schedule_exit_is_the_front_s_and_nothing_else() {
         .await
         .unwrap_err();
     assert_eq!(other.code.as_deref(), Some("unknown_target"));
+}
+
+#[tokio::test]
+async fn a_node_page_reads_the_api_with_its_cookie_and_nothing_else_does() {
+    const MAC: &str = "https://mac.example.ts.net";
+    let setup = setup_with(true, NodeOrigins::parse(Some(MAC))).await;
+    let front = &setup.front;
+    // Its preflight is answered before any login: it carries no cookie.
+    let preflight = front
+        .handle(
+            request(
+                "OPTIONS",
+                "/api/history",
+                &[
+                    ("origin", MAC),
+                    ("access-control-request-method", "PUT"),
+                    ("access-control-request-headers", "content-type"),
+                ],
+                "",
+            ),
+            "127.0.0.1".into(),
+        )
+        .await;
+    assert_eq!(preflight.status(), 204);
+    assert_eq!(preflight.headers()["access-control-allow-origin"], MAC);
+    assert_eq!(
+        preflight.headers()["access-control-allow-credentials"],
+        "true"
+    );
+    assert_eq!(
+        preflight.headers()["access-control-allow-headers"],
+        "content-type"
+    );
+    // Without a session it is refused like any request, but can read why.
+    let refused = front
+        .handle(
+            request("GET", "/api/thing", &[("origin", MAC)], ""),
+            "127.0.0.1".into(),
+        )
+        .await;
+    assert_eq!(refused.status(), 401);
+    assert_eq!(refused.headers()["access-control-allow-origin"], MAC);
+    let cookie = login(front).await;
+    let answered = front
+        .handle(
+            request(
+                "POST",
+                "/api/thing",
+                &[("origin", MAC), ("cookie", &cookie)],
+                "x",
+            ),
+            "127.0.0.1".into(),
+        )
+        .await;
+    assert_eq!(answered.status(), 207);
+    assert_eq!(answered.headers()["access-control-allow-origin"], MAC);
+    // Another origin, or a route outside /api/, gets no CORS headers.
+    let other = front
+        .handle(
+            request(
+                "GET",
+                "/api/thing",
+                &[("origin", "https://other.example"), ("cookie", &cookie)],
+                "",
+            ),
+            "127.0.0.1".into(),
+        )
+        .await;
+    assert!(!other.headers().contains_key("access-control-allow-origin"));
+    let page = front
+        .handle(
+            request(
+                "GET",
+                "/app.js",
+                &[("origin", MAC), ("cookie", &cookie)],
+                "",
+            ),
+            "127.0.0.1".into(),
+        )
+        .await;
+    assert!(!page.headers().contains_key("access-control-allow-origin"));
 }

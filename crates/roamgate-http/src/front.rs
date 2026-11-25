@@ -28,6 +28,7 @@ use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 
 use crate::auth::{Auth, unauthenticated_login_redirect};
+use crate::node_origins::NodeOrigins;
 use crate::response::{self, header};
 use crate::static_files::{StaticFiles, StaticRequest};
 
@@ -262,6 +263,8 @@ pub struct Front {
     /// How long a request waits for the core to connect (its start, a
     /// restart) before a 503.
     pub core_wait: std::time::Duration,
+    /// The node pages that may fetch `/api/` routes (`ROAMGATE_NODE_ORIGINS`).
+    pub node_origins: NodeOrigins,
     next_socket: AtomicU64,
 }
 
@@ -338,6 +341,7 @@ impl Front {
             rust_core: watch::channel(None).1,
             sockets,
             core_wait: std::time::Duration::from_secs(30),
+            node_origins: NodeOrigins::default(),
             next_socket: AtomicU64::new(1),
         }
     }
@@ -358,8 +362,54 @@ impl Front {
         }
     }
 
-    /// The whole router.
+    /// The node pages that may fetch the home's `/api/` routes.
+    pub fn with_node_origins(mut self, origins: NodeOrigins) -> Self {
+        self.node_origins = origins;
+        self
+    }
+
+    /// The whole router, with the CORS answers of the node pages.
     pub async fn handle(
+        self: &Arc<Self>,
+        request: http::Request<Body>,
+        client_ip: String,
+    ) -> http::Response<Body> {
+        let node = self.node_origins.matching(
+            header(request.headers(), "origin").as_deref(),
+            request.uri().path(),
+        );
+        let Some(origin) = node else {
+            return self.route(request, client_ip).await;
+        };
+        if request.method() == http::Method::OPTIONS
+            && request
+                .headers()
+                .contains_key("access-control-request-method")
+        {
+            let requested = header(request.headers(), "access-control-request-headers");
+            let mut builder = http::Response::builder().status(204);
+            for (name, value) in NodeOrigins::preflight_headers(&origin, requested.as_deref()) {
+                builder = builder.header(name, value);
+            }
+            return builder
+                .body(Body::empty())
+                .unwrap_or_else(|_| plain(500, "bad preflight"));
+        }
+        let mut response = self.route(request, client_ip).await;
+        let headers = response.headers_mut();
+        for (name, value) in NodeOrigins::headers(&origin) {
+            if let Ok(value) = http::HeaderValue::from_str(&value) {
+                if name == "vary" {
+                    headers.append(name, value);
+                } else {
+                    headers.insert(name, value);
+                }
+            }
+        }
+        response
+    }
+
+    async fn route(
         self: &Arc<Self>,
         request: http::Request<Body>,
         client_ip: String,

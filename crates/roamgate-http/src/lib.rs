@@ -8,6 +8,7 @@
 //! | [`body`] | a JSON body read under a byte limit | http/json-body |
 //! | [`auth`] | cookie sessions, password, PIN and URL-token logins, their limits, logout | http/auth |
 //! | [`login_page`] | the login page from its contract asset | http/login-page |
+//! | [`node_origins`] | the node pages allowed to fetch the home's `/api/` routes (CORS) | (none) |
 //! | [`public_origin`] | the origin a client reached Roamgate on | http/public-origin |
 //! | [`static_paths`], [`static_files`] | the web app, its manifest and the instance name | http/static-paths, http/static-files |
 //! | [`front`] | the Rust front: listener, gate, web app, `/ws`, the Bun core spawned and reached over the core channel | index.ts's `Bun.serve` |
@@ -31,6 +32,7 @@ pub mod front;
 pub mod history;
 pub mod list_delta;
 pub mod login_page;
+pub mod node_origins;
 pub mod public_origin;
 pub mod rendered_pages;
 pub mod response;

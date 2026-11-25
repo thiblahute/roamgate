@@ -624,7 +624,10 @@ pub async fn run(args: &[String], overrides: BTreeMap<String, String>) -> u8 {
             core,
             sockets,
         )
-        .with_rust_core(rust_core),
+        .with_rust_core(rust_core)
+        .with_node_origins(roamgate_http::node_origins::NodeOrigins::parse(
+            roamgate_env(env.as_ref(), "NODE_ORIGINS").as_deref(),
+        )),
     );
     let _ = front_cell.set(Arc::downgrade(&front));
     // A core that never comes: listening all the same, its requests 503.

@@ -240,6 +240,7 @@ environment file. `roamgate --help` lists everything.
 | `ROAMGATE_REVIEW_DIR`                                  | Review sessions and agent sockets                                                               |
 | `ROAMGATE_WEB_PUSH_PATH` / `ROAMGATE_WEB_PUSH_SUBJECT` | [Web Push](#web-push-notifications)                                                             |
 | `ROAMGATE_NOTIFICATIONS_PATH`                          | [Notification feed](#android-notification-feed) (default `notifications.json`)                  |
+| `ROAMGATE_NODE_ORIGINS`                                | Node page origins (comma separated) allowed to fetch `/api/` with CORS                          |
 
 Legacy `HERDR_GUI_*` names still work; the `ROAMGATE_*` name wins, even when
 empty.
