@@ -141,8 +141,9 @@ impl Sandbox {
         let output = self.run(program, &["--version"])?;
         ensure!(
             output.status.success(),
-            "{} --version failed",
-            program.display()
+            "{} --version failed ({})",
+            program.display(),
+            output.status
         );
         let line = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         line.strip_prefix("roamgate ")
@@ -305,7 +306,14 @@ pub struct TempDir(pub PathBuf);
 
 impl TempDir {
     pub fn new(name: &str) -> Result<Self> {
-        let base = std::env::temp_dir();
+        // macOS' temporary directory is deep (/var/folders/...): a HOME under
+        // it puts the server's sockets past the 104 bytes of a socket path,
+        // which no user's HOME does. /tmp is short there.
+        let base = if cfg!(target_os = "macos") {
+            PathBuf::from("/tmp")
+        } else {
+            std::env::temp_dir()
+        };
         for attempt in 0..100u32 {
             let path = base.join(format!("roamgate-{name}-{}-{attempt}", std::process::id()));
             if std::fs::create_dir(&path).is_ok() {

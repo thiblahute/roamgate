@@ -336,7 +336,7 @@ fn ws_hello(address: SocketAddr, cookie: &str) -> Result<Value> {
     while !head.ends_with(b"\r\n\r\n") {
         stream
             .read_exact(&mut byte)
-            .context("reading the /ws handshake")?;
+            .context("the server did not answer the /ws upgrade within 30 s")?;
         head.push(byte[0]);
         ensure!(head.len() < 64 * 1024, "the /ws handshake never ended");
     }
