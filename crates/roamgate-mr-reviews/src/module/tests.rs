@@ -3,6 +3,9 @@
 //! whole module: [`MrReviews`] over a store and a settings.json of their
 //! own, fake connections or the git fixture's.
 
+// Helpers of the tests that run on Unix only (POSIX clone paths).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -651,6 +654,9 @@ async fn entries(reviews: &MrReviews) -> Vec<Obj> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_workspace_headed_upstream_by_itself_marked_listed_an_effort_s_home_exported_unmarked() {
     let t = setup();
     let g = GitFixture::new();
@@ -853,6 +859,9 @@ fn own(n: u64, extra: Value) -> Value {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn branch_rows_lane_not_proposed_yet_overrides_and_the_request_s_key_once_it_opens() {
     let t = setup();
     let g = GitFixture::new();

@@ -1460,6 +1460,8 @@ impl UpstreamScanner {
 }
 
 #[cfg(test)]
+// Some of its tests run on Unix only (POSIX clone paths).
+#[cfg_attr(not(unix), allow(dead_code, unused_imports))]
 mod tests {
     //! `upstream.test.ts` (its tests through the module wait for module.ts).
 
@@ -1620,6 +1622,9 @@ mod tests {
     }
 
     #[test]
+    // Unix only: merge request clones and worktrees are found by POSIX
+    // paths (as the Bun server did); a Windows machine's are not yet.
+    #[cfg(unix)]
     fn a_checkouts_branch_target_commits_and_a_requests_patch_ids_from_real_git() {
         let g = GitFixture::new();
         let bare = g.project("media/engine");
@@ -1823,6 +1828,9 @@ mod tests {
     }
 
     #[tokio::test]
+    // Unix only: merge request clones and worktrees are found by POSIX
+    // paths (as the Bun server did); a Windows machine's are not yet.
+    #[cfg(unix)]
     async fn a_part_nested_under_its_efforts_head_workspace_links_to_its_fork_request_at_the_same_head()
      {
         let g = GitFixture::new();
@@ -1982,6 +1990,9 @@ mod tests {
     }
 
     #[tokio::test]
+    // Unix only: merge request clones and worktrees are found by POSIX
+    // paths (as the Bun server did); a Windows machine's are not yet.
+    #[cfg(unix)]
     async fn a_stacked_parts_row_titled_and_counted_from_the_branch_it_sits_on_linked_where_it_is_pushed()
      {
         let g = GitFixture::new();

@@ -5,6 +5,9 @@
 //! own. Herdr's worktree actions and Roamgate's worktree path run work-tree
 //! commands where a worktree starts from: never there.
 
+// Helpers of the tests that run on Unix only (POSIX clone paths).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -280,6 +283,9 @@ fn creates(conn: &GitConn) -> Vec<Value> {
 }
 
 #[tokio::test]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_repository_directory_what_git_lists_first_with_no_work_tree_its_checkout_found_and_only_its_own()
  {
     let fx = fixture();
@@ -337,6 +343,9 @@ async fn a_repository_directory_what_git_lists_first_with_no_work_tree_its_check
 }
 
 #[tokio::test]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn start_a_review_with_a_home_in_a_repository_directory_the_worktree_starts_from_its_checkout_never_from_the_git_dir()
  {
     let fx = fixture();
@@ -405,6 +414,9 @@ async fn start_a_review_with_a_home_in_a_repository_directory_the_worktree_start
 }
 
 #[tokio::test]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn a_repository_directory_whose_checkout_is_gone_git_makes_the_home_from_the_review_worktree_and_says_what_failed()
  {
     let fx = fixture();

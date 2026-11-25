@@ -1,6 +1,9 @@
 //! The opener's cases: prefetch.test.ts, worktree.test.ts's "opening a
 //! request" and home.gitdir.test.ts's picked clone.
 
+// Helpers of the tests that run on Unix only (POSIX clone paths).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -276,6 +279,9 @@ fn sh(script: &str, dir: &Path) -> ShellResult {
 }
 
 #[tokio::test]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn worktree_workspace_review_checkout_asks_for_a_clone_when_none() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = crate::worktree::tests::git_form(tmp.path());
@@ -402,6 +408,9 @@ async fn worktree_workspace_review_checkout_asks_for_a_clone_when_none() {
 }
 
 #[tokio::test]
+// Unix only: merge request clones and worktrees are found by POSIX
+// paths (as the Bun server did); a Windows machine's are not yet.
+#[cfg(unix)]
 async fn picking_a_clone_kept_in_a_repository_directory() {
     let fx = GitFixture::new();
     fx.project("gstreamer/gstreamer");
