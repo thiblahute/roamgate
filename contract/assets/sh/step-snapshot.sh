@@ -18,7 +18,9 @@ case "$shared" in
 esac
 git_dir=$(git rev-parse --absolute-git-dir)
 objects=$(git rev-parse --git-path objects)
-objects=$(cd "$objects" && pwd -P)
+# Git reads this path back (alternates): Git for Windows' shell names it
+# as Windows does (pwd -W, C:/...); other shells have no -W.
+objects=$(cd "$objects" && { pwd -W 2>/dev/null || pwd -P; })
 # Nonstandard Git directories are not implicitly ignored like .git. Exclude
 # their actual subtrees, including shared metadata for linked worktrees.
 set -- .
