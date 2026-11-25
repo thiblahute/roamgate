@@ -642,9 +642,7 @@ impl Inner {
     fn assert_current(&self, lease: &Lease, signal: Option<&Stop>) -> AssistantResult<()> {
         throw_if_aborted(signal)?;
         if !self.host.is_current(lease) {
-            return Err(err(
-                "Connection changed during Ranger read; start a new turn",
-            ));
+            return Err(err(STALE_LEASE));
         }
         Ok(())
     }
@@ -1418,10 +1416,12 @@ impl Inner {
             },
             signal,
         )
-        .await?;
+        .await
+        .map_err(|error| settling(error, recovery.is_some()))?;
         let leases = leases.into_inner().unwrap();
         for (_, lease) in &leases {
-            self.assert_current(lease, signal)?;
+            self.assert_current(lease, signal)
+                .map_err(|error| settling(error, recovery.is_some()))?;
         }
         for expected in recovery_targets.iter().flatten() {
             let fingerprint = self.fingerprint(text_of(expected, "connection_id")).await?;
@@ -2393,6 +2393,21 @@ impl AssistantContext for LiveContext {
                 .await?;
             Ok(prepared.into_action())
         })
+    }
+}
+
+/// What a read answers when its connection's runtime changed under it
+/// (the front says the same, standalone/assistant.rs).
+pub(crate) const STALE_LEASE: &str = "Connection changed during Ranger read; start a new turn";
+
+/// During a recovery, a connection that changed under the read is still
+/// settling after the restart: the recovery waits for it, as for one not
+/// ready yet, instead of giving the question up.
+fn settling(error: AssistantError, recovering: bool) -> AssistantError {
+    if recovering && error.message() == STALE_LEASE {
+        AssistantError::RecoveryNotReady(error.message().to_owned())
+    } else {
+        error
     }
 }
 
