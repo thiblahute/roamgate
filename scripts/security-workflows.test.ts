@@ -52,7 +52,7 @@ test("CodeQL scans source and Actions with only analysis-scoped upload permissio
   });
   expect(job.strategy).toEqual({
     "fail-fast": false,
-    matrix: { language: ["javascript-typescript", "actions"] },
+    matrix: { language: ["javascript-typescript", "actions", "rust"] },
   });
   expect(job.steps.map((step) => step.uses?.split("@")[0])).toEqual([
     "actions/checkout",
@@ -82,12 +82,18 @@ test("dependency audit checks the lockfile without installing or suppressing fin
       "bun.lock",
       "**/bunfig.toml",
       "**/.npmrc",
+      "Cargo.lock",
+      "**/Cargo.toml",
+      "deny.toml",
       ".github/workflows/dependency-audit.yml",
     ],
   });
   expect(workflow.on.schedule).toEqual([{ cron: "41 4 * * 1" }]);
   expect(workflow.permissions).toEqual({ contents: "read" });
-  expect(Object.keys(workflow.jobs)).toEqual(["audit"]);
+  expect(Object.keys(workflow.jobs)).toEqual(["audit", "cargo-deny"]);
+  expect(workflow.jobs["cargo-deny"].steps.at(-1)?.run).toBe(
+    "cargo deny check",
+  );
   const job = workflow.jobs.audit;
   expect(job.permissions).toBeUndefined();
   const command = "bun audit --json --audit-level=high";
@@ -135,6 +141,7 @@ test("Dependabot groups coupled React and xterm majors for manual review", () =>
       directory: string;
       schedule: { interval: string; timezone: string };
       "open-pull-requests-limit": number;
+      cooldown?: { "default-days": number };
       ignore?: unknown;
       groups: Record<
         string,
@@ -152,9 +159,11 @@ test("Dependabot groups coupled React and xterm majors for manual review", () =>
   expect(config.updates.map((entry) => entry["package-ecosystem"])).toEqual([
     "bun",
     "github-actions",
+    "cargo",
   ]);
   for (const entry of config.updates) {
     expect(entry.directory).toBe("/");
+    expect(entry.cooldown?.["default-days"]).toBeGreaterThanOrEqual(7);
     expect(entry.schedule.interval).toBe("weekly");
     expect(entry.schedule.timezone).toBe("Etc/UTC");
     expect(entry["open-pull-requests-limit"]).toBeGreaterThan(0);
@@ -201,4 +210,5 @@ test("Dependabot groups coupled React and xterm majors for manual review", () =>
     "highlight.js",
   ]);
   expect(config.updates[1].groups.actions.patterns).toEqual(["*"]);
+  expect(config.updates[2].groups.rust.patterns).toEqual(["*"]);
 });

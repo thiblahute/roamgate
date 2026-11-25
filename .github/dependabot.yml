@@ -9,6 +9,10 @@ updates:
       time: "06:00"
       timezone: Etc/UTC
     open-pull-requests-limit: 5
+    # A release is taken a week after it is published, once a compromised
+    # one would have been noticed and pulled.
+    cooldown:
+      default-days: 7
     # Bun groups use package patterns, not unsupported dependency-type filters.
     # Major upgrades stay separate except for coupled React and xterm families.
     groups:
@@ -57,7 +61,24 @@ updates:
       time: "06:30"
       timezone: Etc/UTC
     open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
     groups:
       actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    groups:
+      rust:
         patterns: ["*"]
         update-types: [minor, patch]

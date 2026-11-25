@@ -7,6 +7,9 @@ on:
       - "bun.lock"
       - "**/bunfig.toml"
       - "**/.npmrc"
+      - "Cargo.lock"
+      - "**/Cargo.toml"
+      - "deny.toml"
       - ".github/workflows/dependency-audit.yml"
   schedule:
     - cron: "41 4 * * 1"
@@ -35,3 +38,17 @@ jobs:
       # installing packages or running lifecycle scripts. JSON retains
       # lower-severity findings; high/critical findings fail the job.
       - run: bun audit --json --audit-level=high
+
+  # The Rust workspace: RustSec advisories, licences, bans and sources
+  # (deny.toml), from Cargo.lock without building anything.
+  cargo-deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: cargo-deny
+      - run: cargo deny check
