@@ -15,6 +15,11 @@ remote access, see the [tutorial](./TUTORIAL.md#networking).
 - On Windows, local Git features and conversation mode's `!` shell lines need
   [Git for Windows](https://gitforwindows.org/): its Bash is found from Git on
   PATH or a standard Program Files or per-user install.
+- On Windows, the files and folders Roamgate keeps private (0600 and 0700 on
+  Unix: the login token, the session secret, the review agent socket's
+  folder) get an access list with your account alone, without inherited
+  entries; what is created in such a folder inherits it. A file system
+  without access lists (FAT) keeps what it has, with a warning in the log.
 
 ### Windows limits
 
