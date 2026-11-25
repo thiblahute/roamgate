@@ -706,8 +706,10 @@ async fn runs_all_lifecycle_hooks_from_filename_with_cwd_aliases_and_source_afte
             assert_eq!(removed.status, "succeeded");
             let stdout = removed.stdout.unwrap();
             assert!(stdout.contains(&format!("config: {}", host_join(&source, filename))));
+            // $PWD as the shell names it (/c/... in Git Bash).
+            let source_pwd = shell_pwd(&source_path);
             assert!(stdout.contains(&format!(
-                "{source_path}|worktree.removed|{checkout_path}|{source_path}source-only"
+                "{source_pwd}|worktree.removed|{checkout_path}|{source_path}source-only"
             )));
         }
     }
