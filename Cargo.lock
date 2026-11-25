@@ -2964,6 +2964,7 @@ dependencies = [
  "icu_collator",
  "indexmap",
  "jiff",
+ "libc",
  "notify",
  "regex",
  "roamgate-base",

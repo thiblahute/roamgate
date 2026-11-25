@@ -379,9 +379,10 @@ impl ArchiveCli {
         }
         .map(PathBuf::from)
         .unwrap_or_default();
-        let hostname = std::fs::read_to_string("/proc/sys/kernel/hostname")
-            .ok()
-            .map(|name| name.trim().to_owned())
+        // The OS's name on every platform: launchd and Windows services
+        // set no $HOSTNAME.
+        let hostname = Some(roamgate_history::place::os_hostname())
+            .filter(|name| !name.is_empty())
             .or_else(|| env.var("HOSTNAME"))
             .unwrap_or_else(|| "host".into());
         Self {

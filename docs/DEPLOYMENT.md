@@ -446,9 +446,10 @@ roamgate --host 127.0.0.1 --port 8788 --profile --profile-duration 30 --open
 The capture stops automatically and writes a private directory under
 `--profile-dir` containing `summary.txt` (CPU, memory, event-loop delay, hottest
 functions) and `cpu.json` (the server's samples, **not** Chrome's
-`.cpuprofile` format). Files may contain source paths; review before sharing
-and delete when done. Release binaries are stripped: for readable function
-names, profile a build with symbols
+`.cpuprofile` format). Functions are sampled on Linux and macOS, CPU time and
+memory are read on Linux; a Windows capture has its timing only. Files may
+contain source paths; review before sharing and delete when done. Release
+binaries are stripped: for readable function names, profile a build with symbols
 (`CARGO_PROFILE_RELEASE_STRIP=false cargo build --release -p roamgate`). For
 services, set `ROAMGATE_PROFILE=1` in the environment file, restart, and remove
 it afterwards.

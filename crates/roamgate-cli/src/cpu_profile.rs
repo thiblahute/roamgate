@@ -3,8 +3,9 @@
 //! directory gets `cpu.json` and `summary.txt` (0600, never overwritten)
 //! when the duration ends or the server stops. It never opens a debugger or
 //! a network endpoint. Bun samples with JSC's profiler; Rust samples its
-//! threads with pprof's signal sampler on Unix. Windows has no sampler: the
-//! capture keeps its metrics and an empty profile there.
+//! threads with pprof's signal sampler on Unix (Linux and macOS). CPU time
+//! and resident memory come from Linux's /proc only. Windows has no
+//! sampler: the capture keeps its timing and a profile that says so.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -136,7 +137,10 @@ impl Sampler {
     }
 
     fn finish(self) -> Result<Value, String> {
-        Ok(profile_json(Vec::new()))
+        let mut profile = profile_json(Vec::new());
+        profile["functions"] =
+            "CPU sampling is not available on Windows: this capture has its timing only.\n".into();
+        Ok(profile)
     }
 }
 
