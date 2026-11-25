@@ -1312,7 +1312,8 @@ async fn a_fresh_worktree_path_skips_any_existing_directory_and_any_worktree_git
         .prefix("rg-fresh-")
         .tempdir()
         .unwrap();
-    let root = std::fs::canonicalize(dir.path()).unwrap();
+    // Without Windows' \\?\ prefix, which git cannot make directories under.
+    let root = crate::file_types::realpath(dir.path()).unwrap();
     let repo = root.join("repo");
     let git = |args: &[&str]| {
         let output = std::process::Command::new("git")

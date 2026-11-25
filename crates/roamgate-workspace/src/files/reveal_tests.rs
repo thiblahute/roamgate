@@ -35,7 +35,7 @@ fn fixture(ssh_host: Option<&str>, allowed: bool) -> Fixture {
         .tempdir()
         .unwrap();
     let root = real(dir.path());
-    let checkout = format!("{root}/checkout");
+    let checkout = join(&root, "checkout");
     fs::create_dir(&checkout).unwrap();
     fs::write(format!("{checkout}/existing.md"), "file").unwrap();
     let launches = Arc::new(Mutex::new(Vec::new()));
@@ -106,6 +106,12 @@ impl Fixture {
     }
 }
 
+/// `name` under `dir`, with the platform's separator as the server
+/// answers it.
+fn join(dir: &str, name: &str) -> String {
+    crate::file_types::path_text(&std::path::Path::new(dir).join(name))
+}
+
 fn shown(path: &str, kind: &str) -> FileRevealResult {
     FileRevealResult {
         path: path.into(),
@@ -145,7 +151,7 @@ async fn handler_refuses_ssh_profiles_even_with_opt_in_and_a_loopback_peer() {
 #[tokio::test]
 async fn enabled_local_handler_reveals_existing_files_and_preserves_explorer_enoent() {
     let f = fixture(None, true);
-    let file = format!("{}/existing.md", f.checkout);
+    let file = join(&f.checkout, "existing.md");
     assert_eq!(
         f.reveal(json!({ "path": "existing.md" })).await.unwrap(),
         shown(&file, "file")
@@ -186,7 +192,7 @@ async fn changes_resolves_missing_files_and_removed_ancestor_directories_by_exis
         f.reveal(json!({ "path": "checkout/existing.md", "source": "changes" }))
             .await
             .unwrap(),
-        shown(&format!("{}/existing.md", f.checkout), "file")
+        shown(&join(&f.checkout, "existing.md"), "file")
     );
     assert_eq!(f.launches().len(), 6);
 }
@@ -194,7 +200,7 @@ async fn changes_resolves_missing_files_and_removed_ancestor_directories_by_exis
 #[tokio::test]
 async fn changes_ascends_past_enotdir_while_ordinary_explorer_requests_still_reject() {
     let f = fixture(None, true);
-    let ancestor = format!("{}/dir", f.checkout);
+    let ancestor = join(&f.checkout, "dir");
     fs::write(&ancestor, "directory replaced by a file").unwrap();
     let error = f
         .reveal(json!({ "path": "dir/file.md" }))
