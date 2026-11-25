@@ -103,7 +103,14 @@ runs:
             --pattern "roamgate-$PLATFORM.tar.xz" --dir "$from"
           archive="$from/roamgate-$PLATFORM.tar.xz"
         else
-          archive="$(ls target/dist-from/roamgate-"$PLATFORM".tar.xz target/dist-from/roamgate-"$PLATFORM".zip 2>/dev/null | head -n 1)"
+          archive=
+          for candidate in target/dist-from/roamgate-"$PLATFORM".tar.xz target/dist-from/roamgate-"$PLATFORM".zip; do
+            if [ -f "$candidate" ]; then archive="$candidate"; fi
+          done
+          if [ -z "$archive" ]; then
+            echo "No earlier build of $PLATFORM in target/dist-from" >&2
+            exit 1
+          fi
         fi
         # In the target's container when it has one (musl: Alpine).
         set -- --archive "$archive" --version "$VERSION"
