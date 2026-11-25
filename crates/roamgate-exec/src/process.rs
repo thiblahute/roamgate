@@ -937,8 +937,16 @@ mod tests {
             .parse()
             .unwrap();
         // The grandchild got the group's SIGTERM too: gone, or a zombie
-        // waiting for its reaper.
-        let state = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+        // waiting for its reaper, once the signal is handled (a loaded
+        // machine may still show it running for a moment).
+        let mut state = String::new();
+        for _ in 0..100 {
+            state = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+            if state.is_empty() || state.contains(") Z") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         assert!(state.is_empty() || state.contains(") Z"), "{state}");
     }
 
