@@ -1,6 +1,10 @@
 //! The Claude mod plugin's install (the TS suite was
 //! server/src/agent/claude-mod-plugin.test.ts).
 
+// Their helpers serve tests that need Unix (sockets, modes, symlinks, sh).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
@@ -33,6 +37,7 @@ fn the_binary_carries_the_mod_its_tests_left_out() {
     assert_eq!(hooks["modules"], json!(["./register.ts"]));
 }
 
+#[cfg(unix)]
 #[test]
 fn the_marketplace_is_written_once_per_version() {
     let home = tempfile::tempdir().unwrap();
@@ -95,6 +100,7 @@ struct HostRun {
 }
 
 /// Runs the host script with a fake `claude` that records its arguments.
+#[cfg(unix)]
 fn host_run(action: ClaudeModAction, claude: Option<(&str, &str, i32)>) -> HostRun {
     let home = tempfile::tempdir().unwrap();
     let bin = home.path().join("bin");
@@ -133,6 +139,7 @@ fn host_run(action: ClaudeModAction, claude: Option<(&str, &str, i32)>) -> HostR
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn the_state_of_a_host_without_claude_or_with_an_old_one() {
     let none = host_run(ClaudeModAction::Status, None);
@@ -149,6 +156,7 @@ fn the_state_of_a_host_without_claude_or_with_an_old_one() {
     assert_eq!(state["installed"], false);
 }
 
+#[cfg(unix)]
 #[test]
 fn installed_from_roamgates_folder_and_enabled() {
     let listed = serde_json::to_string(&json!([
@@ -176,6 +184,7 @@ fn installed_from_roamgates_folder_and_enabled() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn install_runs_claude_codes_own_plugin_command() {
     let run = host_run(
@@ -216,6 +225,7 @@ fn install_runs_claude_codes_own_plugin_command() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn the_integration_says_why_an_install_failed_and_needs_a_unix_host() {
     let windows = claude_mod_integration(ClaudeModAction::Status, false, 1, |_| async {

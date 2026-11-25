@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use base64::Engine;
 
 use super::*;

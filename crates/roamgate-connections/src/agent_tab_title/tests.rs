@@ -1,5 +1,8 @@
 //! server/src/connections/agent-tab-title.test.ts.
 
+// Their helpers serve tests that need Unix (sockets, modes, symlinks, sh).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;

@@ -4,6 +4,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::time::Duration;
 
 use serde_json::{Value, json};

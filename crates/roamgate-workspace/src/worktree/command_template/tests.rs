@@ -1,5 +1,6 @@
 //! command-template.test.ts.
 
+#[cfg(unix)]
 use std::process::Command;
 
 use super::*;

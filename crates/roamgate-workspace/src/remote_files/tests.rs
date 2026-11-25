@@ -1,6 +1,9 @@
 //! remote-files.test.ts: the remote scripts run here by `bash -c`, as on
 //! an SSH host; the parsers' cases are contract/vectors/remote-files.json.
 
+// Their helpers serve tests that need Unix (sockets, modes, symlinks, sh).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::fs;
 use std::path::Path;
 
@@ -8,6 +11,7 @@ use roamgate_protocol::vectors;
 use serde_json::{Value, json};
 
 use super::*;
+#[cfg(unix)]
 use crate::file_types::resolve;
 use crate::test_support::{Loopback, LoopbackStreams};
 
@@ -122,6 +126,7 @@ async fn a_remote_file_that_changes_size_while_it_is_sent_is_never_sent_short_or
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn remote_resolution_includes_directories_but_rejects_relative_and_symlink_escapes() {
     let dir = temp("herdr-gui-resolve-");
@@ -152,6 +157,7 @@ async fn remote_resolution_includes_directories_but_rejects_relative_and_symlink
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn a_sibling_checkout_s_page_reads_and_downloads_by_its_path_with_macos_s_base64() {
     let top = temp("roamgate-sibling-");

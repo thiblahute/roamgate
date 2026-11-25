@@ -1,5 +1,8 @@
 //! server/src/connections/ssh-profile-runtime.test.ts.
 
+// Their helpers serve tests that need Unix (sockets, modes, symlinks, sh).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 

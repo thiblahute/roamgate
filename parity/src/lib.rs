@@ -10,6 +10,11 @@
 //! git refs). Scenarios are YAML files under `parity/scenarios/`; every
 //! run records the server's traffic and checks it against `contract/`.
 
+// Its socket fakes (Herdr, the scripted agent socket) and the test clock's
+// client are Unix sockets: on Windows they stay unused until parity runs
+// there.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 pub mod agent;
 pub mod build;
 pub mod check;

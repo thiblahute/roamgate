@@ -453,7 +453,7 @@ async fn run_client(
 
 /// A raw request on a socket, as the client sends it.
 async fn post(socket: &Path, command: &str, body: impl Into<Bytes>) -> (u16, Value) {
-    let stream = tokio::net::UnixStream::connect(socket).await.unwrap();
+    let stream = roamgate_base::local_socket::connect(socket).await.unwrap();
     let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
         .await
         .unwrap();
@@ -478,6 +478,7 @@ async fn post_json(socket: &Path, command: &str, body: Value) -> (u16, Value) {
 
 // ---------------------------------------------------------------- agent-server.test.ts
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn installs_the_client_and_links_the_well_known_socket() {
     use std::os::unix::fs::PermissionsExt;
@@ -506,6 +507,7 @@ async fn installs_the_client_and_links_the_well_known_socket() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn links_the_skill_and_client_where_agents_look_not_over_the_users() {
     let s = setup();
@@ -838,6 +840,7 @@ async fn a_pane_of_a_herdr_server_roamgate_is_not_connected_to_is_refused() {
     assert!(s.service.list(&json!({})).is_empty());
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pane_naming_its_herdr_socket_through_a_link_reaches_it() {
     let dir = temp("rg-rev-");
@@ -921,6 +924,7 @@ async fn watches_on_one_review_are_capped() {
     assert_eq!(post_json(&socket, "watch", again).await.0, 200);
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn stopping_removes_the_well_known_link_only_while_it_points_here() {
     let s = setup();
@@ -937,6 +941,7 @@ async fn stopping_removes_the_well_known_link_only_while_it_points_here() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_well_known_link_is_replaced_in_one_step_no_temp_link_left() {
     let s = setup();
@@ -2321,6 +2326,7 @@ fn run_setup(home: &Path) -> std::process::Output {
         .unwrap()
 }
 
+#[cfg(unix)]
 #[test]
 fn the_host_setup_installs_the_client_once_and_names_the_socket() {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -2425,6 +2431,7 @@ fn the_installed_script_ends_with_its_checksum() {
     )));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn a_staged_socket_moves_over_the_path_another_server_listens_on() {
     let s = setup();

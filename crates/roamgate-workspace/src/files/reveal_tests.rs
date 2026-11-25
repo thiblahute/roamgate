@@ -263,6 +263,7 @@ async fn handler_validates_scope_and_windows_absolute_paths_on_every_host_platfo
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn workspace_and_changes_requests_cannot_escape_through_symlinks_or_missing_ancestors() {
     let f = fixture(None, true);

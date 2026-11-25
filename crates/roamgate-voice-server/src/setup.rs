@@ -179,7 +179,10 @@ fn free_at(path: &Path) -> Option<f64> {
     Some(stats.f_bavail as f64 * stats.f_bsize as f64)
 }
 
+// The one Win32 call the voice setup makes; the workspace denies unsafe
+// code everywhere else.
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn free_at(path: &Path) -> Option<f64> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;

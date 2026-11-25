@@ -1,7 +1,9 @@
 //! session-resolver.test.ts, the environment given to the context instead
 //! of set on the process.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -498,6 +500,7 @@ async fn a_pi_pane_with_no_reported_session_takes_its_directory_s_newest() {
 
 const ID: &str = "69775585-98cc-4cb1-9275-4956ebb07add";
 
+#[cfg(unix)]
 fn successor_files() -> LocalSessionFiles {
     LocalSessionFiles::default()
 }

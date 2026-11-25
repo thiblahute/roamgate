@@ -2,6 +2,7 @@
 
 use super::*;
 use roamgate_base::paths::Platform;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use crate::protocol::parse_time;
@@ -30,6 +31,7 @@ fn agent_event(ts: i64) -> NewEvent {
     }
 }
 
+#[cfg(unix)]
 fn mode(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
@@ -40,9 +42,12 @@ fn the_log_is_a_private_wal_database_with_incremental_vacuum() {
     let store = ActivityStore::open(&context, &path).unwrap();
     store.append(&agent_event(1)).unwrap();
     let file = path.join("activity.sqlite");
-    assert_eq!(mode(&path), 0o700);
-    assert_eq!(mode(&file), 0o600);
-    assert_eq!(mode(&path.join("activity.sqlite-wal")), 0o600);
+    #[cfg(unix)]
+    {
+        assert_eq!(mode(&path), 0o700);
+        assert_eq!(mode(&file), 0o600);
+        assert_eq!(mode(&path.join("activity.sqlite-wal")), 0o600);
+    }
     let db =
         Connection::open_with_flags(&file, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
     let journal: String = db
@@ -87,6 +92,7 @@ fn a_database_from_a_newer_roamgate_is_refused() {
     assert_eq!(error.to_string(), "Unsupported activity database");
 }
 
+#[cfg(unix)]
 #[test]
 fn a_symlinked_log_is_refused() {
     let (_dir, context, path) = directory();

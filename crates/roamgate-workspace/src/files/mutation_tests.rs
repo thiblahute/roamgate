@@ -1,6 +1,9 @@
 //! file-mutations.test.ts: file.mkdir and file.move here and on an SSH
 //! host (its scripts run by `bash -c`).
 
+// Their helpers serve tests that need Unix (sockets, modes, symlinks, sh).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -180,6 +183,7 @@ async fn moves_posix_names_that_resemble_windows_paths() {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn never_overwrites_a_destination_file_directory_or_symlink() {
     for remote in [false, true] {
@@ -291,6 +295,7 @@ async fn preserves_saves_immediately_before_and_after_the_atomic_move() {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn a_read_only_source_directory_leaves_no_destination_and_can_be_retried() {
     if rustix::process::geteuid().is_root() {
@@ -376,6 +381,7 @@ async fn missing_python_fails_before_changing_either_path() {
     assert!(f.gone("target/a"));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn moves_symlinks_themselves_and_rejects_directory_or_same_parent_moves() {
     for remote in [false, true] {
@@ -408,6 +414,7 @@ async fn moves_symlinks_themselves_and_rejects_directory_or_same_parent_moves() 
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn blocks_symlink_parent_escapes_for_both_source_and_destination() {
     for remote in [false, true] {

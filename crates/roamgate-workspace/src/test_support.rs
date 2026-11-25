@@ -41,6 +41,7 @@ impl Loopback {
     }
 
     /// Runs with these variables set (`PATH` with shims).
+    #[cfg(unix)]
     pub fn with_env(
         transform: impl Fn(&str) -> String + Send + Sync + 'static,
         env: Vec<(String, String)>,
@@ -53,6 +54,7 @@ impl Loopback {
         })
     }
 
+    #[cfg(unix)]
     pub fn calls(&self) -> Vec<Request> {
         self.calls.lock().unwrap().clone()
     }

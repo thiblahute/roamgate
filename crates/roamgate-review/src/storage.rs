@@ -329,10 +329,14 @@ mod tests {
         assert_eq!(reopened.load_thread_values("s1").unwrap(), vec![edited]);
         assert!(reopened.load_thread_values("s2").unwrap().is_empty());
         // Private files.
-        use std::os::unix::fs::PermissionsExt;
-        let mode = |path: PathBuf| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode(dir.path().join("reviews")), 0o700);
-        assert_eq!(mode(dir.path().join("reviews/reviews.sqlite")), 0o600);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode =
+                |path: PathBuf| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(dir.path().join("reviews")), 0o700);
+            assert_eq!(mode(dir.path().join("reviews/reviews.sqlite")), 0o600);
+        }
     }
 
     #[test]

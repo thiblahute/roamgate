@@ -1,6 +1,7 @@
 //! config/plugin-command.test.ts, and data-paths.test.ts's plugin URL row.
 
 use std::path::Path;
+#[cfg(unix)]
 use std::sync::Arc;
 
 use super::*;

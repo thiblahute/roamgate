@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use super::*;
@@ -166,6 +167,7 @@ fn keeps_a_bounded_set_of_prints_merging_the_closest_the_call_s_own_kept() {
     assert!(scores.iter().cloned().fold(f64::MAX, f64::min) < 0.6);
 }
 
+#[cfg(unix)]
 #[test]
 fn is_kept_in_private_files_read_back_prints_only_no_audio() {
     let (_root, mut voices) = library();

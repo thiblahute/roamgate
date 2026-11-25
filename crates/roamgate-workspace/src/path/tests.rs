@@ -1,5 +1,8 @@
 //! path.test.ts.
 
+// Their helpers serve tests that need Unix (sockets, modes, symlinks, sh).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::fs;
 use std::sync::Arc;
 
@@ -47,6 +50,7 @@ fn relative_path(from: &str, to: &str) -> String {
     parts.join("/")
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn local_and_ssh_paths_expand_home_validate_directories_and_complete_prefixes_safely() {
     for is_remote in [false, true] {

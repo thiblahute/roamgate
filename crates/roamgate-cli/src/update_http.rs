@@ -773,8 +773,10 @@ mod tests {
         install_against_a_mirror(true).await;
     }
 
+    #[cfg(unix)]
     use std::path::{Path, PathBuf};
 
+    #[cfg(unix)]
     struct Fixture {
         _dir: tempfile::TempDir,
         install: PathBuf,

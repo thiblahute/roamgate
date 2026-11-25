@@ -1,5 +1,8 @@
 //! The fakes themselves: what each one answers, without a server.
 
+// Their helpers serve tests that need Unix (sockets, modes, symlinks, sh).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -254,6 +257,7 @@ fn the_voice_helper_times_its_frames_when_asked() {
     assert!(lines.iter().all(|line| line["pid"] == lines[0]["pid"]));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn herdr_answers_on_its_own_types_and_refuses_the_rest() {
     let dir = tempfile::tempdir().unwrap();

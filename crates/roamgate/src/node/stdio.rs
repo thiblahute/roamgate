@@ -14,9 +14,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
+#[cfg(unix)]
+use roamgate_channel::node::{AGENT_PREFIX, ListenParams, bridge};
 use roamgate_channel::node::{
-    AGENT_PREFIX, CLIENT_SOCKET, CONNECT, CONTROL_SOCKET, LISTEN, ListenParams, PREAMBLE, RUN,
-    RunParams, RunReply, bridge, serve_stream,
+    CLIENT_SOCKET, CONNECT, CONTROL_SOCKET, LISTEN, PREAMBLE, RUN, RunParams, RunReply,
+    serve_stream,
 };
 use roamgate_channel::peer::{
     BodyReceiver, BoxFuture, Handler, HttpRequest, HttpResponse, IncomingCall, Peer, PeerOptions,
@@ -83,6 +85,8 @@ pub async fn run_stdio(_args: &[String]) -> u8 {
 /// A socket listened on for the home: its accept loop and the inode bound,
 /// so the node removes only its own file.
 struct Listening {
+    // Only a Unix node listens for its home (see `listen`).
+    #[cfg_attr(not(unix), allow(dead_code))]
     task: tokio::task::JoinHandle<()>,
     inode: Option<u64>,
 }

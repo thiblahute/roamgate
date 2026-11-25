@@ -616,17 +616,13 @@ impl Run {
                 server.child.wait().await?
             }
         };
+        #[cfg(unix)]
         let code = status.code().or_else(|| {
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::ExitStatusExt;
-                status.signal().map(|signal| 128 + signal)
-            }
-            #[cfg(not(unix))]
-            {
-                None
-            }
+            use std::os::unix::process::ExitStatusExt;
+            status.signal().map(|signal| 128 + signal)
         });
+        #[cfg(not(unix))]
+        let code = status.code();
         self.last_exit = code;
         Ok(code)
     }

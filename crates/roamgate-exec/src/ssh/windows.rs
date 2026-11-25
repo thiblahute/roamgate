@@ -27,13 +27,17 @@ use base64::Engine as _;
 use futures_util::FutureExt as _;
 use futures_util::future::Shared;
 use roamgate_base::clock::{BoxFuture, SharedClock, timeout};
+#[cfg(unix)]
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::{Notify, watch};
 
 use roamgate_base::assets::{HERDR_BRIDGE_PS1, HERDR_PROBE_PS1, TemplateValue, fill_template};
 
-use super::command::{SshCommand, ssh_bridge_command_argv};
+use super::command::SshCommand;
+#[cfg(unix)]
+use super::command::ssh_bridge_command_argv;
 use super::sessions::SshSessions;
+#[cfg(unix)]
 use super::supervised::read_bounded_stderr;
 use super::tunnel::{SshTunnelError, SshTunnelFailureKind, classify_ssh_tunnel_failure};
 use crate::process::{Command, ExecError, ProcessRunner, Spawned};
@@ -149,6 +153,8 @@ struct State {
     stopping: bool,
     listeners: Vec<tokio::task::JoinHandle<()>>,
     connections: HashMap<u64, Connection>,
+    // Only a Unix server bridges connections (see the module's doc).
+    #[cfg_attr(not(unix), allow(dead_code))]
     next: u64,
     starting: Option<Starting>,
     cleanup: Option<Shared<BoxFuture<()>>>,
@@ -157,7 +163,9 @@ struct State {
 struct Inner {
     config: WindowsTunnelConfig,
     run_remote: RunRemote,
+    #[cfg_attr(not(unix), allow(dead_code))]
     spawn_bridge: SpawnBridge,
+    #[cfg_attr(not(unix), allow(dead_code))]
     on_unexpected_exit: Option<OnUnexpectedExit>,
     sessions: SshSessions,
     clock: SharedClock,

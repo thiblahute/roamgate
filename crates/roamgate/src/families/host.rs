@@ -52,7 +52,9 @@ use roamgate_connections::ssh_profile_runtime::{
 };
 use roamgate_exec::lanes::Lane;
 use roamgate_exec::process::ProcessRunner;
-use roamgate_exec::ssh::master::{SweepOptions, ssh_runtime_directory_root};
+#[cfg(unix)]
+use roamgate_exec::ssh::master::SweepOptions;
+use roamgate_exec::ssh::master::ssh_runtime_directory_root;
 use roamgate_exec::ssh::sessions::SshSessions;
 use roamgate_exec::ssh::tunnel::{SshTunnelConfig, TunnelDeps};
 use serde_json::{Value, json};
@@ -439,7 +441,7 @@ impl Inner {
             }
         }
         #[cfg(not(unix))]
-        let _ = (root, SweepOptions::real);
+        let _ = root;
 
         let store = Arc::new(ConnectionProfileStore::for_server(env.as_ref()).map_err(rpc_error)?);
         let legacy_profile =

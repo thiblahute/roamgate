@@ -2985,6 +2985,7 @@ async fn pause_cancels_unadmitted_scheduled_dispatch_even_if_validation_ignores_
     f.manager.dispose().await;
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "current_thread")]
 async fn task_deletion_saves_a_non_replayable_warning_when_private_history_cleanup_cannot_finish() {
     let home = Arc::new(tempfile::tempdir().unwrap());

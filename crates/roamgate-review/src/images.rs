@@ -220,11 +220,14 @@ mod tests {
         );
         assert!(name.ends_with(".png") && name.len() == 20);
         assert_eq!(std::fs::read(&path).unwrap(), PNG);
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
         assert_eq!(
             save_review_image(dir.path(), "0123456789abcdef", "image/png", &PNG).unwrap(),
             path

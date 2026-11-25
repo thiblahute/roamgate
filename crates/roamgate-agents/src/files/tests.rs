@@ -148,10 +148,12 @@ async fn finds_a_claude_session_in_a_project_folder_that_is_a_link() {
 }
 
 /// This machine as the host, its outputs' sizes kept.
+#[cfg(unix)]
 struct Local {
     outputs: Mutex<Vec<usize>>,
 }
 
+#[cfg(unix)]
 impl HostRunner for Local {
     fn run(&self, argv: Vec<String>, _timeout_ms: u64) -> BoxFut<'_, Result<RunOutput, String>> {
         Box::pin(async move {
@@ -175,6 +177,7 @@ impl HostRunner for Local {
     }
 }
 
+#[cfg(unix)]
 fn local(budget: usize) -> (Arc<Local>, Arc<RemoteSessionFiles>) {
     let host = Arc::new(Local {
         outputs: Mutex::new(Vec::new()),
@@ -182,6 +185,7 @@ fn local(budget: usize) -> (Arc<Local>, Arc<RemoteSessionFiles>) {
     (host.clone(), RemoteSessionFiles::with_budget(host, budget))
 }
 
+#[cfg(unix)]
 fn append(path: &Path, text: &str) {
     use std::io::Write;
     std::fs::OpenOptions::new()

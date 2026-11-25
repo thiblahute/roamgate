@@ -1,5 +1,6 @@
 //! server/src/connections/profiles.test.ts.
 
+#[cfg(unix)]
 use std::path::Path;
 
 use serde_json::{Value, json};

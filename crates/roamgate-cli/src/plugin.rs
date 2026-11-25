@@ -320,7 +320,9 @@ mod raw_mode {
     #[cfg(windows)]
     pub struct Raw(Option<u32>);
 
+    // Win32 console calls: the workspace denies unsafe code everywhere else.
     #[cfg(windows)]
+    #[allow(unsafe_code)]
     pub fn enter() -> Raw {
         use windows_sys::Win32::System::Console::{
             ENABLE_VIRTUAL_TERMINAL_INPUT, ENABLE_WINDOW_INPUT, GetConsoleMode, GetStdHandle,
@@ -344,6 +346,7 @@ mod raw_mode {
 
     #[cfg(windows)]
     impl Drop for Raw {
+        #[allow(unsafe_code)]
         fn drop(&mut self) {
             use windows_sys::Win32::System::Console::{
                 GetStdHandle, STD_INPUT_HANDLE, SetConsoleMode,

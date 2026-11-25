@@ -1,7 +1,9 @@
 //! Several files of one scope in one shell command (git-diff-files.test.ts).
 
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
@@ -129,6 +131,7 @@ async fn reads_several_files_of_a_branch_review_with_one_shell_command_each_its_
     }
 }
 
+#[cfg(unix)]
 fn mkfifo(path: &Path) {
     assert!(
         std::process::Command::new("mkfifo")

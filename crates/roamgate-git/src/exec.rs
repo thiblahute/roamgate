@@ -300,6 +300,7 @@ pub(crate) mod testing {
             }))
         }
 
+        #[cfg(unix)]
         pub fn deadline(timeout: Duration) -> GitContext {
             GitContext::local(Arc::new(Self {
                 timeout: Some(timeout),

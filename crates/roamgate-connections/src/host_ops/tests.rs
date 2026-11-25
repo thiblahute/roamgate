@@ -1,5 +1,9 @@
 //! The front's SSH commands through one set of slots.
 
+// Their helpers serve tests that need Unix (sockets, modes, symlinks, sh).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use roamgate_base::clock::{SharedClock, SystemClock};
@@ -8,6 +12,7 @@ use roamgate_exec::ssh::sessions::SSH_SESSION_LIMIT;
 use super::*;
 
 /// A fake ssh printing its last argument and its input, exiting 3.
+#[cfg(unix)]
 fn fake_ssh(dir: &std::path::Path) -> String {
     let path = dir.join("ssh");
     std::fs::write(
@@ -35,6 +40,7 @@ fn command(text: &str) -> HostCommand {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn a_command_runs_on_the_host_with_its_input_and_output() {
     let dir = tempfile::tempdir().unwrap();
@@ -58,6 +64,7 @@ async fn a_command_runs_on_the_host_with_its_input_and_output() {
     assert_eq!(output.stderr, "warn\n");
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn an_invalid_destination_is_refused_before_anything_runs() {
     let dir = tempfile::tempdir().unwrap();
@@ -68,6 +75,7 @@ async fn an_invalid_destination_is_refused_before_anything_runs() {
     assert_eq!(error.code, Some("invalid"));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn held_slots_count_against_the_host_until_released() {
     let dir = tempfile::tempdir().unwrap();

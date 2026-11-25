@@ -422,6 +422,7 @@ impl Inner {
         let Some((proxy, remote, fallback)) = &node.render else {
             return Ok(());
         };
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut task = node.render_task.lock().unwrap();
         if task.is_some() {
             return Ok(());
@@ -924,5 +925,6 @@ impl ConnectionRuntime for HostRuntime {
     }
 }
 
-#[cfg(test)]
+// Its fakes serve Herdr on Unix sockets (Herdr on Windows is a named pipe).
+#[cfg(all(test, unix))]
 mod tests;

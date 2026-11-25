@@ -1197,6 +1197,7 @@ fn terminal_frame(seq: u64, full: bool, bytes: &[u8]) -> Vec<u8> {
 /// `AttachTerminal` gets the terminal's screen (`screens` in the seed, by
 /// terminal or pane id), typed `Input` is echoed back as an incremental
 /// frame, and everything the client sends is logged as `client.<what>`.
+#[cfg(unix)]
 async fn serve_terminal(mut stream: tokio::net::UnixStream, shared: Arc<Mutex<Shared>>) {
     let mut seq = 0u64;
     let mut attached = String::new();
@@ -1364,6 +1365,7 @@ fn pane_surface(
 /// src/protocol/endpoint.rs): welcome, the snapshot, health pongs, endpoint
 /// requests answered from the seed's `endpoint_responses`, and every frame
 /// `endpoint_frames` carries (semantic notifications, newer snapshots).
+#[cfg(unix)]
 async fn serve_endpoint(
     stream: tokio::net::UnixStream,
     shared: Arc<Mutex<Shared>>,

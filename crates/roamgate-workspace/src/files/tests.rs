@@ -1,10 +1,14 @@
 //! files.test.ts, filesystem-browsing.test.ts and audio-preview.test.ts's
 //! handler cases.
 
+// Their helpers serve tests that need Unix (sockets, modes, symlinks, sh).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(unix)]
 use roamgate_git::preview::AUDIO_INLINE_PREVIEW_MAX_BYTES;
 use roamgate_git::{Ran, Request, shell_quote};
 use serde_json::{Value, json};
@@ -716,6 +720,7 @@ struct Fixture {
     refs: String,
 }
 
+#[cfg(unix)]
 fn browsing_fixture() -> Fixture {
     let dir = temp("herdr-filesystem-");
     let root = real(dir.path());
@@ -760,6 +765,7 @@ fn paths(list: &Value) -> Vec<String> {
         .collect()
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn workspace_listings_stay_confined_opt_in_browsing_can_leave_the_checkout() {
     let Fixture {
@@ -815,6 +821,7 @@ async fn workspace_listings_stay_confined_opt_in_browsing_can_leave_the_checkout
     assert_eq!(list(json!({})).await.unwrap()["root"], json!(workspace));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn external_references_preview_and_download_without_widening_upload_or_delete_targets() {
     let Fixture {
@@ -884,6 +891,7 @@ async fn external_references_preview_and_download_without_widening_upload_or_del
     assert_eq!(fs::read_to_string(&path).unwrap(), "reference");
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn ssh_directory_listings_support_quoted_external_directories_and_the_filesystem_root() {
     for target in ["quoted external directories", "filesystem root"] {
@@ -942,6 +950,7 @@ async fn fetch(files: &Files, conn: &WorkspaceConnection, get: Get) -> FileHttpR
         .await
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn audio_http_ranges_and_size_limits() {
     for remote in [false, true] {

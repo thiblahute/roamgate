@@ -475,5 +475,6 @@ impl AgentStatusSubscriptionLoop {
     }
 }
 
-#[cfg(test)]
+// Its fakes serve Herdr on Unix sockets (Herdr on Windows is a named pipe).
+#[cfg(all(test, unix))]
 mod tests;
