@@ -178,8 +178,11 @@ Click any screenshot to open the full-resolution image.
      | sh
    ```
 
-   On Windows, download the x64 or ARM64 archive from the
-   [latest release](https://github.com/powerfooI/roamgate/releases/latest).
+   On Windows, in PowerShell:
+
+   ```powershell
+   irm https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.ps1 | iex
+   ```
 3. Run `roamgate` (`roamgate.exe` on Windows; on Linux/macOS make sure
    `~/.local/bin` is on `PATH`) and open the printed URL. `roamgate url --qr`
    shows a QR code for your phone, and `roamgate doctor` diagnoses problems.

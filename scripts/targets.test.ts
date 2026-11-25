@@ -76,19 +76,25 @@ test("the installers name targets.toml's platforms", () => {
   ].flatMap((path) =>
     [...read(path).matchAll(/platform="([a-z0-9-]+)"/g)].map((m) => m[1]),
   );
-  const updatable = targets.filter((t) => t.update).map((t) => t.platform);
-  expect([...new Set(installed)].sort()).toEqual([...updatable].sort());
-  const windows = [
-    ...read("scripts/install-plugin.ps1").matchAll(
-      /\$platform = '([a-z0-9-]+)'/g,
-    ),
-  ].map((match) => match[1]);
-  expect(windows.sort()).toEqual(
-    targets
-      .filter((t) => t.os === "win32")
-      .map((t) => t.platform)
-      .sort(),
-  );
+  // Every platform updates itself; the shell installers serve the Unix ones,
+  // the PowerShell ones Windows.
+  expect(targets.every((t) => t.update)).toBe(true);
+  const unix = targets.filter((t) => t.os !== "win32").map((t) => t.platform);
+  expect([...new Set(installed)].sort()).toEqual([...unix].sort());
+  for (const path of [
+    "scripts/install-plugin.ps1",
+    "scripts/install-roamgate.ps1",
+  ]) {
+    const windows = [
+      ...read(path).matchAll(/\$platform = '([a-z0-9-]+)'/g),
+    ].map((match) => match[1]);
+    expect(windows.sort()).toEqual(
+      targets
+        .filter((t) => t.os === "win32")
+        .map((t) => t.platform)
+        .sort(),
+    );
+  }
 });
 
 test("the Rust workflows take their matrix from targets.toml and pin their actions", () => {
