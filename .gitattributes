@@ -1,0 +1,11 @@
+# Text stays LF on every platform: embedded scripts, golden files and
+# contract vectors are compared byte for byte, and a Windows checkout with
+# core.autocrlf would otherwise give them CRLF.
+* text=auto eol=lf
+*.avif binary
+*.gif binary
+*.ico binary
+*.mp4 binary
+*.png binary
+*.webp binary
+*.woff2 binary
