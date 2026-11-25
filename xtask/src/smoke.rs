@@ -395,7 +395,8 @@ fn ws_hello(address: SocketAddr, cookie: &str) -> Result<Value> {
 fn agent_call(home: &Path, running: &mut dyn FnMut() -> bool) -> Result<Value> {
     let link = home.join(".cache/roamgate/review.sock");
     let deadline = Instant::now() + Duration::from_secs(60);
-    while !link.exists() {
+    // The link itself: Windows may not stat through it to an AF_UNIX socket.
+    while std::fs::symlink_metadata(&link).is_err() {
         ensure!(running(), "the server exited");
         ensure!(
             Instant::now() < deadline,
