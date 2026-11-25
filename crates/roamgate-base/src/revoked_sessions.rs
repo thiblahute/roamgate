@@ -127,7 +127,7 @@ mod tests {
         let root = Path::new("/d");
         assert_eq!(
             revoked_sessions_path(None, root),
-            Path::new("/d/session-secret.revoked.json")
+            crate::paths::resolve(Path::new("/d/session-secret.revoked.json"))
         );
         let secret = session_secret_path(Some("/s.json"), root);
         assert_eq!(

@@ -1055,7 +1055,8 @@ mod tests {
         }
         assert_eq!(
             contract_record_directory(&[("ROAMGATE_CONTRACT_RECORD", "/tmp/rec")], root),
-            Some(PathBuf::from("/tmp/rec"))
+            // Resolved: on the working directory's drive on Windows.
+            Some(crate::paths::resolve(Path::new("/tmp/rec")))
         );
         // Roamgate's own name wins, even empty.
         assert_eq!(
