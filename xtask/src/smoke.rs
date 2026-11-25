@@ -22,7 +22,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 
 use crate::sandbox::{
-    Response, Sandbox, TempDir, free_port, parse_response, request, wait_healthy,
+    Container, Response, Sandbox, TempDir, free_port, parse_response, request, wait_healthy,
 };
 use crate::targets::Target;
 
@@ -147,58 +147,16 @@ pub fn run(smoke: &Smoke) -> Result<()> {
     Ok(())
 }
 
-/// The packages a container image needs for the Pi sidecar: Bun's musl
-/// build links libstdc++ and libgcc dynamically.
-const ALPINE_PACKAGES: &[&str] = &["libstdc++", "libgcc"];
-
-/// [`run`] with the sandbox's commands in a container of `image` (sharing
-/// the network and the sandbox's path); the checks run from here.
+/// [`run`] with the sandbox's commands in a container of `image`; the
+/// checks run from here.
 pub fn run_in_container(smoke: &Smoke, image: &str) -> Result<()> {
-    let engine = ["docker", "podman"]
-        .into_iter()
-        .find(|engine| {
-            Command::new(engine)
-                .arg("--version")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .is_ok_and(|status| status.success())
-        })
-        .context("no docker or podman to run a container")?;
-    let base = TempDir::new("smoke-container")?;
-    let shared = crate::sandbox::dunce(base.0.clone());
-    let name = format!("roamgate-smoke-{}", std::process::id());
-    let volume = format!("{0}:{0}", shared.display());
-    let status = Command::new(engine)
-        .args(["run", "-d", "--rm", "--name", &name, "--network", "host"])
-        .args(["-v", &volume, image, "sleep", "3600"])
-        .status()
-        .with_context(|| format!("running {engine}"))?;
-    ensure!(status.success(), "starting a {image} container failed");
-    struct Remove<'a>(&'a str, &'a str);
-    impl Drop for Remove<'_> {
-        fn drop(&mut self) {
-            let _ = Command::new(self.0)
-                .args(["rm", "-f", self.1])
-                .stdout(Stdio::null())
-                .status();
-        }
-    }
-    let _remove = Remove(engine, &name);
-    if image.starts_with("alpine") {
-        let status = Command::new(engine)
-            .args(["exec", &name, "apk", "add", "--no-cache"])
-            .args(ALPINE_PACKAGES)
-            .status()?;
-        ensure!(status.success(), "apk add {ALPINE_PACKAGES:?} failed");
-    }
-    eprintln!("xtask: smoke: in a {image} container ({engine})");
+    let container = Container::start(image)?;
     run(&Smoke {
         archive: smoke.archive,
         target: smoke.target,
         version: smoke.version,
-        exec_prefix: vec![engine.to_owned(), "exec".into(), "-i".into(), name.clone()],
-        keep: Some(shared.join("run")),
+        exec_prefix: container.prefix(),
+        keep: Some(container.shared.join("run")),
     })
 }
 

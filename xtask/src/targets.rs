@@ -22,9 +22,18 @@ pub struct Target {
     pub check: String,
     pub update: bool,
     pub bun: String,
+    /// Whether the last published release's `roamgate update` installs the
+    /// target (false: its update proof starts from a build of this
+    /// checkout instead).
+    #[serde(default = "yes")]
+    pub release_updates: bool,
     /// A container image the check also smokes the package in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container: Option<String>,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]

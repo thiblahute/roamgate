@@ -114,7 +114,9 @@ pub fn run(proof: &Proof) -> Result<()> {
     )?;
     let bin_dir = sandbox.home.join(".local/bin");
     std::fs::create_dir_all(&bin_dir)?;
-    let bin = bin_dir.join("roamgate");
+    // roamgate.exe and roamgate-pi.exe on Windows, each with its
+    // `<name>.previous` beside it.
+    let bin = bin_dir.join(&target.binary);
     std::fs::copy(proof.from, &bin).with_context(|| proof.from.display().to_string())?;
     #[cfg(unix)]
     {
@@ -161,7 +163,7 @@ pub fn run(proof: &Proof) -> Result<()> {
         "the update did not install {}",
         proof.version
     );
-    let previous = bin.with_file_name("roamgate.previous");
+    let previous = bin.with_file_name(format!("{}.previous", target.binary));
     ensure!(
         sandbox.version(&previous)? == old,
         "roamgate.previous is not {old}"
@@ -177,8 +179,8 @@ pub fn run(proof: &Proof) -> Result<()> {
         .find(|entry| entry.path == pi_member)
         .map(|entry| entry.data)
         .with_context(|| format!("the package has no {pi_member}"))?;
-    let pi = bin.with_file_name("roamgate-pi");
-    let pi_previous = bin.with_file_name("roamgate-pi.previous");
+    let pi = bin.with_file_name(target.pi_binary());
+    let pi_previous = bin.with_file_name(format!("{}.previous", target.pi_binary()));
     if !pi.exists() {
         eprintln!("xtask: the {old} updater left roamgate-pi out; updating again adds it");
         let again = sandbox.run(&bin, &["update"])?;
@@ -269,4 +271,24 @@ fn entry_script(index: &str) -> Option<&str> {
     let start = index.find("src=\"/assets/")? + "src=\"".len();
     let length = index[start..].find('"')?;
     Some(&index[start..start + length])
+}
+
+/// Writes the roamgate binary of `archive` (a package of `target`, of any
+/// version) into `dir`; returns it.
+pub fn binary_of(archive: &Path, target: &Target, dir: &Path) -> Result<PathBuf> {
+    let bytes = std::fs::read(archive).with_context(|| archive.display().to_string())?;
+    let member = format!("{}/{}", target.package_dir(), target.binary);
+    let data = crate::package::read_archive(&bytes)?
+        .into_iter()
+        .find(|entry| entry.path == member)
+        .map(|entry| entry.data)
+        .with_context(|| format!("{} has no {member}", archive.display()))?;
+    let path = dir.join(&target.binary);
+    std::fs::write(&path, data)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(path)
 }

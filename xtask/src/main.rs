@@ -26,7 +26,8 @@ Commands:
   build <platform...|all>             build roamgate for targets
   package <platform...|all>           build, package and verify targets
   verify <platform...|all>            check packaged targets
-  update-proof <platform> --from <roamgate>
+  update-proof <platform> --from <roamgate> | --archive <package>
+               [--container]
                                       install a packaged target through an
                                       earlier roamgate's `roamgate update`
                                       in a sandbox (roamgate-pi beside it),
@@ -49,8 +50,11 @@ Options:
   --out <dir>              where packages go (default: target/dist)
   --builder <cargo|zigbuild|xwin>
                            override targets.toml's builder
-  --archive <tar.xz>       smoke: the package (default: the versioned
-                           archive in --out)
+  --archive <package>      smoke: the package (default: the versioned
+                           archive in --out); update-proof: the package of
+                           the earlier roamgate
+  --container              smoke, update-proof: in the target's container
+                           image (targets.toml)
   --exec-prefix <command>  update-proof, smoke: run the sandbox's commands
                            through this prefix (a container)
   --keep <dir>             update-proof, smoke: keep the sandbox in <dir>
@@ -233,20 +237,36 @@ fn run() -> Result<()> {
                 bail!("update-proof takes one platform");
             };
             let target = targets::select(&all, std::slice::from_ref(name))?.remove(0);
-            let from = absolute(
-                args.from
-                    .clone()
-                    .context("update-proof needs --from <roamgate>")?,
-            )?;
+            // The earlier roamgate: a binary, or the one in a package.
+            let from_dir = sandbox::TempDir::new("update-proof-from")?;
+            let from = match (&args.from, &args.archive) {
+                (Some(from), None) => absolute(from.clone())?,
+                (None, Some(archive)) => {
+                    proof::binary_of(&absolute(archive.clone())?, &target, &from_dir.0)?
+                }
+                _ => bail!("update-proof needs --from <roamgate> or --archive <package>"),
+            };
             verify::verify(&out, &target, &version)?;
+            let container = match (&target.container, args.container) {
+                (Some(image), true) => Some(sandbox::Container::start(image)?),
+                (None, true) => bail!("{} has no container", target.platform),
+                (_, false) => None,
+            };
+            let (exec_prefix, keep) = match &container {
+                Some(container) => (container.prefix(), Some(container.shared.join("run"))),
+                None => (
+                    args.exec_prefix.clone(),
+                    args.keep.clone().map(absolute).transpose()?,
+                ),
+            };
             proof::run(&proof::Proof {
                 from: &from,
                 dist: &out,
                 target: &target,
                 version: &version,
                 web: &compile::check_web(&web)?,
-                exec_prefix: args.exec_prefix.clone(),
-                keep: args.keep.clone().map(absolute).transpose()?,
+                exec_prefix,
+                keep,
             })?;
         }
         "smoke" => {

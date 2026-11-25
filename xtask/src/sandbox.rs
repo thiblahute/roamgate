@@ -301,6 +301,80 @@ pub fn wait_healthy(server: &mut Server, address: SocketAddr) -> Result<()> {
     Ok(())
 }
 
+/// The packages a container image needs for the Pi sidecar: Bun's musl
+/// build links libstdc++ and libgcc dynamically.
+const ALPINE_PACKAGES: &[&str] = &["libstdc++", "libgcc"];
+
+/// A container of an image (docker, or podman), sharing the network and a
+/// directory at the same path: a sandbox under [`Container::shared`] runs
+/// its commands through [`Container::prefix`]. Removed when dropped.
+pub struct Container {
+    engine: &'static str,
+    name: String,
+    pub shared: PathBuf,
+    _base: TempDir,
+}
+
+impl Container {
+    pub fn start(image: &str) -> Result<Self> {
+        let engine = ["docker", "podman"]
+            .into_iter()
+            .find(|engine| {
+                Command::new(engine)
+                    .arg("--version")
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .is_ok_and(|status| status.success())
+            })
+            .context("no docker or podman to run a container")?;
+        let base = TempDir::new("container")?;
+        let shared = dunce(base.0.clone());
+        let name = format!("roamgate-xtask-{}", std::process::id());
+        let volume = format!("{0}:{0}", shared.display());
+        let status = Command::new(engine)
+            .args(["run", "-d", "--rm", "--name", &name, "--network", "host"])
+            .args(["-v", &volume, image, "sleep", "3600"])
+            .status()
+            .with_context(|| format!("running {engine}"))?;
+        ensure!(status.success(), "starting a {image} container failed");
+        let container = Self {
+            engine,
+            name,
+            shared,
+            _base: base,
+        };
+        if image.starts_with("alpine") {
+            let status = Command::new(engine)
+                .args(["exec", &container.name, "apk", "add", "--no-cache"])
+                .args(ALPINE_PACKAGES)
+                .status()?;
+            ensure!(status.success(), "apk add {ALPINE_PACKAGES:?} failed");
+        }
+        eprintln!("xtask: in a {image} container ({engine})");
+        Ok(container)
+    }
+
+    /// The prefix running a command in the container, its stdin open.
+    pub fn prefix(&self) -> Vec<String> {
+        vec![
+            self.engine.to_owned(),
+            "exec".into(),
+            "-i".into(),
+            self.name.clone(),
+        ]
+    }
+}
+
+impl Drop for Container {
+    fn drop(&mut self) {
+        let _ = Command::new(self.engine)
+            .args(["rm", "-f", &self.name])
+            .stdout(Stdio::null())
+            .status();
+    }
+}
+
 /// A directory removed when dropped.
 pub struct TempDir(pub PathBuf);
 
