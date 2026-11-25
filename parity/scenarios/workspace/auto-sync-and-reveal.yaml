@@ -34,9 +34,16 @@ steps:
     params: { workspace_id: w1, enabled: true }
     normalize: [run-paths]
     golden: update
+  # Enabling starts a sync: it may have ended already.
   - call: settings.workspace_auto_sync.list
-    normalize: [run-paths]
-    golden: list
+    reply:
+      configs:
+        - key: "local:${ROOT}/repo"
+          enabled: true
+          interval_minutes: 10
+          checkout_path: "${ROOT}/repo"
+          running: "{{bool}}"
+      path: "{{contains:/.config/roamgate/settings.json}}"
   - call: settings.workspace_auto_sync.update_key
     params: { key: "${key}", enabled: false }
     normalize: [run-paths]
