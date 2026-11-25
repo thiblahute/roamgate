@@ -1740,9 +1740,13 @@ fn set_mode(path: &Path, mode: u32) -> std::io::Result<()> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
     }
+    // The socket's directory is the account's alone; the socket inherits
+    // that (an AF_UNIX socket file takes no chmod there).
     #[cfg(not(unix))]
     {
-        let _ = (path, mode);
+        if mode & 0o077 == 0 && path.is_dir() {
+            roamgate_base::private::restrict_to_owner_or_warn(path);
+        }
         Ok(())
     }
 }
