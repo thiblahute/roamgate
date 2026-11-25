@@ -215,7 +215,8 @@ mod tests {
         fn run(&self, _connection: &str, script: &str) -> BoxFuture<Result<ScriptOutput, String>> {
             let script = script.to_owned();
             Box::pin(async move {
-                let output = Command::new("/bin/sh")
+                let shell = roamgate_base::posix_shell::posix_shell()?;
+                let output = Command::new(shell)
                     .arg("-c")
                     .arg(script)
                     .env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -229,9 +230,18 @@ mod tests {
         }
     }
 
+    /// A real directory, named as git names it (with `/` on Windows too).
     fn base() -> (tempfile::TempDir, String) {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().canonicalize().unwrap().display().to_string();
+        let path = roamgate_base::paths::realpath(dir.path())
+            .unwrap()
+            .display()
+            .to_string();
+        let path = if cfg!(windows) {
+            path.replace('\\', "/")
+        } else {
+            path
+        };
         (dir, path)
     }
 
