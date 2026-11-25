@@ -170,12 +170,22 @@ pub fn utf16_len(text: &str) -> usize {
 }
 
 /// UTF-16 units of whole characters' bytes: a unit per lead byte, two for
-/// a 4-byte character's (branch-free: it runs over large replies).
+/// a 4-byte character's. Eight bytes at a time: it runs over every large
+/// reply, twice.
 fn units(bytes: &[u8]) -> usize {
-    bytes
-        .iter()
-        .map(|&byte| usize::from((byte as i8) >= -64) + usize::from(byte >= 0xf0))
-        .sum()
+    const HIGH: u64 = 0x8080_8080_8080_8080;
+    let unit = |byte: u8| usize::from((byte as i8) >= -64) + usize::from(byte >= 0xf0);
+    let (words, rest) = bytes.as_chunks::<8>();
+    let mut count = 0;
+    for word in words {
+        let word = u64::from_ne_bytes(*word);
+        // Each byte's top bit: set for a continuation byte (10xxxxxx),
+        // and for a 4-byte character's lead (11110xxx).
+        let continuation = word & !(word << 1) & HIGH;
+        let four = word & (word << 1) & (word << 2) & (word << 3) & HIGH;
+        count += 8 - continuation.count_ones() as usize + four.count_ones() as usize;
+    }
+    count + rest.iter().map(|&byte| unit(byte)).sum::<usize>()
 }
 
 /// The end (byte offset) of the longest run from `start` that fits in
