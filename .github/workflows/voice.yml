@@ -1,0 +1,139 @@
+name: Voice helper
+
+# roamgate-voice, the voice helper (voice/helper, a Cargo workspace of its
+# own), built per platform with what it reads at run time and packaged as
+# `roamgate setup voice` installs it (voice/helper/package.sh): the helper's
+# archive, on Linux its optional CUDA pack, and the manifest naming them.
+# They are CI artifacts here; nothing is published.
+#
+# Linux x86-64 builds in the CUDA container of voice/helper/linux; Whisper's
+# CUDA backend is a module in the CUDA pack, loaded at run time, and any-tts
+# runs on the CPU (ROAMGATE_VOICE_FEATURES empty) until Candle loads CUDA at
+# run time too. macOS (Apple silicon) runs everything with Metal. Windows
+# does not build yet: its job shows what stops it. Linux arm64 has no
+# GStreamer bundle to build against.
+
+on:
+  push:
+    branches: ["ci/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: rustup component add rustfmt
+      - run: cargo fmt --all --check
+        working-directory: voice/helper
+
+  linux-x64:
+    name: Linux x86-64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # The CUDA image, GStreamer's bundle and the build need more room
+      # than the runner leaves.
+      - name: Free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Build
+        env:
+          GAME_AWARE: "off"
+          # Candle's PTX (any-tts, when built with cuda) and Whisper's GPU
+          # code: Turing and newer, native code for Ampere and Ada.
+          CUDA_COMPUTE_CAP: "80"
+          CMAKE_CUDA_ARCHITECTURES: "75-virtual;80-virtual;86-real;89-real"
+          ROAMGATE_VOICE_FEATURES: ""
+        run: voice/helper/linux/build.sh "$RUNNER_TEMP/voice"
+      - name: Package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          voice/helper/package.sh "$RUNNER_TEMP/voice" linux-x64 "$version" "$RUNNER_TEMP/package"
+      - name: Start without a GPU or system espeak-ng
+        run: |
+          # The one library the host provides: PulseAudio's client.
+          sudo apt-get install -y --no-install-recommends libpulse0
+          mkdir -p "$RUNNER_TEMP/try"
+          tar -xJf "$RUNNER_TEMP/package/roamgate-voice-linux-x64.tar.xz" -C "$RUNNER_TEMP/try"
+          tar -xJf "$RUNNER_TEMP/package/roamgate-voice-cuda-linux-x64.tar.xz" -C "$RUNNER_TEMP/try"
+          timeout 30 "$RUNNER_TEMP/try/roamgate-voice" </dev/null 2>&1 | tee "$RUNNER_TEMP/try.log" || true
+          grep -q '"stage":"ready"' "$RUNNER_TEMP/try.log"
+          grep -q "Whisper runs on the CPU" "$RUNNER_TEMP/try.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: roamgate-voice-linux-x64
+          path: ${{ runner.temp }}/package
+          if-no-files-found: error
+
+  darwin-arm64:
+    name: macOS Apple silicon
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: brew install espeak-ng dylibbundler
+      - name: Build
+        working-directory: voice/helper
+        run: cargo build --release --locked
+      # espeak-ng's library (and what it links from Homebrew) beside the
+      # binary in lib/, its data in share/; signed again, ad hoc, once
+      # their load paths changed.
+      - name: Bundle
+        run: |
+          out="$RUNNER_TEMP/voice"
+          mkdir -p "$out/lib" "$out/share"
+          cp voice/helper/target/release/roamgate-voice "$out/"
+          dylibbundler -od -b -cd -x "$out/roamgate-voice" -d "$out/lib" -p @executable_path/lib/
+          cp -R "$(brew --prefix espeak-ng)/share/espeak-ng-data" "$out/share/"
+          for file in "$out"/lib/*.dylib "$out/roamgate-voice"; do codesign --force --sign - "$file"; done
+          otool -L "$out/roamgate-voice"
+      - name: Package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          voice/helper/package.sh "$RUNNER_TEMP/voice" darwin-arm64 "$version" "$RUNNER_TEMP/package"
+      - name: Start
+        run: |
+          mkdir -p "$RUNNER_TEMP/try"
+          tar -xJf "$RUNNER_TEMP/package/roamgate-voice-darwin-arm64.tar.xz" -C "$RUNNER_TEMP/try"
+          brew uninstall --ignore-dependencies espeak-ng
+          perl -e 'alarm 30; exec @ARGV' "$RUNNER_TEMP/try/roamgate-voice" </dev/null >"$RUNNER_TEMP/try.log" 2>&1 || true
+          cat "$RUNNER_TEMP/try.log"
+          grep -q '"stage":"ready"' "$RUNNER_TEMP/try.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: roamgate-voice-darwin-arm64
+          path: ${{ runner.temp }}/package
+          if-no-files-found: error
+
+  windows-x64:
+    name: Windows x86-64 (does not build yet)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    # Known to fail: what stops it is in the log, step by step.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: choco install pkgconfiglite --no-progress
+      - name: Build
+        working-directory: voice/helper
+        shell: bash
+        run: cargo build --release --locked
