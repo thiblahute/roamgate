@@ -1169,8 +1169,10 @@ pub fn fetch_text_repo(
     let repo = text_repo_path(archive_dir);
     init_text_repo(&repo)?;
     let before = head_commit(&repo);
-    let ssh_command = std::iter::once(ssh_program)
-        .chain(ssh_options.iter().copied())
+    // Git runs it with sh: the program quoted, a Windows path's
+    // backslashes and any space kept.
+    let ssh_command = std::iter::once(crate::hosts::sh_quote(ssh_program))
+        .chain(ssh_options.iter().map(|option| (*option).to_owned()))
         .collect::<Vec<_>>()
         .join(" ");
     let config = format!("core.sshCommand={ssh_command}");
