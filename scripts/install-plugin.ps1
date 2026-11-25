@@ -43,7 +43,12 @@ try {
   $pattern = '\A([0-9a-fA-F]{64})[ \t]+' + [regex]::Escape($archiveName) + '\r?\n?\z'
   $digest = [regex]::Match([IO.File]::ReadAllText($checksum), $pattern)
   if (!$digest.Success) { throw 'Invalid package checksum file' }
-  if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $digest.Groups[1].Value) {
+  # .NET's SHA-256, not Get-FileHash: a powershell.exe started from pwsh 7
+  # may not load the module that has it.
+  $sha256 = [Security.Cryptography.SHA256]::Create()
+  $stream = [IO.File]::OpenRead($archive)
+  try { $actual = [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '') } finally { $stream.Dispose() }
+  if ($actual -ne $digest.Groups[1].Value.ToUpperInvariant()) {
     throw 'Package checksum mismatch'
   }
   # The Pi sidecar beside the binary; releases before the Rust build have none.
