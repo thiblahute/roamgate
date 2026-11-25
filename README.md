@@ -13,9 +13,11 @@ place. Check agent activity, inspect conversations, run commands, and review
 diffs from your browser. Work on any computer, then continue from your phone
 while Herdr keeps your sessions running.
 
-**Requires a running Herdr server.** Roamgate itself is one native binary,
-written in Rust, with the web app built in: no runtime to install. Hosts it
-reaches over SSH need `python3` for agent features
+**Requires a running Herdr server.** The machine Roamgate runs on needs
+nothing but the release archive: the native `roamgate` binary, written in Rust
+with the web app built in, and the bundled `roamgate-pi` helper Ranger uses for
+models other than Claude Code. Linux/macOS hosts it reaches over SSH need
+`python3` (standard library only) for agent features
 ([what an SSH host needs](docs/DEPLOYMENT.md#multiple-and-remote-herdr-connections)).
 
 ## Step away. Stay in flow.
