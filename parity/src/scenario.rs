@@ -1009,11 +1009,24 @@ impl Runner {
                 let name = str_of(&step["await_http"])
                     .context("await_http: a name")?
                     .to_owned();
-                let (line, task) = self
+                let (line, mut task) = self
                     .pending_http
                     .remove(&name)
                     .ok_or_else(|| anyhow!("no request sent with no_wait: {name}"))?;
-                let response = tokio::time::timeout(duration(&step), task)
+                // `advance_every`: while no answer came (100 ms of real
+                // time), the clock moves by this much, for a request whose
+                // timer the server sets only after real I/O (no race with a
+                // single `advance`), as `await` does.
+                if let Some(ms) = get(&step, "advance_every").and_then(Value::as_u64) {
+                    let deadline = tokio::time::Instant::now() + duration(&step);
+                    while !task.is_finished() && tokio::time::Instant::now() <= deadline {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        if !task.is_finished() {
+                            self.run.clock().advance(ms).await?;
+                        }
+                    }
+                }
+                let response = tokio::time::timeout(duration(&step), &mut task)
                     .await
                     .with_context(|| format!("{line} ({name}) did not answer"))???;
                 self.check_response(&line, &step, &response)
