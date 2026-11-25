@@ -34,7 +34,6 @@ pub fn sqlite_rows(path: &Path, sql: &str) -> Result<Value> {
     let mut statement = connection.prepare(sql)?;
     let names: Vec<String> = statement
         .column_names()
-        .iter()
         .map(|name| name.to_string())
         .collect();
     let rows = statement.query_map([], |row| {

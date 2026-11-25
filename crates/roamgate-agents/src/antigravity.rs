@@ -545,11 +545,7 @@ fn number_column(value: ValueRef<'_>) -> Option<f64> {
 /// The rows of a table as `SELECT *` gives them, by column name.
 fn rows_by_name(db: &Connection, sql: &str) -> rusqlite::Result<Vec<Vec<(String, SqlValue)>>> {
     let mut statement = db.prepare(sql)?;
-    let names: Vec<String> = statement
-        .column_names()
-        .iter()
-        .map(|n| (*n).to_owned())
-        .collect();
+    let names: Vec<String> = statement.column_names().map(|n| (*n).to_owned()).collect();
     let mut rows = statement.query([])?;
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {

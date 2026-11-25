@@ -26,7 +26,7 @@ roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-claude = { path = "../roamgate-claude" }
 roamgate-exec = { path = "../roamgate-exec" }
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sha2 = "0.10"

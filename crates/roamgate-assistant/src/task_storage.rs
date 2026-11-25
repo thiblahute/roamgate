@@ -233,11 +233,7 @@ fn read_state(conn: &Connection) -> Result<Value> {
 
     // The columns an older version lacks are read by name when present.
     let mut statement = conn.prepare("SELECT * FROM tasks ORDER BY position")?;
-    let names: Vec<String> = statement
-        .column_names()
-        .iter()
-        .map(|n| n.to_string())
-        .collect();
+    let names: Vec<String> = statement.column_names().map(|n| n.to_string()).collect();
     let rows = statement
         .query_map([], |row| {
             let mut fields = std::collections::HashMap::new();
