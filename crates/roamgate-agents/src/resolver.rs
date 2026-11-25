@@ -35,6 +35,9 @@ type MuseMetadata = (String, (String, Option<String>));
 #[derive(Default)]
 pub struct ResolverContext {
     path_cache: Mutex<HashMap<String, String>>,
+    /// When a Claude session's id was last searched for in the whole
+    /// projects tree and not found (see [`CLAUDE_WALK_MISS_MS`]).
+    claude_walk_misses: Mutex<HashMap<String, f64>>,
     successor_checked: Mutex<HashMap<String, f64>>,
     muse_metadata: Mutex<Vec<MuseMetadata>>,
     pub env: AgentEnv,
@@ -68,12 +71,23 @@ fn walk_files(root: &Path, matches: &dyn Fn(&Path) -> bool) -> Vec<PathBuf> {
         entries.sort_by_key(|e| e.file_name());
         for entry in entries {
             let path = entry.path();
-            let Ok(meta) = std::fs::metadata(&path) else {
+            // The entry's own type, as Bun's `withFileTypes`: only a link
+            // is followed with a stat (a project folder may link to where
+            // sessions are kept; the depth limit ends a loop of links).
+            let Ok(kind) = entry.file_type() else {
                 continue;
             };
-            if meta.is_dir() {
+            let (is_dir, is_file) = if kind.is_symlink() {
+                match std::fs::metadata(&path) {
+                    Ok(meta) => (meta.is_dir(), meta.is_file()),
+                    Err(_) => continue,
+                }
+            } else {
+                (kind.is_dir(), kind.is_file())
+            };
+            if is_dir {
                 visit(&path, depth + 1, matches, results);
-            } else if meta.is_file() && matches(&path) {
+            } else if is_file && matches(&path) {
                 results.push(path);
             }
         }
@@ -117,10 +131,33 @@ fn cached_path(
     Some(path)
 }
 
-fn find_claude_session(id: &str, context: &ResolverContext) -> Option<String> {
-    cached_path(context, &format!("claude:{id}"), || {
-        let root = context.env.home.join(".claude").join("projects");
-        let name = format!("{id}.jsonl");
+/// How long a Claude session id the whole projects tree did not have is
+/// not searched for there again (its project folder still is, each time):
+/// the walk is hundreds of thousands of entries on a busy machine, and an
+/// id with no transcript here (another host's, one gone) was searched for
+/// on every agent list.
+pub const CLAUDE_WALK_MISS_MS: f64 = 60_000.0;
+
+async fn find_claude_session(id: &str, context: &ResolverContext) -> Option<String> {
+    let key = format!("claude:{id}");
+    if let Some(cached) = context.path_cache.lock().unwrap().get(&key).cloned()
+        && Path::new(&cached).exists()
+    {
+        return Some(cached);
+    }
+    let now = js::now_ms();
+    let walk = context
+        .claude_walk_misses
+        .lock()
+        .unwrap()
+        .get(&key)
+        .is_none_or(|at| now - at >= CLAUDE_WALK_MISS_MS);
+    let root = context.env.home.join(".claude").join("projects");
+    let name = format!("{id}.jsonl");
+    // Off the async workers: a walk is long, and blocking work.
+    let found = tokio::task::spawn_blocking(move || {
+        // Where Claude Code keeps it: straight under its project's folder.
+        // Only when it is not there is the whole tree walked.
         let direct: Vec<PathBuf> = std::fs::read_dir(&root)
             .map(|entries| {
                 entries
@@ -133,11 +170,31 @@ fn find_claude_session(id: &str, context: &ResolverContext) -> Option<String> {
         if !direct.is_empty() {
             return newest_file(direct);
         }
+        if !walk {
+            return None;
+        }
         newest_file(walk_files(&root, &|path| {
             path.file_name()
                 .is_some_and(|n| n.to_string_lossy() == name)
         }))
     })
+    .await
+    .ok()
+    .flatten();
+    let mut misses = context.claude_walk_misses.lock().unwrap();
+    match &found {
+        Some(path) => {
+            misses.remove(&key);
+            drop(misses);
+            context.path_cache.lock().unwrap().insert(key, path.clone());
+        }
+        None if walk => {
+            misses.retain(|_, at| now - *at < CLAUDE_WALK_MISS_MS);
+            misses.insert(key, now);
+        }
+        None => {}
+    }
+    found
 }
 
 async fn find_claude_transcript(
@@ -166,7 +223,7 @@ async fn find_claude_transcript(
                     .insert(key.clone(), found.path.clone());
             }
         }
-    } else if let Some(path) = find_claude_session(id, context) {
+    } else if let Some(path) = find_claude_session(id, context).await {
         file = files.stat_file(&path).await?;
     }
     let Some(file) = file else { return Ok(None) };

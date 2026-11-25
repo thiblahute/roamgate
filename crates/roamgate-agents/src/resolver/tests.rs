@@ -163,6 +163,53 @@ async fn finds_a_transcript_in_its_project_s_folder_else_anywhere_below() {
     assert_eq!(found["path"], json!(text(&nested)));
 }
 
+#[tokio::test]
+async fn a_claude_id_the_tree_lacks_is_walked_for_again_only_after_a_minute() {
+    let home = tempfile::tempdir().unwrap();
+    let projects = home.path().join(".claude").join("projects");
+    let id = "4b9e7c1e-2f0a-4d43-9a57-0c1f00a1b003";
+    std::fs::create_dir_all(projects.join("-repo")).unwrap();
+    let agent_env = env(home.path(), &[]);
+    let files = LocalSessionFiles {
+        env: agent_env.clone(),
+    };
+    let context = ResolverContext::new(agent_env);
+    let herdr = agent("claude", "id", id, None);
+    assert_eq!(resolve(&herdr, &files, &context).await["path"], json!(""));
+    // Nested where only a walk finds it: not searched for again yet.
+    let nested = projects
+        .join("-repo")
+        .join("nested")
+        .join(format!("{id}.jsonl"));
+    write(&nested, "{}\n");
+    assert_eq!(resolve(&herdr, &files, &context).await["path"], json!(""));
+    // A minute on, the tree is walked again.
+    let missed = context
+        .claude_walk_misses
+        .lock()
+        .unwrap()
+        .values_mut()
+        .map(|at| {
+            *at -= CLAUDE_WALK_MISS_MS;
+        })
+        .count();
+    assert_eq!(missed, 1);
+    assert_eq!(
+        resolve(&herdr, &files, &context).await["path"],
+        json!(text(&nested))
+    );
+    // Its project's folder is always looked in.
+    let other = "4b9e7c1e-2f0a-4d43-9a57-0c1f00a1b004";
+    let herdr = agent("claude", "id", other, None);
+    assert_eq!(resolve(&herdr, &files, &context).await["path"], json!(""));
+    let kept = projects.join("-repo").join(format!("{other}.jsonl"));
+    write(&kept, "{}\n");
+    assert_eq!(
+        resolve(&herdr, &files, &context).await["path"],
+        json!(text(&kept))
+    );
+}
+
 async fn omp(home: &Path, vars: &[(&str, String)], id: &str) -> Value {
     let agent_env = env(home, vars);
     let files = LocalSessionFiles {
