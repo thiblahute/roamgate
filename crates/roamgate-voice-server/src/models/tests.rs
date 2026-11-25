@@ -5,24 +5,22 @@ use crate::testing::{cpu_laptop, nvidia_desktop};
 
 fn pocket() -> Vec<Value> {
     vec![
-        json!({"model": "pocket-tts", "path": "/models/pocket-tts-fr/languages/french", "languages": "fr", "voice": "estelle"}),
-        json!({"model": "pocket-tts", "path": "/models/pocket-tts-en/languages/english", "languages": "en", "voice": "alba"}),
+        json!({"model": "pocket-tts", "path": at("pocket-tts-fr/languages/french"), "languages": "fr", "voice": "estelle"}),
+        json!({"model": "pocket-tts", "path": at("pocket-tts-en/languages/english"), "languages": "en", "voice": "alba"}),
     ]
+}
+
+/// A path under the tests' `/models`, joined as the platform joins.
+fn at(relative: &str) -> String {
+    join_relative(Path::new("/models"), relative)
+        .display()
+        .to_string()
 }
 
 fn roots() -> PackageRoots {
     packages()
         .iter()
-        .map(|entry| {
-            (
-                entry.id.clone(),
-                if entry.dir.is_empty() {
-                    PathBuf::from("/models")
-                } else {
-                    PathBuf::from(format!("/models/{}", entry.dir))
-                },
-            )
-        })
+        .map(|entry| (entry.id.clone(), PathBuf::from(at(&entry.dir))))
         .collect()
 }
 
@@ -203,19 +201,19 @@ fn heavy_parakeet_with_whisper_qwen3_tts_with_kokoro_beside_it() {
         packages(),
     )
     .unwrap();
-    let mut models = vec![json!({"model": "kokoro", "path": "/models/Kokoro-82M"})];
+    let mut models = vec![json!({"model": "kokoro", "path": at("Kokoro-82M")})];
     models.extend(pocket());
     assert_eq!(
         Value::Object(patch_json(&patch)),
         json!({
-            "parakeet_model": "/models/parakeet-tdt-0.6b-v3",
-            "whisper_model": "/models/ggml-large-v3-turbo-q5_0.bin",
+            "parakeet_model": at("parakeet-tdt-0.6b-v3"),
+            "whisper_model": at("ggml-large-v3-turbo-q5_0.bin"),
             "tts_models": models,
-            "clone_model": "/models/Qwen3-TTS-1.7B-Base",
+            "clone_model": at("Qwen3-TTS-1.7B-Base"),
             "stock_model": null,
-            "speaker_model": "/models/wespeaker_en_voxceleb_resnet34.onnx",
-            "turn_model": "/models/smart-turn-v3.2-cpu.onnx",
-            "text_turn_model": "/models/qwen3-0.6b",
+            "speaker_model": at("wespeaker_en_voxceleb_resnet34.onnx"),
+            "turn_model": at("smart-turn-v3.2-cpu.onnx"),
+            "text_turn_model": at("qwen3-0.6b"),
         })
     );
 }
@@ -226,11 +224,11 @@ fn light_pocket_tts_in_place_of_any_tts_kokoro_s_onnx_model_beside_it() {
     let light = recommended_choices(&cpu_laptop())["light"].clone();
     let patch =
         patch_json(&config_patch(&light, &roots(), old.as_object().unwrap(), packages()).unwrap());
-    assert_eq!(patch["parakeet_model"], "/models/parakeet-tdt-0.6b-v3");
-    assert_eq!(patch["kokoro_model"], "/models/kokoro-v1.0.onnx");
-    assert_eq!(patch["kokoro_voices"], "/models/voices-v1.0.bin");
+    assert_eq!(patch["parakeet_model"], at("parakeet-tdt-0.6b-v3"));
+    assert_eq!(patch["kokoro_model"], at("kokoro-v1.0.onnx"));
+    assert_eq!(patch["kokoro_voices"], at("voices-v1.0.bin"));
     let mut models = pocket();
-    models.push(json!({"model": "kokoro", "path": "/models/kokoro-v1.0.onnx"}));
+    models.push(json!({"model": "kokoro", "path": at("kokoro-v1.0.onnx")}));
     assert_eq!(patch["tts_models"], Value::Array(models));
     for key in ["clone_model", "stock_model", "whisper_model"] {
         assert_eq!(patch.get(key), Some(&Value::Null), "{key}");
@@ -253,9 +251,9 @@ fn light_as_before_kokoro_s_onnx_model_in_place_of_any_tts() {
     let old = json!({"tts_models": [{"model": "kokoro", "path": "/old"}], "clone_model": "/old/base", "whisper_model": "/old/whisper.bin"});
     let patch =
         patch_json(&config_patch(&light, &roots(), old.as_object().unwrap(), packages()).unwrap());
-    assert_eq!(patch["parakeet_model"], "/models/parakeet-tdt-0.6b-v3");
-    assert_eq!(patch["kokoro_model"], "/models/kokoro-v1.0.onnx");
-    assert_eq!(patch["kokoro_voices"], "/models/voices-v1.0.bin");
+    assert_eq!(patch["parakeet_model"], at("parakeet-tdt-0.6b-v3"));
+    assert_eq!(patch["kokoro_model"], at("kokoro-v1.0.onnx"));
+    assert_eq!(patch["kokoro_voices"], at("voices-v1.0.bin"));
     for key in ["tts_models", "clone_model", "stock_model", "whisper_model"] {
         assert_eq!(patch.get(key), Some(&Value::Null), "{key}");
     }
@@ -263,7 +261,7 @@ fn light_as_before_kokoro_s_onnx_model_in_place_of_any_tts() {
 
 #[test]
 fn a_recorded_voice_and_kokoro_s_own_fields_stay() {
-    let base = "/models/Qwen3-TTS-1.7B-Base";
+    let base = at("Qwen3-TTS-1.7B-Base");
     let config = json!({"tts_models": [
         {"model": "qwen3-tts", "path": base, "voice_embedding": "/voices/me.json"},
         {"model": "qwen3-tts", "path": "/elsewhere/Qwen3-TTS-0.6B-Base"},
@@ -285,12 +283,12 @@ fn a_recorded_voice_and_kokoro_s_own_fields_stay() {
         patch["tts_models"],
         json!([
             {"model": "qwen3-tts", "path": base, "voice_embedding": "/voices/me.json"},
-            {"model": "kokoro", "path": "/models/Kokoro-82M", "voice": "ff_siwis"},
+            {"model": "kokoro", "path": at("Kokoro-82M"), "voice": "ff_siwis"},
             french,
             pocket()[1],
         ])
     );
-    assert_eq!(patch["stock_model"], "/models/Qwen3-TTS-1.7B-CustomVoice");
+    assert_eq!(patch["stock_model"], at("Qwen3-TTS-1.7B-CustomVoice"));
 }
 
 #[test]
