@@ -355,15 +355,33 @@ impl Container {
         Ok(container)
     }
 
-    /// The prefix running a command in the container, its stdin open.
+    /// The prefix running a command in the container, its stdin open, as
+    /// this user: what it writes in the shared directory (the server's
+    /// private 0700 directories) stays readable from here.
     pub fn prefix(&self) -> Vec<String> {
-        vec![
-            self.engine.to_owned(),
-            "exec".into(),
-            "-i".into(),
-            self.name.clone(),
-        ]
+        let mut prefix = vec![self.engine.to_owned(), "exec".into(), "-i".into()];
+        if let Some(user) = host_user() {
+            prefix.extend(["-u".into(), user]);
+        }
+        prefix.push(self.name.clone());
+        prefix
     }
+}
+
+/// `uid:gid` of this process, on Unix.
+fn host_user() -> Option<String> {
+    if !cfg!(unix) {
+        return None;
+    }
+    let id = |flag: &str| {
+        Command::new("id")
+            .arg(flag)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    };
+    Some(format!("{}:{}", id("-u")?, id("-g")?))
 }
 
 impl Drop for Container {
