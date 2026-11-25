@@ -386,6 +386,9 @@ async fn refuses_symlinks_and_control_character_paths_rather_than_omitting_them(
 }
 
 #[tokio::test]
+// Unix only: it races a symbolic link in, which Git Bash cannot make on
+// Windows without privileges.
+#[cfg(unix)]
 async fn pins_files_without_dereferencing_a_raced_final_symlink() {
     let repo = repository();
     fs::write(repo.root.join("file"), "small").unwrap();
@@ -427,6 +430,9 @@ async fn does_not_publish_a_file_that_grows_after_enumeration() {
 }
 
 #[tokio::test]
+// Unix only: it races a symbolic link in, which Git Bash cannot make on
+// Windows without privileges.
+#[cfg(unix)]
 async fn a_raced_ancestor_symlink_cannot_redirect_capture() {
     let repo = repository();
     let outside = tempfile::Builder::new()

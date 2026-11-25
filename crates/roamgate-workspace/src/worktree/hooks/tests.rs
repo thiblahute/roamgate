@@ -26,20 +26,20 @@ fn host_join(dir: &Path, name: &str) -> String {
     format!("{}/{name}", path(dir))
 }
 
-/// The shell's `$PWD` in `dir`: Git for Windows' bash says `/c/x/y` for
-/// `C:\x\y`.
+/// The shell's `$PWD` in `dir`, as the hooks' shell says it: Git for
+/// Windows' bash names it its own way (/c/..., /tmp/... for TEMP).
 fn shell_pwd(dir: &str) -> String {
     if !cfg!(windows) {
         return dir.to_owned();
     }
-    match dir.split_once(":\\") {
-        Some((drive, rest)) => format!(
-            "/{}/{}",
-            drive.to_ascii_lowercase(),
-            rest.replace('\\', "/")
-        ),
-        None => dir.to_owned(),
-    }
+    let output = std::process::Command::new("sh")
+        .args(["-c", "cd \"$1\" && pwd", "sh", dir])
+        .output()
+        .unwrap();
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .trim_end()
+        .to_owned()
 }
 
 fn enabled_always(value: bool) -> HookRunner {
