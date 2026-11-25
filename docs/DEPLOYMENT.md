@@ -499,6 +499,21 @@ connection per bridged socket client and has no command master. GUI preferences 
 Give each bridge on the same account its own `ROAMGATE_SETTINGS_PATH` (an
 absolute, stable path; changing it requires logging in again).
 
+**Node link (`"node": true`):** an SSH profile on a Linux/macOS host may add
+`"node": true` in `connections.json` (there is no form field for it; edits in
+the connection form keep it). The server then runs
+`~/.local/share/roamgate-node/bin/roamgate node --stdio` on the host over the
+profile's command master and sends Herdr's control calls, its event
+subscription and host commands (Git, files, transcripts) through that one link,
+where they run as local calls on the host. The node writes nothing on the host:
+it is installed there by the deploy, separately from anything else. Terminal
+streams stay on the SSH tunnel. When the node is missing, fails to start, does
+not answer within 8 seconds or speaks another node contract, the server logs
+`node unavailable, using the SSH tunnel` once and the profile works as one
+without `node`; a link that drops mid-connection falls back the same way and is
+brought back in the background. The link's contract is
+[contract/wire/node-link.md](../contract/wire/node-link.md).
+
 Connection flags or variables such as `--ssh-host` create a read-only
 `legacy-default` profile:
 

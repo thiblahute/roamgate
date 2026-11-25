@@ -54,6 +54,7 @@ async fn says_hello_and_exits_when_the_channel_closes() {
         shadow: ShadowSettings::default(),
         clock: None,
         raw_data: false,
+        node: None,
     })
     .await
     .unwrap();

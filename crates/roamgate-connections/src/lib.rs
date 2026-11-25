@@ -24,6 +24,7 @@
 //! | [`agent_tab_title`] | the title of a pane's agent session for its tab (connections/agent-tab-title.ts) |
 //! | [`tab_auto_rename`] | tabs named after their agent's session (connections/tab-auto-rename.ts) |
 //! | [`routing`] | which connection a browser RPC or HTTP route is for, the connection envelope (connections/protocol.ts, rpc-routing.ts, http-routing.ts) |
+//! | [`node_host`] | an SSH profile's node link: its start and handshake, socket streams and commands on the node (contract/wire/node-link.md) |
 //! | [`host_ops`] | the front's SSH commands run or held in the core's session slots (bridge/ssh-sessions.ts) |
 
 pub use roamgate_agents::shared::agent_models;
@@ -36,6 +37,7 @@ pub mod host_runtime;
 pub mod limit_resume;
 pub mod manager;
 pub mod network_watch;
+pub mod node_host;
 pub mod profile_service;
 pub mod profiles;
 pub mod routing;

@@ -16,6 +16,7 @@ fn profile() -> SshConnectionProfile {
         remote_platform_windows: false,
         remote_herdr_path: None,
         remote_session: None,
+        node: false,
     }
 }
 

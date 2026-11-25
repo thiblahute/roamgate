@@ -7204,6 +7204,7 @@ dependencies = [
 name = "roamgate-connections"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
  "fancy-regex 0.17.0",
  "futures-util",
  "hex",
@@ -7218,6 +7219,7 @@ dependencies = [
  "roamgate-exec",
  "roamgate-herdr",
  "roamgate-protocol",
+ "roamgate-sidecar",
  "rusqlite",
  "rustix",
  "serde",

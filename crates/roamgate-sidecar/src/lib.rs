@@ -6,6 +6,7 @@
 //! | Module | What |
 //! |---|---|
 //! | [`protocol`] | messages, body chunks, families and routing, the shadow comparison, the outbound queue (held to `contract/vectors/core-channel.json`) |
+//! | [`node`] | the node link's preamble, calls and socket streams (contract/wire/node-link.md) |
 //! | [`frames`] | the voice helper's frame codec over tokio, with the channel's 64 MiB cap |
 //! | [`transport`] | the Unix socket, or the named pipe on Windows |
 //! | [`peer`] | one side of the channel: handshake, calls, pushes, streamed HTTP, reverse calls, liveness |
@@ -18,6 +19,7 @@
 pub mod core;
 pub mod family;
 pub mod frames;
+pub mod node;
 pub mod owners;
 pub mod peer;
 pub mod protocol;

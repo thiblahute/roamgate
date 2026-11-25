@@ -178,6 +178,10 @@ pub enum Message {
         /// send a large `ws_send`'s `data` apart, unescaped.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         raw_data: bool,
+        /// A node's welcome on the node link: what it runs
+        /// (contract/wire/node-link.md, Handshake).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        node: Option<NodeIdentity>,
     },
     Refused {
         reason: String,
@@ -304,6 +308,19 @@ pub enum Message {
     #[serde(other)]
     Unknown,
 }
+
+/// What a node runs, in its `welcome` (contract/wire/node-link.md).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeIdentity {
+    /// The node's `roamgate` version.
+    pub version: String,
+    /// The node link's contract version ([`NODE_CONTRACT`]).
+    pub contract: u32,
+}
+
+/// The node link's contract version: a home links only to a node that
+/// speaks the same one (contract/wire/node-link.md).
+pub const NODE_CONTRACT: u32 = 1;
 
 /// A push to browsers.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

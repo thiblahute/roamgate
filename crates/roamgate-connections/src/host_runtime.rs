@@ -35,7 +35,9 @@ use crate::agent_status::{AgentStatusArgs, AgentStatusSubscriptionLoop, StatusHe
 use crate::manager::{
     ConnectionIdentity, ConnectionRuntime, RuntimeContext, RuntimeError, sanitize_connection_error,
 };
+use crate::node_host::{NodeLink, NodeOptions, NodeSlot, NodeStart};
 use crate::subscription_loop::{EventSubscriptionLoop, LoopSubscription, SubscriptionLoopArgs};
+use roamgate_sidecar::node::CONTROL_SOCKET;
 
 /// The Herdr events a runtime subscribes to (runtime.ts `DEFAULT_EVENTS`).
 pub const DEFAULT_EVENTS: &[&str] = &[
@@ -222,7 +224,22 @@ pub struct HostRuntimeArgs {
     pub on_transport_exit: Option<TransportExit>,
     /// The front's composition is not built (tests of the transport alone).
     pub skip_front: bool,
+    /// The profile's node (`node: true`): its Herdr calls and host commands
+    /// go over the node link while it is up (contract/wire/node-link.md).
+    pub node: Option<NodeOptions>,
 }
+
+/// A runtime's node link and what follows it.
+struct NodeRuntime {
+    options: NodeOptions,
+    slot: NodeSlot,
+    sessions: SshSessions,
+    /// The link's watcher (it reconnects a link that went down).
+    watcher: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+/// The longest wait between two attempts to bring back a link that was up.
+const NODE_RETRY_MAX: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Default)]
 struct State {
@@ -252,6 +269,7 @@ struct Inner {
     /// Shared with the master-ready hook.
     disposed: Arc<AtomicBool>,
     state: Mutex<State>,
+    node: Option<NodeRuntime>,
 }
 
 /// A connection's runtime while Rust owns the `host` family.
@@ -265,10 +283,170 @@ fn connection_fields(id: &str) -> LogFields {
     fields
 }
 
+impl Inner {
+    fn node_fields(&self) -> LogFields {
+        let mut fields = connection_fields(&self.identity.id);
+        if let Some(host) = &self.config.ssh_host {
+            fields.insert("host".into(), json!(host));
+        }
+        fields
+    }
+
+    fn node_start(&self, node: &NodeRuntime) -> NodeStart {
+        NodeStart {
+            destination: self.config.ssh_host.clone().unwrap_or_default(),
+            path: node.options.path.clone(),
+            sessions: node.sessions.clone(),
+            runner: node.options.runner.clone(),
+            program: node.options.program.clone(),
+            clock: Arc::new(roamgate_base::clock::SystemClock),
+            version: node.options.version.clone(),
+        }
+    }
+
+    /// Brings the node link up over the master, once the tunnel is: a node
+    /// that does not come up leaves the runtime on its tunnel and master
+    /// for this generation, said once.
+    async fn start_node(inner: &Arc<Self>) {
+        let Some(node) = &inner.node else {
+            return;
+        };
+        if node.slot.get().is_some() || inner.disposed.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(tunnel) = &inner.tunnel {
+            let _ = tokio::time::timeout(MASTER_SETTLE, tunnel.master_ready()).await;
+        }
+        match NodeLink::start(inner.node_start(node)).await {
+            Ok(link) => {
+                if inner.disposed.load(Ordering::SeqCst) {
+                    link.stop().await;
+                    return;
+                }
+                Self::link_up(inner, node, link);
+            }
+            Err(reason) => {
+                let mut fields = inner.node_fields();
+                fields.insert("error".into(), json!(sanitize_connection_error(&reason)));
+                inner
+                    .logger
+                    .warn("node unavailable, using the SSH tunnel", Some(&fields));
+            }
+        }
+    }
+
+    fn link_up(inner: &Arc<Self>, node: &NodeRuntime, link: NodeLink) {
+        let mut fields = inner.node_fields();
+        fields.insert("version".into(), json!(link.identity().version));
+        inner.logger.info("node link up", Some(&fields));
+        node.slot.set(Some(link.clone()));
+        node.options.routes.insert(&link);
+        let watched = inner.clone();
+        let watcher = tokio::spawn(async move { Self::watch_node(watched, link).await });
+        if let Some(previous) = node.watcher.lock().unwrap().replace(watcher) {
+            previous.abort();
+        }
+    }
+
+    /// Follows a link: when it goes down, calls go back to the tunnel and
+    /// the link is brought back, waiting longer each time it fails.
+    async fn watch_node(inner: Arc<Self>, link: NodeLink) {
+        let Some(node) = &inner.node else {
+            return;
+        };
+        link.closed().await;
+        node.slot.clear(&link);
+        node.options.routes.remove(&link);
+        if inner.disposed.load(Ordering::SeqCst) {
+            return;
+        }
+        inner.logger.warn(
+            "node link closed, using the SSH tunnel",
+            Some(&inner.node_fields()),
+        );
+        let mut delay = std::time::Duration::from_secs(1);
+        loop {
+            tokio::time::sleep(delay).await;
+            if inner.disposed.load(Ordering::SeqCst) {
+                return;
+            }
+            match NodeLink::start(inner.node_start(node)).await {
+                Ok(next) => {
+                    if inner.disposed.load(Ordering::SeqCst) {
+                        next.stop().await;
+                        return;
+                    }
+                    let mut fields = inner.node_fields();
+                    fields.insert("version".into(), json!(next.identity().version));
+                    inner.logger.info("node link up", Some(&fields));
+                    node.slot.set(Some(next.clone()));
+                    node.options.routes.insert(&next);
+                    // Follow the new link from this same task.
+                    next.closed().await;
+                    node.slot.clear(&next);
+                    node.options.routes.remove(&next);
+                    if inner.disposed.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    inner.logger.warn(
+                        "node link closed, using the SSH tunnel",
+                        Some(&inner.node_fields()),
+                    );
+                    delay = std::time::Duration::from_secs(1);
+                }
+                Err(reason) => {
+                    let mut fields = inner.node_fields();
+                    fields.insert("error".into(), json!(sanitize_connection_error(&reason)));
+                    inner.logger.debug("node link retry failed", Some(&fields));
+                    delay = (delay * 2).min(NODE_RETRY_MAX);
+                }
+            }
+        }
+    }
+
+    /// Ends the link with the runtime.
+    async fn stop_node(&self) {
+        let Some(node) = &self.node else {
+            return;
+        };
+        if let Some(watcher) = node.watcher.lock().unwrap().take() {
+            watcher.abort();
+        }
+        if let Some(link) = node.slot.get() {
+            node.slot.clear(&link);
+            node.options.routes.remove(&link);
+            link.stop().await;
+        }
+    }
+}
+
 impl HostRuntime {
     pub fn new(args: HostRuntimeArgs) -> Result<Arc<Self>, RuntimeError> {
         let identity = args.identity.clone();
         let id = identity.id.clone();
+        let node = match (&args.node, &args.config.ssh_host) {
+            (Some(options), Some(_)) if args.config.remote_platform.is_none() => {
+                Some(NodeRuntime {
+                    options: options.clone(),
+                    slot: NodeSlot::default(),
+                    sessions: args.sessions.clone(),
+                    watcher: Mutex::new(None),
+                })
+            }
+            _ => None,
+        };
+        // A node's Herdr is its own control socket, reached over the link
+        // while it is up, through the tunnel's forward otherwise.
+        let connector = node.as_ref().map(|node| {
+            node.slot.herdr_connector(
+                args.config
+                    .remote_socket_path
+                    .clone()
+                    .filter(|path| !path.is_empty())
+                    .unwrap_or_else(|| CONTROL_SOCKET.to_owned()),
+                args.config.socket_path.clone(),
+            )
+        });
         let herdr = HerdrClient::new(
             args.config.socket_path.clone(),
             HerdrClientOptions {
@@ -278,6 +456,7 @@ impl HostRuntime {
                 // subscriptions' retries and polls follow `clock`.
                 clock: Some(Arc::new(roamgate_base::clock::SystemClock)),
                 read_reuse_ms: None,
+                connector,
             },
         );
         let (events, event_queue) = mpsc::unbounded_channel();
@@ -452,6 +631,7 @@ impl HostRuntime {
             agent_status,
             disposed,
             state: Mutex::default(),
+            node,
         });
         Ok(Arc::new(Self { inner }))
     }
@@ -568,6 +748,7 @@ impl ConnectionRuntime for HostRuntime {
                 inner.config.client_socket_path.clone(),
             )
             .await?;
+            Inner::start_node(&inner).await;
             if !inner.disposed.load(Ordering::SeqCst) {
                 inner.state.lock().unwrap().transport_started = true;
             }
@@ -650,13 +831,15 @@ impl ConnectionRuntime for HostRuntime {
             };
             let subscriptions = inner.subscriptions.stop();
             let agent_status = inner.agent_status.stop();
+            let node = inner.stop_node();
             let tunnel = async {
                 match &inner.tunnel {
                     Some(tunnel) => tunnel.cleanup().await.map_err(tunnel_error),
                     None => Ok(()),
                 }
             };
-            let ((), (), (), cleaned) = tokio::join!(front, subscriptions, agent_status, tunnel);
+            let ((), (), (), (), cleaned) =
+                tokio::join!(front, subscriptions, agent_status, node, tunnel);
             cleaned
         }
         .boxed()

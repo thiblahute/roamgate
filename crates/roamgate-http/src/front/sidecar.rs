@@ -116,6 +116,7 @@ pub(super) fn welcome(_hello: &Message) -> Message {
         },
         clock: None,
         raw_data: true,
+        node: None,
     }
 }
 
@@ -135,6 +136,7 @@ fn standalone_welcome(core: &StandaloneCore) -> Message {
         },
         clock: core.test_clock.as_ref().map(|clock| clock.now()),
         raw_data: true,
+        node: None,
     }
 }
 

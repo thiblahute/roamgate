@@ -35,6 +35,7 @@ use roamgate_connections::manager::{
     ConnectionManager, ConnectionStatus, RuntimeContext, RuntimeError, RuntimeFactory,
     sanitize_connection_error,
 };
+use roamgate_connections::node_host::{DEFAULT_NODE_PATH, NodeOptions};
 use roamgate_connections::profile_service::{
     ConnectionProfileBootstrap, ConnectionProfileService, ConnectionProfileServiceArgs,
     ConnectionRetryOptions, ManagedConnectionProfile, ProfileRegistration, SshProbeEnvironment,
@@ -539,6 +540,18 @@ impl Inner {
                         service.runtime_failed(&profile_id, &error);
                     }) as TransportExit
                 });
+                // A profile with `node: true` reaches its host through the
+                // node link while it is up (contract/wire/node-link.md).
+                let node = match &profile {
+                    ConnectionProfile::Ssh(ssh) if ssh.node => Some(NodeOptions {
+                        path: DEFAULT_NODE_PATH.to_owned(),
+                        routes: ops.nodes.clone(),
+                        runner: ops.runner.clone(),
+                        program: ops.program.clone(),
+                        version: crate::VERSION.to_owned(),
+                    }),
+                    _ => None,
+                };
                 let made = HostRuntime::new(HostRuntimeArgs {
                     identity: identity.clone(),
                     context,
@@ -552,6 +565,7 @@ impl Inner {
                     probe: probe.clone(),
                     on_transport_exit,
                     skip_front: false,
+                    node,
                 });
                 if made.is_err() {
                     remove_owned_directory(&config);

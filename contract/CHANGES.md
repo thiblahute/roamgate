@@ -6,6 +6,21 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.41
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+The node link (Mac node phase 2; family connections, wire/node-link.md): an
+SSH profile may carry `"node": true` (refused with `remote_platform`
+`windows`; kept by an edit that leaves it out), and the connection replies'
+profiles name it (`connections.list`, `.connect`, `.create`, `.update`,
+`.disconnect`). Such a profile runs `roamgate node --stdio` on its host over
+its command master and sends its Herdr control calls, its event subscription
+and its host commands through that link, falling back to the tunnel and the
+master when the node is missing or speaks another node contract. The core
+channel's `welcome` gains an optional `node` (`version`, `contract`), which
+only a node sends. The inventory is unchanged.
+
 ## 1.40
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
@@ -29,6 +44,7 @@ publishes no task notification and runs no workspace auto-sync or
 arrangement; its hello is not followed by the forwards. The server and
 the browser surface of a home are unchanged; the inventory too.
 
+||||||| parent of d131e9c266 (Serve SSH profiles with node: true through a roamgate node link)
 ## 1.39
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

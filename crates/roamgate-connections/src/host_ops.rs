@@ -24,6 +24,8 @@ use roamgate_exec::ssh::sessions::{
 };
 use roamgate_exec::ssh::tunnel::{ProcessOutput, RunProcess};
 
+use crate::node_host::NodeRoutes;
+
 /// A host command as the front built it (sshCommandArgv's arguments).
 #[derive(Debug, Clone, Default)]
 pub struct HostCommand {
@@ -128,6 +130,9 @@ pub struct HostOps {
     pub sessions: SshSessions,
     pub runner: ProcessRunner,
     pub program: Option<String>,
+    /// The node links up: a command for their destination runs on the
+    /// node instead of over ssh (contract/wire/node-link.md).
+    pub nodes: NodeRoutes,
 }
 
 impl HostOps {
@@ -136,6 +141,7 @@ impl HostOps {
             sessions,
             runner,
             program: None,
+            nodes: NodeRoutes::default(),
         }
     }
 
@@ -156,6 +162,13 @@ impl HostOps {
         wait: &HostWait,
     ) -> Result<HostRunOutput, HostOpError> {
         let ssh = build(&self.sessions, command)?;
+        if let Some(link) = self.nodes.get(&command.destination) {
+            return run_in_lane(
+                wait.lane,
+                link.run(&command.command, stdin, wait.timeout_ms),
+            )
+            .await;
+        }
         self.run_ssh(&ssh, stdin, wait).await
     }
 

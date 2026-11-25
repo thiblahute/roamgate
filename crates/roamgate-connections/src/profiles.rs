@@ -71,6 +71,9 @@ pub struct SshConnectionProfile {
     pub remote_platform_windows: bool,
     pub remote_herdr_path: Option<String>,
     pub remote_session: Option<String>,
+    /// Served through the host's `roamgate node --stdio` over one link,
+    /// the tunnel and master its fallback (contract/wire/node-link.md).
+    pub node: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +138,9 @@ impl ConnectionProfile {
                 }
                 if let Some(session) = &profile.remote_session {
                     map.insert("remote_session".into(), json!(session));
+                }
+                if profile.node {
+                    map.insert("node".into(), json!(true));
                 }
                 value
             }
@@ -448,7 +454,12 @@ pub fn validate_ssh_connection_profile(value: &Value) -> Result<SshConnectionPro
             "auto_connect",
         ],
         "connection profile",
-        &["remote_platform", "remote_herdr_path", "remote_session"],
+        &[
+            "remote_platform",
+            "remote_herdr_path",
+            "remote_session",
+            "node",
+        ],
     )?;
     let id = validate_common_id(map)?;
     if map.get("type").and_then(Value::as_str) != Some("ssh") {
@@ -474,6 +485,14 @@ pub fn validate_ssh_connection_profile(value: &Value) -> Result<SshConnectionPro
     let session = map.get("remote_session");
     if !windows && (herdr_path.is_some() || session.is_some()) {
         return Err("Windows SSH options require remote_platform windows".into());
+    }
+    let node = match map.get("node") {
+        None => false,
+        Some(Value::Bool(node)) => *node,
+        Some(_) => return Err("node must be a boolean".into()),
+    };
+    if windows && node {
+        return Err("a node runs on a POSIX host only".into());
     }
     if windows && (!control.is_empty() || !client.is_empty()) {
         return Err("Windows SSH uses Herdr bridges instead of remote socket paths".into());
@@ -506,6 +525,7 @@ pub fn validate_ssh_connection_profile(value: &Value) -> Result<SshConnectionPro
         remote_platform_windows: windows,
         remote_herdr_path: herdr_path.and_then(Value::as_str).map(str::to_owned),
         remote_session: session.and_then(Value::as_str).map(str::to_owned),
+        node,
     })
 }
 

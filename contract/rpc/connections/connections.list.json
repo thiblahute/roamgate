@@ -36,6 +36,9 @@
             "label": {
               "type": "string"
             },
+            "node": {
+              "type": "boolean"
+            },
             "read_only": {
               "type": "boolean"
             },

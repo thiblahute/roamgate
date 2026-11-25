@@ -1,0 +1,126 @@
+name: an SSH profile with node true reaches its host's Herdr and runs its commands through the node link
+family: connections
+description: >
+  The profile's host runs `roamgate node --stdio` (this build, installed in
+  the fake remote home where the deploy puts it) over the command master:
+  the welcome names its version and node contract, Herdr's calls and the
+  event subscription go over the link to the host's own socket, and a host
+  command (the integration versions' CLI) runs as a local spawn on the node
+  in its HOME, with no ssh command of its own. Herdr's events reach the
+  browser through the link's subscription (contract/wire/node-link.md).
+fronts: [rust-only]
+server:
+  start: false
+  herdr: false
+  herdrs:
+    mac:
+      version: 1.2.3
+      workspaces: [{ workspace_id: w1, label: from-the-node }]
+      responses:
+        integration.list:
+          {
+            type: integration_list,
+            integrations:
+              [
+                {
+                  target: sample_agent,
+                  label: Sample Agent,
+                  command: sample,
+                  available: true,
+                  state: outdated,
+                },
+              ],
+          }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ALLOW_SSH: "1"
+  fakes:
+    herdr:
+      rules:
+        - { args: [--version], stdout: "herdr 1.2.3\n" }
+        - {
+            args: [integration, status],
+            stdout: "sample-agent: outdated (v2 < v4)\n",
+          }
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: mac
+        profiles:
+          - {
+              id: mac,
+              label: MAC,
+              type: ssh,
+              ssh_destination: mac.example.test,
+              remote_control_socket_path: "${HERDR_mac_CONTROL}",
+              remote_client_socket_path: "${HERDR_mac_CLIENT}",
+              auto_connect: true,
+              node: true,
+            }
+steps:
+  # The node the deploy installs: this build, under the host's HOME.
+  - sh: mkdir -p "$D" && ln -s "$B" "$D/roamgate"
+    env:
+      D: "${ROOT}/remote-home/.local/share/roamgate-node/bin"
+      B: "${SERVER_BIN}"
+  - start: {}
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    id: up
+    no_wait: true
+    params: { id: mac }
+  - await: up
+    advance_every: 50
+    reply: { state: ready, type: ssh }
+    save: { generation: /result/generation }
+  - expect_log: { contains: ["node link up"], lacks: ["node unavailable"] }
+  - fake_calls:
+      program: ssh
+      argv_match: "-- mac.example.test exec ~/.local/share/roamgate-node/bin/roamgate node --stdio"
+      min: 1
+  - call: workspace.list
+    connection_id: mac
+    connection_generation: "${generation}"
+    reply: { workspaces: [{ label: from-the-node }] }
+  - herdr_calls: { herdr: mac, all_valid: true, method: workspace.list, min: 1 }
+  # Herdr's events come through the link's subscription.
+  - herdr_emit:
+      {
+        event: workspace_renamed,
+        data: { type: workspace_renamed, workspace_id: w1, label: renamed },
+      }
+    herdr: mac
+  - expect_push: "event:workspace_renamed"
+    message: { event: workspace_renamed, connection_id: mac }
+  # A host command: run by the node in its HOME, not by an ssh session.
+  - call: integration.list
+    connection_id: mac
+    reply:
+      {
+        integrations:
+          [
+            {
+              target: sample_agent,
+              state: outdated,
+              installed_version: 2,
+              available_version: 4,
+            },
+          ],
+      }
+  - fake_calls:
+      {
+        program: herdr,
+        argv_match: "^integration status$",
+        calls: { $contains: [{ cwd: "${ROOT}/remote-home" }] },
+      }
+  - fake_calls: { program: ssh, argv_match: "integration status", count: 0 }
+contract_exceptions:
+  - {
+      surface: push,
+      name: "event:workspace_renamed",
+      kind: unlisted,
+      reason: "Herdr's own events reach browsers as Herdr sent them (rpc/herdr/passthrough.json); contract/push lists Roamgate's",
+    }

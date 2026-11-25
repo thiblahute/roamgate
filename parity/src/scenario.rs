@@ -22,7 +22,8 @@
 //! ```
 //!
 //! Strings in steps may name `${ROOT}`, `${HOME}`, `${DATA}`, `${BASE}`,
-//! `${ADDRESS}`, `${FAKE_HTTP}`, `${REPO}`, `${PASSWORD}` and every value a
+//! `${ADDRESS}`, `${FAKE_HTTP}`, `${REPO}`, `${SERVER_BIN}`, `${PASSWORD}` and
+//! every value a
 //! step saved (`save: {name: /json/pointer}`); a string that is only
 //! `${name}` becomes the saved value itself. See `matcher.rs` for what an
 //! expected value may say, and each step's function below for its keys.
@@ -412,6 +413,12 @@ impl Runner {
         self.vars.insert("HOME".into(), text(&self.run.home));
         self.vars.insert("DATA".into(), text(&self.run.data_root()));
         self.vars.insert("REPO".into(), text(&repo_root()));
+        // The server's own executable (a Rust front's `roamgate`), for a
+        // scenario that runs it elsewhere too (a node on the fake host).
+        if let Some(program) = self.run.command.first() {
+            self.vars
+                .insert("SERVER_BIN".into(), Value::String(program.clone()));
+        }
         // The Pi sidecar this checkout builds, for a scenario's own wrapper.
         if let Some(sidecar) = crate::run::pi_sidecar() {
             self.vars.insert("PI_SIDECAR".into(), text(&sidecar));

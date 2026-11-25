@@ -38,6 +38,7 @@ fn welcome(_: &Message) -> Message {
         shadow: ShadowSettings::default(),
         clock: None,
         raw_data: false,
+        node: None,
     }
 }
 
@@ -603,6 +604,7 @@ fn welcome_on_a_test_clock(_: &Message) -> Message {
         shadow: ShadowSettings::default(),
         clock: Some(1_000_000),
         raw_data: false,
+        node: None,
     }
 }
 

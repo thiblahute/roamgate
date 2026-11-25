@@ -115,8 +115,21 @@ struct ReadState {
     reused: HashMap<String, SharedRead>,
 }
 
+/// A connection to a Herdr socket, whatever carries it.
+pub trait HerdrStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> HerdrStream for T {}
+
+/// Opens the connections of a client whose Herdr is reached some other way
+/// than its socket path (a node link, contract/wire/node-link.md): each
+/// call or subscription asks it for one, and the client speaks Herdr's
+/// NDJSON over it as over the socket.
+pub type Connector =
+    Arc<dyn Fn() -> BoxFuture<'static, std::io::Result<Box<dyn HerdrStream>>> + Send + Sync>;
+
 struct Inner {
     socket_path: String,
+    connector: Option<Connector>,
     logger: Logger,
     connection_id: Option<String>,
     clock: SharedClock,
@@ -132,6 +145,8 @@ pub struct HerdrClientOptions {
     pub connection_id: Option<String>,
     pub clock: Option<SharedClock>,
     pub read_reuse_ms: Option<f64>,
+    /// Opens its connections instead of the socket path.
+    pub connector: Option<Connector>,
 }
 
 /// One Herdr server's control client. Clones are the same client.
@@ -193,6 +208,11 @@ async fn connect(path: &str) -> std::io::Result<Stream> {
     }
 }
 
+/// A connection to the Herdr socket at `path`, as a [`Connector`] gives one.
+pub async fn connect_stream(path: &str) -> std::io::Result<Box<dyn HerdrStream>> {
+    Ok(Box::new(connect(path).await?))
+}
+
 /// What a request measured, for the debug line.
 #[derive(Default)]
 struct Timing {
@@ -207,6 +227,7 @@ impl HerdrClient {
         Self {
             inner: Arc::new(Inner {
                 socket_path: socket_path.into(),
+                connector: options.connector,
                 logger: options.logger.unwrap_or_else(Logger::silent),
                 connection_id: options.connection_id,
                 clock: options.clock.unwrap_or_else(|| Arc::new(SystemClock)),
@@ -219,6 +240,14 @@ impl HerdrClient {
 
     pub fn socket_path(&self) -> &str {
         &self.inner.socket_path
+    }
+
+    /// A connection to Herdr: the connector's, else the socket's.
+    async fn open(&self) -> std::io::Result<Box<dyn HerdrStream>> {
+        match &self.inner.connector {
+            Some(connector) => connector().await,
+            None => connect_stream(&self.inner.socket_path).await,
+        }
     }
 
     /// Listeners of events, subscription errors and closes.
@@ -477,9 +506,7 @@ impl HerdrClient {
         before_send: Option<BeforeSend>,
         timing: Arc<Mutex<Timing>>,
     ) -> Result<Value, String> {
-        let mut stream = connect(&self.inner.socket_path)
-            .await
-            .map_err(|error| io_error_text(&error))?;
+        let mut stream = self.open().await.map_err(|error| io_error_text(&error))?;
         if let Some(check) = before_send {
             // Dropping the stream closes it with nothing sent.
             check()?;
@@ -577,7 +604,7 @@ impl HerdrClient {
         tokio::pin!(ack_deadline);
         let acked = AtomicBool::new(false);
         let closed_before = "subscription closed before acknowledgement";
-        let connect = connect(&self.inner.socket_path);
+        let connect = self.open();
         let mut stream = tokio::select! {
             stream = connect => match stream {
                 Ok(stream) => stream,

@@ -1,0 +1,87 @@
+name: an SSH profile with node true whose host has no node keeps working over its tunnel and master
+family: connections
+description: >
+  No `roamgate` under the host's ~/.local/share/roamgate-node/bin: the link's
+  ssh child exits before the node's preamble, the server says once that the
+  node is unavailable, and the profile works as one without `node`: Herdr
+  through the tunnel, host commands as ssh commands over the master
+  (contract/wire/node-link.md, Fallback).
+fronts: [rust-only]
+server:
+  herdr: false
+  herdrs:
+    mac:
+      version: 1.2.3
+      workspaces: [{ workspace_id: w1, label: over-the-tunnel }]
+      responses:
+        integration.list:
+          {
+            type: integration_list,
+            integrations:
+              [
+                {
+                  target: sample_agent,
+                  label: Sample Agent,
+                  command: sample,
+                  available: true,
+                  state: outdated,
+                },
+              ],
+          }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ALLOW_SSH: "1"
+  fakes:
+    herdr:
+      rules:
+        - { args: [--version], stdout: "herdr 1.2.3\n" }
+        - {
+            args: [integration, status],
+            stdout: "sample-agent: outdated (v2 < v4)\n",
+          }
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: mac
+        profiles:
+          - {
+              id: mac,
+              label: MAC,
+              type: ssh,
+              ssh_destination: mac.example.test,
+              remote_control_socket_path: "${HERDR_mac_CONTROL}",
+              remote_client_socket_path: "${HERDR_mac_CLIENT}",
+              auto_connect: true,
+              node: true,
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    id: up
+    no_wait: true
+    params: { id: mac }
+  - await: up
+    advance_every: 50
+    reply: { state: ready, type: ssh }
+    save: { generation: /result/generation }
+  - expect_log:
+      contains:
+        ["node unavailable, using the SSH tunnel", "the node exited 127"]
+      lacks: ["node link up"]
+  - call: workspace.list
+    connection_id: mac
+    connection_generation: "${generation}"
+    reply: { workspaces: [{ label: over-the-tunnel }] }
+  - herdr_calls: { herdr: mac, all_valid: true, method: workspace.list, min: 1 }
+  - call: integration.list
+    connection_id: mac
+    reply: { integrations: [{ target: sample_agent, installed_version: 2 }] }
+  - fake_calls:
+      {
+        program: ssh,
+        argv_match: " -- mac.example.test .*integration status",
+        min: 1,
+      }

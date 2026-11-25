@@ -10,6 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+base64 = "0.22"
 fancy-regex = "0.17"
 hex = "0.4"
 if-addrs = "0.13"
@@ -24,6 +25,7 @@ roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }
+roamgate-sidecar = { path = "../roamgate-sidecar" }
 sha2 = "0.10"
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }

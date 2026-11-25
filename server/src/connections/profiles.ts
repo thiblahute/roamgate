@@ -50,6 +50,9 @@ export type SshConnectionProfile = {
   remote_platform?: "windows";
   remote_herdr_path?: string;
   remote_session?: string;
+  /** Served through the host's `roamgate node --stdio` by a Rust server
+   * (contract/wire/node-link.md); kept, not acted on, here. */
+  node?: true;
 };
 
 export type ConnectionProfile = LocalConnectionProfile | SshConnectionProfile;
@@ -249,7 +252,7 @@ export function validateSshConnectionProfile(
       "auto_connect",
     ],
     "connection profile",
-    ["remote_platform", "remote_herdr_path", "remote_session"],
+    ["remote_platform", "remote_herdr_path", "remote_session", "node"],
   );
   const id = validateConnectionId(value.id);
   if (id === LEGACY_DEFAULT_CONNECTION_ID) {
@@ -276,6 +279,10 @@ export function validateSshConnectionProfile(
       value.remote_session !== undefined)
   )
     throw new Error("Windows SSH options require remote_platform windows");
+  if (value.node !== undefined && typeof value.node !== "boolean")
+    throw new Error("node must be a boolean");
+  if (windows && value.node === true)
+    throw new Error("a node runs on a POSIX host only");
   if (windows && (remoteControlSocketPath || remoteClientSocketPath))
     throw new Error(
       "Windows SSH uses Herdr bridges instead of remote socket paths",
@@ -320,6 +327,7 @@ export function validateSshConnectionProfile(
     ...(typeof value.remote_session === "string"
       ? { remote_session: value.remote_session }
       : {}),
+    ...(value.node === true ? { node: true as const } : {}),
   };
 }
 
@@ -615,6 +623,7 @@ export function publicConnectionProfile(
       ...(profile.remote_session
         ? { remote_session: profile.remote_session }
         : {}),
+      ...(profile.node ? { node: true as const } : {}),
     };
   }
   return {

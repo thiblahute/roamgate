@@ -39,6 +39,23 @@ type KillFn = dyn Fn(KillSignal) -> Result<(), String> + Send + Sync;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Which pipes a spawned child has besides stderr.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    /// None.
+    Plain,
+    /// The Herdr relay's: stdin held open, stdout watched for its line.
+    Relay,
+    /// Both given to the caller.
+    Stdio,
+}
+
+/// A [`SupervisedSsh::spawn_stdio`] child's stdin and stdout.
+pub struct StdioPipes {
+    pub stdin: tokio::process::ChildStdin,
+    pub stdout: tokio::process::ChildStdout,
+}
+
 /// A running (or finished) ssh child. Clones are the same child.
 #[derive(Clone)]
 pub struct SupervisedSsh {
@@ -178,7 +195,7 @@ impl SupervisedSsh {
     /// stderr kept: a bounded tail for failures and live chunks for
     /// readiness lines). The runner's observer sees it start and end.
     pub fn spawn(runner: &ProcessRunner, command: &SshCommand) -> Result<Self, String> {
-        Self::spawn_piped(runner, command, false)
+        Self::spawn_piped(runner, command, Mode::Plain).map(|(child, _)| child)
     }
 
     /// [`SupervisedSsh::spawn`] for a tunnel running the Herdr relay as its
@@ -186,20 +203,33 @@ impl SupervisedSsh {
     /// exits (the relay ends with its session), and its stdout is watched
     /// for the relay's ready line ([`SupervisedSsh::relay_ready`]).
     pub fn spawn_relay(runner: &ProcessRunner, command: &SshCommand) -> Result<Self, String> {
-        Self::spawn_piped(runner, command, true)
+        Self::spawn_piped(runner, command, Mode::Relay).map(|(child, _)| child)
+    }
+
+    /// [`SupervisedSsh::spawn`] for a child spoken to on its stdin and
+    /// stdout (the node link, contract/wire/node-link.md): both pipes are
+    /// the caller's; closing stdin ends the remote command.
+    pub fn spawn_stdio(
+        runner: &ProcessRunner,
+        command: &SshCommand,
+    ) -> Result<(Self, StdioPipes), String> {
+        let (child, pipes) = Self::spawn_piped(runner, command, Mode::Stdio)?;
+        Ok((child, pipes.expect("a stdio child's pipes")))
     }
 
     fn spawn_piped(
         runner: &ProcessRunner,
         command: &SshCommand,
-        relay: bool,
-    ) -> Result<Self, String> {
+        mode: Mode,
+    ) -> Result<(Self, Option<StdioPipes>), String> {
+        let relay = mode == Mode::Relay;
+        let piped = mode != Mode::Plain;
         let mut child = runner
             .spawn_with(
                 &Command::new(command.argv.iter().cloned()).env("LC_ALL", "C"),
                 Pipes {
-                    stdin: relay,
-                    stdout: relay,
+                    stdin: piped,
+                    stdout: piped,
                     stderr: true,
                 },
             )
@@ -208,8 +238,17 @@ impl SupervisedSsh {
         let (stderr_tx, stderr_rx) = watch::channel(None);
         let (relay_tx, relay_rx) = watch::channel(if relay { None } else { Some(false) });
         let (live, _) = broadcast::channel(64);
-        let stdin = child.stdin();
-        if let Some(mut stdout) = child.stdout() {
+        let mut stdin = child.stdin();
+        let mut stdout = child.stdout();
+        let pipes = if mode == Mode::Stdio {
+            match (stdin.take(), stdout.take()) {
+                (Some(stdin), Some(stdout)) => Some(StdioPipes { stdin, stdout }),
+                _ => return Err("spawn: the child has no stdin or stdout".into()),
+            }
+        } else {
+            None
+        };
+        if let Some(mut stdout) = stdout {
             tokio::spawn(async move {
                 let mut seen: Vec<u8> = Vec::new();
                 let mut chunk = vec![0u8; 4096];
@@ -268,7 +307,7 @@ impl SupervisedSsh {
             }
         });
         let exited = exit_rx.clone();
-        Ok(Self {
+        let child = Self {
             inner: Arc::new(Inner {
                 id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
                 exit: exit_rx,
@@ -282,7 +321,8 @@ impl SupervisedSsh {
                     kill_tx.send(signal).map_err(|error| error.to_string())
                 }),
             }),
-        })
+        };
+        Ok((child, pipes))
     }
 
     pub fn id(&self) -> u64 {

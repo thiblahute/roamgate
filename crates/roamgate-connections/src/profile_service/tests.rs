@@ -62,6 +62,7 @@ fn ssh(id: &str, auto_connect: bool) -> ConnectionProfile {
         remote_platform_windows: false,
         remote_herdr_path: None,
         remote_session: None,
+        node: false,
     })
 }
 
@@ -1885,4 +1886,61 @@ async fn failed_ready_profile_validation_preserves_old_runtime_and_exact_persist
     ));
     assert_eq!(manager.status("alpha").unwrap().label, "ALPHA");
     assert_eq!(read(store.path()), before);
+}
+
+#[tokio::test]
+async fn an_edit_without_node_keeps_the_profiles_node_and_an_explicit_false_turns_it_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let ConnectionProfile::Ssh(mut remote) = ssh("remote", false) else {
+        unreachable!()
+    };
+    remote.node = true;
+    let store = persisted_store(
+        &dir,
+        &registry(
+            2,
+            "alpha",
+            vec![
+                local("alpha", false),
+                ConnectionProfile::Ssh(remote.clone()),
+            ],
+        ),
+    );
+    let bootstrap = load(&store, false);
+    let manager = manager("alpha");
+    let service = make_service(
+        &manager,
+        &store,
+        bootstrap,
+        factory(Created::default(), |_| Behaviour::default()),
+        unused_probe(),
+        Timers::default().retry(),
+    );
+    let saved_node = |store: &ConnectionProfileStore| {
+        let saved = store.load().unwrap().unwrap();
+        match &saved.profiles[1] {
+            ConnectionProfile::Ssh(profile) => profile.node,
+            ConnectionProfile::Local(_) => unreachable!(),
+        }
+    };
+
+    let mut edited = ConnectionProfile::Ssh(remote.clone()).to_value();
+    edited.as_object_mut().unwrap().remove("node");
+    edited["label"] = json!("Remote edited");
+    service
+        .update(json!("remote"), edited.clone())
+        .await
+        .unwrap();
+    assert!(saved_node(&store));
+    assert_eq!(
+        std::fs::read_to_string(temp_path(&dir))
+            .unwrap()
+            .matches("\"node\": true")
+            .count(),
+        1
+    );
+
+    edited["node"] = json!(false);
+    service.update(json!("remote"), edited).await.unwrap();
+    assert!(!saved_node(&store));
 }

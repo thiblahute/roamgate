@@ -896,7 +896,16 @@ impl<R: ConnectionRuntime> ConnectionProfileService<R> {
         self.require_writable_registry_state()?;
         let id = self::connection_id(&connection_id)?;
         let current = self.require_writable_profile(&id)?;
-        let replacement = validate_connection_profile(&value, current_platform())?;
+        let mut replacement = validate_connection_profile(&value, current_platform())?;
+        // The connection form does not show `node`: an edit that leaves it
+        // out keeps it (only a hand edit or `node: false` turns it off).
+        if let (ConnectionProfile::Ssh(next), ConnectionProfile::Ssh(before)) =
+            (&mut replacement, &current)
+            && value.get("node").is_none()
+            && !next.remote_platform_windows
+        {
+            next.node = before.node;
+        }
         if replacement.id() != id {
             return Err("connection profile id cannot be changed".into());
         }
