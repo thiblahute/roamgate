@@ -3,7 +3,7 @@
 # PowerShell, with only System32 on PATH (no Bun), against zip releases
 # fake-models serves (from ./served/winrel): a fresh install, an install over
 # a running roamgate.exe (renamed to roamgate.exe.previous), a pinned
-# version refused while that previous one still runs, then installed, and
+# version while that previous one still runs (moved aside, then removed), and
 # every refusal keeping the installation as it was. Run in the run's root by
 # Git for Windows' bash; its Windows tools are the system's.
 set -eu
@@ -66,12 +66,13 @@ install ROAMGATE_RELEASE_BASE_URL="$base" || fail "over a running one: $(cat err
 [ "$(installed roamgate.exe.previous)" = "roamgate 1.0.0" ] || fail "previous: $(installed roamgate.exe.previous)"
 
 release "roamgate-v1.0.0-$platform.zip" 1.0.0
-if install ROAMGATE_RELEASE_BASE_URL="$base" ROAMGATE_VERSION=1.0.0; then fail "pinned: replaced a running previous"; fi
-grep -q "is in use" err.txt || fail "pinned: $(cat err.txt)"
-kill "$running" 2>/dev/null || true
-wait "$running" 2>/dev/null || true
 install ROAMGATE_RELEASE_BASE_URL="$base" ROAMGATE_VERSION=1.0.0 || fail "pinned: $(cat err.txt)"
 [ "$(installed roamgate.exe)" = "roamgate 1.0.0" ] || fail "pinned: $(installed roamgate.exe)"
+ls -A "$dir" | grep -q '\.stale-' || fail "pinned: the running previous was not moved aside: $(names)"
+kill "$running" 2>/dev/null || true
+wait "$running" 2>/dev/null || true
+install ROAMGATE_RELEASE_BASE_URL="$base" ROAMGATE_VERSION=1.0.0 || fail "again: $(cat err.txt)"
+if ls -A "$dir" | grep -q '\.stale-'; then fail "again: the stale previous stayed: $(names)"; fi
 
 before=$(names)
 refuse() {

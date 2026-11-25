@@ -459,6 +459,30 @@ pub fn previous_path(path: &std::path::Path) -> std::path::PathBuf {
     name.into()
 }
 
+/// Where a `.previous` that cannot be removed (it runs) moves aside:
+/// `.<name>.stale-<pid>-<n>` beside it.
+fn stale_path(previous: &std::path::Path, n: usize) -> std::path::PathBuf {
+    let name = previous
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    previous.with_file_name(format!(".{name}.stale-{}-{n}", std::process::id()))
+}
+
+/// Removes what earlier updates moved aside and nothing runs any more;
+/// what still runs stays for the next one.
+fn remove_stale(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with(".roamgate") && name.contains(".previous.stale-") {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// A regular file, not a symlink.
 fn regular(path: &std::path::Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
@@ -494,6 +518,7 @@ pub async fn install_by_rename(install: &Install<'_>) -> Result<(), String> {
             target.pi_binary
         ));
     }
+    remove_stale(dir);
     // Staged in the executable's directory, so the renames stay on one
     // volume; removed whatever happens.
     let staging = Staging::new(dir).map_err(io)?;
@@ -570,10 +595,18 @@ pub async fn install_by_rename(install: &Install<'_>) -> Result<(), String> {
     let mut moved: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
     let mut placed: Vec<std::path::PathBuf> = Vec::new();
     let result = (|| -> std::io::Result<()> {
+        let mut stale = 0;
         let mut retire = |path: &std::path::Path| -> std::io::Result<bool> {
             let previous = previous_path(path);
-            if !absent(&previous) {
-                std::fs::remove_file(&previous).map_err(|error| {
+            if !absent(&previous) && std::fs::remove_file(&previous).is_err() {
+                // Still running: the server not yet restarted, or a pane's
+                // roamgate-hold.exe or roamgate-review.exe, hard links of it
+                // that last as long as their pane. Windows lets it be
+                // renamed though not removed: it moves aside, and a later
+                // update removes it once nothing runs it.
+                stale += 1;
+                let aside = stale_path(&previous, stale);
+                std::fs::rename(&previous, &aside).map_err(|error| {
                     std::io::Error::new(
                         error.kind(),
                         format!(
@@ -1097,14 +1130,30 @@ mod tests {
         let error = fixture.install(&manifest).await.unwrap_err();
         assert!(error.contains("VERSION metadata"), "{error}");
         assert_eq!(fixture.names(), names);
-        // A previous executable still running (it cannot be removed) is
-        // refused before anything moves: a directory stands in for it.
+        // A previous executable still running (it cannot be removed: a
+        // directory stands in for it) moves aside and the update goes on.
         std::fs::create_dir(previous_path(&exe)).unwrap();
         let manifest = fixture.package("1.1.0", true, None);
-        let error = fixture.install(&manifest).await.unwrap_err();
-        assert!(error.contains("is in use"), "{error}");
-        assert_eq!(RenameFixture::read(&exe), "roamgate 1.0.0");
-        assert!(!fixture.pi().exists());
+        fixture.install(&manifest).await.unwrap();
+        assert_eq!(RenameFixture::read(&exe), "roamgate 1.1.0");
+        assert_eq!(RenameFixture::read(&previous_path(&exe)), "roamgate 1.0.0");
+        let aside: Vec<String> = fixture
+            .names()
+            .into_iter()
+            .filter(|name| name.contains(".previous.stale-"))
+            .collect();
+        assert_eq!(aside.len(), 1, "{:?}", fixture.names());
+        assert!(fixture.bin().join(&aside[0]).is_dir());
+        // A later update removes what was moved aside once nothing runs
+        // it (a file here; the directory stays, as a running one would).
+        let leftover = fixture
+            .bin()
+            .join(format!(".{}.previous.stale-1-1", fixture.target.binary));
+        std::fs::write(&leftover, "old").unwrap();
+        let manifest = fixture.package("1.2.0", true, None);
+        fixture.install(&manifest).await.unwrap();
+        assert!(!leftover.exists());
+        assert_eq!(RenameFixture::read(&exe), "roamgate 1.2.0");
     }
 
     /// Windows lets a running executable be renamed: the update installs
@@ -1134,6 +1183,69 @@ mod tests {
             std::fs::read(previous_path(&exe)).unwrap(),
             std::fs::read(&ping).unwrap()
         );
+    }
+
+    /// The pane clients ~/.cache/roamgate/bin/roamgate-hold.exe and
+    /// roamgate-review.exe are hard links of the server's executable, and a
+    /// holder runs as long as its pane. Two updates while one runs: the
+    /// clients stay in place and working all along, and the second update,
+    /// whose roamgate.exe.previous the holder still runs, moves that aside
+    /// instead of failing.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn updates_while_a_pane_holder_runs_a_hard_link_of_the_executable() {
+        let fixture = RenameFixture::new();
+        let exe = fixture.exe();
+        std::fs::create_dir_all(fixture.bin()).unwrap();
+        let ping = std::path::Path::new(&std::env::var_os("SystemRoot").unwrap())
+            .join("System32")
+            .join("PING.EXE");
+        std::fs::copy(&ping, &exe).unwrap();
+        let clients = fixture.dir.path().join("cache-bin");
+        std::fs::create_dir_all(&clients).unwrap();
+        let hold = clients.join("roamgate-hold.exe");
+        let review = clients.join("roamgate-review.exe");
+        std::fs::hard_link(&exe, &hold).unwrap();
+        std::fs::hard_link(&exe, &review).unwrap();
+        let mut holder = std::process::Command::new(&hold)
+            .args(["-n", "60", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let first = fixture.package("2.0.0", true, None);
+        let first = fixture.install(&first).await;
+        let second = fixture.package("3.0.0", true, None);
+        let second = fixture.install(&second).await;
+        let still_running = holder.try_wait().unwrap().is_none();
+        let _ = holder.kill();
+        let _ = holder.wait();
+        first.unwrap();
+        second.unwrap();
+        assert!(still_running);
+        assert_eq!(RenameFixture::read(&exe), "roamgate 3.0.0");
+        assert_eq!(RenameFixture::read(&previous_path(&exe)), "roamgate 2.0.0");
+        for client in [&hold, &review] {
+            assert_eq!(
+                std::fs::read(client).unwrap(),
+                std::fs::read(&ping).unwrap()
+            );
+        }
+        // The first roamgate.exe, which the holder still ran, was removed
+        // as the second update's previous one (Windows removes a name of
+        // a running image when another name of it is the one running), or
+        // else moved aside; the next update, the holder gone, leaves none
+        // aside.
+        let third = fixture.package("4.0.0", true, None);
+        fixture.install(&third).await.unwrap();
+        assert!(
+            !fixture
+                .names()
+                .iter()
+                .any(|name| name.contains(".previous.stale-")),
+            "{:?}",
+            fixture.names()
+        );
+        assert_eq!(RenameFixture::read(&exe), "roamgate 4.0.0");
     }
 
     #[test]
