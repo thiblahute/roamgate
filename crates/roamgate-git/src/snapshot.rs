@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use roamgate_base::assets::{STEP_SNAPSHOT_SH, fill_template};
 
-use crate::exec::GitContext;
+use crate::exec::{GitContext, Invocation};
 use crate::shell::shell_command;
 use crate::{GIT_DIFF_TIMEOUT, GitError, Result, first_text, shell_quote};
 
@@ -32,12 +32,23 @@ static TREE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9a-f]{40,64}$")
 /// Takes a snapshot of the checkout at `root` on its host.
 pub async fn snapshot_worktree(cx: &GitContext, root: &str) -> Result<Snapshot> {
     let command = worktree_snapshot_command(root);
-    let ran = cx
-        .run(
+    let ran = if cfg!(windows) && cx.host().is_none() {
+        // Git for Windows' bash does not get this script whole as one
+        // argument (it ended at its line 171): it reads it from stdin.
+        let shell = roamgate_base::posix_shell::posix_shell().map_err(GitError::Message)?;
+        cx.run_input(
+            Invocation::local([shell, "-l".to_owned(), "-s".to_owned()]),
+            command,
+            GIT_DIFF_TIMEOUT,
+        )
+        .await?
+    } else {
+        cx.run(
             shell_command(&command, cx.host()).map_err(GitError::Message)?,
             GIT_DIFF_TIMEOUT,
         )
-        .await?;
+        .await?
+    };
     let lines: Vec<&str> = ran.stdout.trim().split('\n').collect();
     let tree = lines.last().copied().unwrap_or("").trim().to_owned();
     let skipped = lines
