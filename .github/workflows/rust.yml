@@ -64,17 +64,18 @@ jobs:
           rustup toolchain install stable --profile minimal --component clippy
           rustup default stable
       - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        id: tools
         with:
           tool: cargo-nextest
       # Each check runs even when the one before failed, so one failure
-      # does not hide the others.
+      # does not hide the others; none runs without the tools.
       - name: clippy
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: nextest
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
         run: cargo nextest run --locked --no-fail-fast -E 'not package(roamgate-parity)'
       - name: parity
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
         env:
           PARITY_GATE_STRICT: "1"
         run: cargo nextest run --locked --no-fail-fast -p roamgate-parity
