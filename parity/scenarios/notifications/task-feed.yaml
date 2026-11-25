@@ -33,6 +33,9 @@ steps:
   - expect_push: "event:ready"
     socket: feed
     message: { event: ready, last: 0, $exact: true }
+  # Herdr emits once the server subscribed to its events (two
+  # subscriptions per server).
+  - herdr_calls: { method: events.subscribe, min: 2, within_ms: 10000 }
   - herdr_emit:
       {
         event: pane_agent_status_changed,
@@ -93,6 +96,8 @@ steps:
         }
   - restart: {}
   - login: {}
+  # And once the restarted one did.
+  - herdr_calls: { method: events.subscribe, min: 4, within_ms: 10000 }
   - connect: { name: feed, path: /api/notifications/ws }
   - send:
       {
