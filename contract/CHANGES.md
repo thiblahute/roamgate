@@ -6,6 +6,23 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.44
+
+inventory: 0cbf4749be847bf8ab63d58c516a6b1588c42ac164ad0f697ad6308f0cefa09a
+
+The agents' clients on the server's machine are the roamgate binary itself
+(`~/.cache/roamgate/bin/roamgate-review` and `roamgate-hold` link to it;
+`roamgate review|hold` run the same); SSH hosts keep the Python clients of
+`contract/assets/python`. Their command lines, requests on the agent
+socket, output and exit codes are unchanged.
+
+- env: the variables the clients read are listed, now that the crates read
+  them: `ROAMGATE_REVIEW_SOCKET` (the agent socket, default
+  `~/.cache/roamgate/review.sock`), `ROAMGATE_CLAUDE_START`,
+  `ROAMGATE_HEADLESS`, `ROAMGATE_PANE_ID`, `ROAMGATE_HERDR_SOCKET_PATH`,
+  and `ROAMGATE_HOLD_GUARD` (set by the holder on its child's guard).
+  Family: review, conversation.
+
 ## 1.43
 
 inventory: 9742d83183a59ed3e96c6adb4c1198d90ee7f5c1dffc54db23b58e1d83c6fe6c
