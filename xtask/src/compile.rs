@@ -60,10 +60,64 @@ pub fn command(build: &Build, target: &Target, web: &Path) -> Command {
     command
 }
 
+/// ring builds its C for aarch64 Windows with `clang` instead of
+/// cargo-xwin's clang-cl, yet gets clang-cl's CFLAGS (`/imsvc <dir>`), which
+/// clang refuses. This `clang`, first on PATH, hands clang the same
+/// directories as `-isystem <dir>`. It runs clang with the PATH it was put
+/// before, so a ccache `clang` there finds the real one, not this.
+const XWIN_CLANG: &str = r#"#!/bin/sh
+# Written by cargo xtask (compile.rs, XWIN_CLANG).
+n=$#
+i=0
+while [ "$i" -lt "$n" ]; do
+  arg=$1
+  shift
+  i=$((i + 1))
+  if [ "$arg" = /imsvc ]; then set -- "$@" -isystem; else set -- "$@" "$arg"; fi
+done
+PATH=$XTASK_CLANG_PATH
+export PATH
+exec "$XTASK_CLANG" "$@"
+"#;
+
+/// Puts [`XWIN_CLANG`] before the real clang on `command`'s PATH, for a
+/// cargo-xwin build of an aarch64 Windows target.
+fn shim_xwin_clang(command: &mut Command, root: &Path, target: &Target) -> Result<()> {
+    if !target.triple.starts_with("aarch64-") || target.os != "win32" || !cfg!(unix) {
+        return Ok(());
+    }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let Some(clang) = std::env::split_paths(&path)
+        .map(|dir| dir.join("clang"))
+        .find(|clang| clang.is_file())
+    else {
+        return Ok(());
+    };
+    let dir = target_dir(root).join("xwin-clang");
+    std::fs::create_dir_all(&dir)?;
+    let shim = dir.join("clang");
+    std::fs::write(&shim, XWIN_CLANG)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755))?;
+    }
+    let mut paths = vec![dir];
+    paths.extend(std::env::split_paths(&path));
+    command
+        .env("PATH", std::env::join_paths(paths)?)
+        .env("XTASK_CLANG", clang)
+        .env("XTASK_CLANG_PATH", path);
+    Ok(())
+}
+
 /// Builds `target`; returns the binary.
 pub fn build(build: &Build, target: &Target) -> Result<PathBuf> {
     let web = check_web(build.web)?;
     let mut command = command(build, target, &web);
+    if build.builder.unwrap_or_else(|| target.builder_here()) == Builder::Xwin {
+        shim_xwin_clang(&mut command, build.root, target)?;
+    }
     eprintln!("xtask: building {} ({:?})", target.platform, command);
     let status = command.status().context("running cargo")?;
     if !status.success() {
@@ -191,6 +245,26 @@ mod tests {
             assert!(args.contains(&"src/assistant/pi-sidecar-main.ts".to_owned()));
             assert_eq!(args.last().map(String::as_str), Some(outfile));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_xwin_clang_shim_gives_clang_isystem_for_imsvc() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let shim = dir.path().join("clang");
+        std::fs::write(&shim, XWIN_CLANG).unwrap();
+        std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let output = Command::new(&shim)
+            .args(["-c", "/imsvc", "/x/crt include", "a b.c", "-o", "/imsvc.o"])
+            .env("XTASK_CLANG", "/bin/echo")
+            .env("XTASK_CLANG_PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "-c -isystem /x/crt include a b.c -o /imsvc.o\n"
+        );
     }
 
     #[test]
