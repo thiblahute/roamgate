@@ -178,8 +178,17 @@ async fn rejects_invalid_values_before_writing_anything() {
 async fn validates_the_whole_file_so_tls_halves_must_be_set_together() {
     let cli = TestCli::new();
     assert_eq!(
-        cli.run_cli(&["config", "set", "ROAMGATE_TLS_CERT=/missing.pem"])
-            .await,
+        // An absolute path (a drive's on Windows) to no file.
+        cli.run_cli(&[
+            "config",
+            "set",
+            if cfg!(windows) {
+                r"ROAMGATE_TLS_CERT=C:\missing.pem"
+            } else {
+                "ROAMGATE_TLS_CERT=/missing.pem"
+            }
+        ])
+        .await,
         EXIT_FAILURE
     );
     assert!(cli.errors()[0].contains("TLS requires both"));

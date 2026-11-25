@@ -36,17 +36,7 @@ fn json(response: &Response) -> serde_json::Value {
 
 fn age(path: &Path, hours: u64) {
     let old = std::time::SystemTime::now() - Duration::from_secs(hours * 3600);
-    let mut options = std::fs::File::options();
-    options.read(true);
-    // Windows sets times through a handle that may write them (files and
-    // directories alike).
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
-        options.access_mode(FILE_WRITE_ATTRIBUTES);
-    }
-    options.open(path).unwrap().set_modified(old).unwrap();
+    filetime::set_file_mtime(path, filetime::FileTime::from_system_time(old)).unwrap();
 }
 
 fn listing(path: &Path) -> Vec<String> {

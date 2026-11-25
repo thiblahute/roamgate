@@ -47,5 +47,7 @@ socket2 = "0.6"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 
 [dev-dependencies]
+# Ages files and directories alike, Windows included.
+filetime = "0.2"
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
 tokio = { version = "1", features = ["full", "test-util"] }

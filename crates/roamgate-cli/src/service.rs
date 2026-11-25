@@ -795,6 +795,9 @@ mod tests {
         );
     }
 
+    // A published systemd unit over this machine's paths: a Windows home
+    // gives none a unit holds.
+    #[cfg(unix)]
     #[test]
     fn manages_a_published_legacy_definition() {
         let home = tempfile::tempdir().unwrap();

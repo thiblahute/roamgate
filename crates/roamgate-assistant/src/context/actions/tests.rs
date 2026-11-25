@@ -1263,7 +1263,10 @@ async fn a_repository_herdr_does_not_describe_confirms_the_settings_creation_app
     let f = fixture();
     // Herdr names no repository for the workspace: Bun's resolver keys it by
     // the checkout's git common directory, for the preview and for creation.
-    let repo = format!("{}/repo", f.root);
+    let repo = std::path::Path::new(&f.root)
+        .join("repo")
+        .to_string_lossy()
+        .into_owned();
     std::fs::create_dir(&repo).unwrap();
     let key = format!("connection:local:local:{repo}/.git");
     *f.fake.repo_key.lock().unwrap() = Some(key.clone());

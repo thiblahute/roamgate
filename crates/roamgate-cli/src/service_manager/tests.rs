@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use roamgate_base::paths::join_relative;
 use roamgate_exec::service::{RunCommand, ServicePlatform, escape_systemd_exec_path};
 
 use super::*;
@@ -297,11 +298,11 @@ fn published_legacy_definition(platform: ServicePlatform, home: &Path, binary: &
         ("TASK_NAME", paths.task_name.clone().unwrap_or_default()),
         (
             "STDOUT_PATH",
-            text(&home.join("Library/Logs/herdr-gui.stdout.log")),
+            text(&join_relative(home, "Library/Logs/herdr-gui.stdout.log")),
         ),
         (
             "STDERR_PATH",
-            text(&home.join("Library/Logs/herdr-gui.stderr.log")),
+            text(&join_relative(home, "Library/Logs/herdr-gui.stderr.log")),
         ),
     ];
     let mut out = templates[platform.name()].as_str().unwrap().to_owned();
@@ -679,6 +680,9 @@ fn rejects_unsafe_launchd_syntax_without_execution_or_mutation() {
     }
 }
 
+// A Linux or macOS service manager, simulated over this machine's paths:
+// its units name Unix paths a Windows home cannot give.
+#[cfg(unix)]
 #[test]
 fn preserves_a_managed_custom_wrapper_command() {
     let home = home();
@@ -709,6 +713,9 @@ fn preserves_a_managed_custom_wrapper_command() {
     );
 }
 
+// A Linux or macOS service manager, simulated over this machine's paths:
+// its units name Unix paths a Windows home cannot give.
+#[cfg(unix)]
 #[test]
 fn replaces_a_stale_custom_command_that_does_not_invoke_this_binary() {
     let home = home();
@@ -774,7 +781,7 @@ fn installs_inspects_restarts_reloads_and_removes_a_launchd_agent() {
     for action in ["install", "status", "restart", "reload", "uninstall"] {
         assert_eq!(service(&[action], &runtime, &fake).code(), 0, "{action}");
     }
-    let plist = home.path().join("Library/LaunchAgents/dev.roamgate.plist");
+    let plist = join_relative(home.path(), "Library/LaunchAgents/dev.roamgate.plist");
     assert!(!plist.exists());
     let plist = text(&plist);
     let call = |list: &[&str], quiet: bool| (args(list), quiet);
@@ -870,8 +877,8 @@ fn launchd_syntax_uses_the_resolved_occupied_or_free_listener() {
 #[test]
 fn manages_a_windows_login_task() {
     let home = home();
-    let app_data = home.path().join("AppData/Roaming");
-    let executable = home.path().join("bin/roamgate.exe");
+    let app_data = home.path().join("AppData").join("Roaming");
+    let executable = home.path().join("bin").join("roamgate.exe");
     let task_paths =
         resolve_service_paths(ServicePlatform::WindowsTask, home.path(), Some(&app_data));
     let task = task_paths.task_name.clone().unwrap();
@@ -1115,6 +1122,9 @@ fn treats_uninstall_without_a_managed_definition_as_a_no_op() {
     assert!(ran.log().contains("No managed systemd service found"));
 }
 
+// A Linux or macOS service manager, simulated over this machine's paths:
+// its units name Unix paths a Windows home cannot give.
+#[cfg(unix)]
 #[test]
 fn platform_action_manages_the_generated_legacy_service_without_migrating_it() {
     for platform in ALL {
@@ -1271,6 +1281,9 @@ fn platform_refuses_ambiguous_or_unverified_management() {
     }
 }
 
+// A Linux or macOS service manager, simulated over this machine's paths:
+// its units name Unix paths a Windows home cannot give.
+#[cfg(unix)]
 #[test]
 fn platform_preserves_the_legacy_definition_when_stopping_fails() {
     for platform in ALL {
@@ -1303,6 +1316,9 @@ fn platform_preserves_the_legacy_definition_when_stopping_fails() {
     }
 }
 
+// A Linux or macOS service manager, simulated over this machine's paths:
+// its units name Unix paths a Windows home cannot give.
+#[cfg(unix)]
 #[test]
 fn restores_the_original_systemd_definition_and_permissions_if_daemon_reload_fails() {
     let home = home();
@@ -1375,6 +1391,9 @@ fn refuses_symlinked_legacy_definitions_without_touching_the_target() {
     }
 }
 
+// A Linux or macOS service manager, simulated over this machine's paths:
+// its units name Unix paths a Windows home cannot give.
+#[cfg(unix)]
 #[test]
 fn keeps_the_legacy_launchd_definition_on_query_errors_during_uninstall_or_reload() {
     let home = home();
