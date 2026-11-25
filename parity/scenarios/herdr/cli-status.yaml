@@ -28,7 +28,9 @@ steps:
       stderr_contains: "roamgate herdr: managed Herdr setup only supports the default Herdr socket paths"
   - cli: [herdr, dance]
     expect: { exit: 1, stderr_contains: "unknown herdr action: dance" }
-  # The managed service: the unit file, and what systemctl says of it.
+  # The managed service: the unit file, and what systemctl says of it
+  # (a systemd user service: Linux only).
+  - skip_unless: '[ "$(uname -s)" = Linux ]'
   - fake_calls:
       program: systemctl
       count: 2

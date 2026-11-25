@@ -59,9 +59,14 @@ steps:
     any_outcome: true
     normalize: [run-paths]
     golden: reveal
-  # The reveal answers once xdg-open is spawned, not once it ran.
+  # The reveal answers once the file manager (xdg-open, macOS' open) is
+  # spawned, not once it ran.
   - fake_calls:
-      { program: xdg-open, count: 1, calls: [{ argv: ["{{contains:repo}}"] }] }
+      {
+        program: "${FILE_MANAGER}",
+        count: 1,
+        calls: [{ argv: { $contains: ["{{contains:repo}}"] } }],
+      }
     retry: 5000
   - call: file.reveal
     params: { workspace_id: w1 }

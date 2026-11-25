@@ -49,7 +49,8 @@ steps:
             }
           - { id: "${open}", state: open }
   # Ticked, not committed: the next 10-minute check says so.
-  - sh: sed -i 's/- \[ \] \*\*D13\*\*/- [x] **D13**/' g/rfcs/0052.md
+  # In place on BSD sed (macOS) too.
+  - sh: sed -i.orig 's/- \[ \] \*\*D13\*\*/- [x] **D13**/' g/rfcs/0052.md && rm g/rfcs/0052.md.orig
   - advance: 600000
   - expect_push: work
     message: { work: { item: "${open}", by: agent } }

@@ -391,6 +391,16 @@ impl Runner {
         self.vars.insert("HOME".into(), text(&self.run.home));
         self.vars.insert("DATA".into(), text(&self.run.data_root()));
         self.vars.insert("REPO".into(), text(&repo_root()));
+        // The program the server reveals files with on this platform.
+        let file_manager = if cfg!(target_os = "macos") {
+            "open"
+        } else if cfg!(windows) {
+            "explorer"
+        } else {
+            "xdg-open"
+        };
+        self.vars
+            .insert("FILE_MANAGER".into(), Value::String(file_manager.into()));
         // The server's own executable (a Rust front's `roamgate`), for a
         // scenario that runs it elsewhere too (a node on the fake host).
         if let Some(program) = self.run.command.first() {
