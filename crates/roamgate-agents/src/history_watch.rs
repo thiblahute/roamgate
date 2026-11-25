@@ -463,16 +463,17 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
 
     fn watch_pane(this: &Arc<Self>, pane_id: &str) {
         let remote = this.options.spawn_remote.is_some();
-        let path = {
+        // The old watch is closed with the state unlocked (drop_pane).
+        let (path, close) = {
             let mut state = this.state.lock().unwrap();
             let Some(pane) = state.pane(pane_id) else {
                 return;
             };
-            if let Some(close) = pane.handle.take() {
-                close();
-            }
-            pane.path.clone()
+            (pane.path.clone(), pane.handle.take())
         };
+        if let Some(close) = close {
+            close();
+        }
         if let Some(path) = path.filter(|_| !remote) {
             let weak = Arc::downgrade(this);
             let key = pane_id.to_owned();
@@ -485,10 +486,15 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
                 Some(watch) => watch(&path, on_change),
                 None => watch_local_file(&path, on_change),
             };
-            let mut state = this.state.lock().unwrap();
-            match state.pane(pane_id) {
-                Some(pane) => pane.handle = Some(handle),
-                None => handle(),
+            let unused = {
+                let mut state = this.state.lock().unwrap();
+                match state.pane(pane_id) {
+                    Some(pane) => pane.handle.replace(handle),
+                    None => Some(handle),
+                }
+            };
+            if let Some(close) = unused {
+                close();
             }
         }
         if remote {
@@ -553,15 +559,16 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
 
     fn drop_pane(this: &Arc<Self>, pane_id: &str) {
         let remote = this.options.spawn_remote.is_some();
-        {
+        // Closed once the state is unlocked: closing a file watch waits for
+        // its thread (FSEvents' on macOS), which may be waiting for the
+        // state to report a change.
+        let close = {
             let mut state = this.state.lock().unwrap();
             let Some(at) = state.panes.iter().position(|(id, _)| id == pane_id) else {
                 return;
             };
             let (_, mut pane) = state.panes.remove(at);
-            if let Some(close) = pane.handle.take() {
-                close();
-            }
+            let close = pane.handle.take();
             if let Some(timer) = pane.timer.take() {
                 timer.abort();
             }
@@ -570,6 +577,10 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
             {
                 timer.abort();
             }
+            close
+        };
+        if let Some(close) = close {
+            close();
         }
         if remote {
             Self::restart_remote(this);
