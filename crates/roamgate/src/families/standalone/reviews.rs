@@ -729,7 +729,7 @@ async fn workspaces_from_agent(layer: &Layer, input: &Value) -> Result<Value, Rp
         return Ok(json!({"placed": target["workspace_id"], "under": requester}));
     }
     let dir = param("repo").or(param("dir")).or(param("cwd"));
-    let Some(dir) = dir.filter(|dir| dir.starts_with('/')) else {
+    let Some(dir) = dir.filter(|dir| roamgate_base::paths::is_host_path(dir)) else {
         return Err(review_error("the client did not send its directory"));
     };
     let result = if command == "worktree" {
