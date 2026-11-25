@@ -15,7 +15,7 @@ use roamgate_channel::transport::Listener;
 use serde_json::Value;
 use tokio::sync::watch;
 
-use super::{FrontHandler, Socket, Sockets};
+use super::{CoreState, FrontHandler, Socket, Sockets};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 const FIRST_DELAY: Duration = Duration::from_secs(1);
@@ -89,7 +89,7 @@ fn drop_sockets(sockets: &Sockets) {
 async fn run_once(
     config: &CoreConfig,
     sockets: &Sockets,
-    link: &watch::Sender<Option<Peer>>,
+    link: &watch::Sender<CoreState>,
     stop: &mut watch::Receiver<bool>,
 ) -> Result<(), String> {
     let mut listener = Listener::bind(&config.channel)
@@ -146,7 +146,7 @@ async fn run_once(
     {
         tracing::warn!(target: "bridge.front", "the core did not start: {}", error.message);
     }
-    let _ = link.send(Some(peer.clone()));
+    link.send_replace(CoreState::Up(peer.clone()));
     // The test clock's advances while the core was being welcomed and
     // started found no core to relay to: it catches up now (an absolute
     // time, so an advance relayed meanwhile is not counted twice).
@@ -168,7 +168,7 @@ async fn run_once(
         }
         _ = stop.wait_for(|stop| *stop) => stopping = true,
     }
-    let _ = link.send(None);
+    link.send_replace(CoreState::Starting);
     drop_sockets(sockets);
     // The core's connections end while the channel is up.
     if stopping && !peer.is_closed() {
@@ -196,7 +196,7 @@ async fn run_once(
 pub async fn run_core(
     config: CoreConfig,
     sockets: Sockets,
-    link: watch::Sender<Option<Peer>>,
+    link: watch::Sender<CoreState>,
     mut stop: watch::Receiver<bool>,
 ) {
     let mut delay = FIRST_DELAY;
@@ -204,6 +204,9 @@ pub async fn run_core(
         let started = Instant::now();
         if let Err(error) = run_once(&config, &sockets, &link, &mut stop).await {
             tracing::warn!(target: "bridge.front", "{error}");
+            // Requests fail at once rather than wait for a core that
+            // could not start.
+            link.send_replace(CoreState::Down);
         }
         if *stop.borrow() {
             return;
