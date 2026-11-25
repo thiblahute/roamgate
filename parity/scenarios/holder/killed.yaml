@@ -4,6 +4,7 @@ description:
   "The headless claude a pane holder started does not outlive the holder: killed outright,
   or its pane closing (a hang-up or a terminate), its child ends, and a closing pane takes the holder's
   log with it."
+covers: [env:ROAMGATE_HOLD_GUARD]
 server:
   env:
     PARITY_FAKE_ENV_KEYS: ROAMGATE_HEADLESS,ROAMGATE_PANE_ID,ROAMGATE_HERDR_SOCKET_PATH,CLAUDE_CONFIG_DIR

@@ -5,6 +5,8 @@ family: agent_chat
 description:
   "Conversation mode hands the pane back while its headless claude is up: the holder ends that
   child (its process gone, its state directory removed) before the terminal claude resumes on the session."
+covers:
+  [env:ROAMGATE_HEADLESS, env:ROAMGATE_PANE_ID, env:ROAMGATE_HERDR_SOCKET_PATH]
 server:
   env:
     PARITY_FAKE_ENV_KEYS: ROAMGATE_HEADLESS,ROAMGATE_PANE_ID,ROAMGATE_HERDR_SOCKET_PATH,CLAUDE_CONFIG_DIR
