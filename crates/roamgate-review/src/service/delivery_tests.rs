@@ -173,6 +173,17 @@ async fn sleep(ms: u64) {
     tokio::time::sleep(Duration::from_millis(ms)).await;
 }
 
+/// Waits until `done`, at most 5 s: for a delivery that a slower machine
+/// (Windows' runners) takes longer than [`comment`]'s pause to make.
+async fn until(done: impl Fn() -> bool) {
+    for _ in 0..500 {
+        if done() {
+            return;
+        }
+        sleep(10).await;
+    }
+}
+
 async fn add(service: &ReviewService, params: Value) -> ReviewThread {
     service.add_thread(&params).await.unwrap()
 }
@@ -685,7 +696,7 @@ async fn a_review_records_its_agents_session_and_follows_it_when_its_pane_is_gon
         .update(&json!({"sessionId": session.id, "paneId": "w1:p9"}))
         .await
         .unwrap();
-    sleep(40).await;
+    until(|| d.panes().len() == 2).await;
     assert_eq!(d.panes(), ["w1:p7", "w1:p9"]);
     let after = d.session(&session.id);
     assert_eq!(after.delivery_error, None);
@@ -1049,9 +1060,11 @@ async fn a_new_session_in_the_pane_is_told_in_full_again() {
     let session = open_session(&d.service);
     comment(&d.service, &session.id, "First").await;
     comment(&d.service, &session.id, "Second").await;
+    until(|| d.prompts().len() == 2).await;
     assert!(!d.prompts()[1].contains("A comment from me"));
     *running.lock().unwrap() = "s2".into();
     comment(&d.service, &session.id, "Third").await;
+    until(|| d.prompts().len() == 3).await;
     assert!(d.prompts()[2].contains("A comment from me in the review:"));
 }
 
