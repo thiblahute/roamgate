@@ -487,6 +487,27 @@ async fn post(socket: &Path, command: &str, body: impl Into<Bytes>) -> (u16, Val
     )
 }
 
+/// The status of a request whose body the server may refuse unread: the
+/// body is written as far as the socket takes it (macOS fails the write
+/// once the server answered and closed), then the answer is read.
+async fn post_refused(socket: &Path, command: &str, body: &str) -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = roamgate_base::local_socket::connect(socket).await.unwrap();
+    let head = format!(
+        "POST /v1/{command} HTTP/1.1\r\nhost: roamgate\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        body.len()
+    );
+    let _ = stream.write_all(head.as_bytes()).await;
+    let _ = stream.write_all(body.as_bytes()).await;
+    let mut answer = Vec::new();
+    let _ = stream.read_to_end(&mut answer).await;
+    let text = String::from_utf8_lossy(&answer);
+    text.split(' ')
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .unwrap_or_else(|| panic!("no answer: {text:?}"))
+}
+
 async fn post_json(socket: &Path, command: &str, body: Value) -> (u16, Value) {
     post(socket, command, body.to_string()).await
 }
@@ -916,7 +937,10 @@ async fn a_pane_naming_its_herdr_socket_through_a_link_reaches_it() {
 async fn a_request_larger_than_the_limit_is_refused_unread() {
     let s = setup();
     let body = json!({"text": "x".repeat(REVIEW_AGENT_MAX_BODY_BYTES + 1)});
-    assert_eq!(post_json(&s.socket(), "list", body).await.0, 413);
+    assert_eq!(
+        post_refused(&s.socket(), "list", &body.to_string()).await,
+        413
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -934,7 +958,7 @@ async fn a_conversation_holders_log_chunk_may_pass_the_agent_limit() {
     assert_eq!(post_json(&s.socket(), "hold_output", chunk).await.0, 503);
     // Past its own limit it is refused unread too.
     let huge = "x".repeat(HOLD_OUTPUT_MAX_BODY_BYTES + 1);
-    assert_eq!(post(&s.socket(), "hold_output", huge).await.0, 413);
+    assert_eq!(post_refused(&s.socket(), "hold_output", &huge).await, 413);
 }
 
 #[tokio::test(flavor = "multi_thread")]
