@@ -6,14 +6,16 @@
 # to the Bun server while families move (`roamgate core`; deleted at the
 # cut-over), the parity suite drives a server
 # from outside, xtask builds and packages the release targets of
-# targets.toml. The voice helper is a member that only builds when asked
-# (`-p roamgate-voice`, or from voice/helper): it pulls GStreamer's bundle.
+# targets.toml. The voice helper (voice/helper) is its own workspace, with
+# its own lockfile and [patch] sections: building `roamgate` never resolves
+# its git dependencies (GStreamer's crates, its plugins, any-tts).
 [workspace]
 resolver = "3"
-members = ["crates/roamgate", "crates/roamgate-activity", "crates/roamgate-agents", "crates/roamgate-archive", "crates/roamgate-assistant", "crates/roamgate-base", "crates/roamgate-claude", "crates/roamgate-cli", "crates/roamgate-connections", "crates/roamgate-conversation", "crates/roamgate-exec", "crates/roamgate-forge", "crates/roamgate-git", "crates/roamgate-herdr", "crates/roamgate-history", "crates/roamgate-http", "crates/roamgate-mr-reviews", "crates/roamgate-notify", "crates/roamgate-pi", "crates/roamgate-protocol", "crates/roamgate-review", "crates/roamgate-channel", "crates/roamgate-voice-server", "crates/roamgate-work", "crates/roamgate-workspace", "crates/roamgate-ws", "parity", "parity/herdr-api", "voice/helper", "xtask"]
+members = ["crates/roamgate", "crates/roamgate-activity", "crates/roamgate-agents", "crates/roamgate-archive", "crates/roamgate-assistant", "crates/roamgate-base", "crates/roamgate-claude", "crates/roamgate-cli", "crates/roamgate-connections", "crates/roamgate-conversation", "crates/roamgate-exec", "crates/roamgate-forge", "crates/roamgate-git", "crates/roamgate-herdr", "crates/roamgate-history", "crates/roamgate-http", "crates/roamgate-mr-reviews", "crates/roamgate-notify", "crates/roamgate-pi", "crates/roamgate-protocol", "crates/roamgate-review", "crates/roamgate-channel", "crates/roamgate-voice-server", "crates/roamgate-work", "crates/roamgate-workspace", "crates/roamgate-ws", "parity", "parity/herdr-api", "xtask"]
 default-members = ["crates/roamgate", "crates/roamgate-activity", "crates/roamgate-agents", "crates/roamgate-archive", "crates/roamgate-assistant", "crates/roamgate-base", "crates/roamgate-claude", "crates/roamgate-cli", "crates/roamgate-connections", "crates/roamgate-conversation", "crates/roamgate-exec", "crates/roamgate-forge", "crates/roamgate-git", "crates/roamgate-herdr", "crates/roamgate-history", "crates/roamgate-http", "crates/roamgate-mr-reviews", "crates/roamgate-notify", "crates/roamgate-pi", "crates/roamgate-protocol", "crates/roamgate-review", "crates/roamgate-channel", "crates/roamgate-voice-server", "crates/roamgate-work", "crates/roamgate-workspace", "crates/roamgate-ws", "parity", "parity/herdr-api", "xtask"]
-# Its own workspace: a benchmark with its own lockfile.
-exclude = ["scripts/bench-terminal"]
+# Their own workspaces, with their own lockfiles: a benchmark, and the
+# voice helper.
+exclude = ["scripts/bench-terminal", "voice/helper"]
 
 [workspace.package]
 # The release version, bumped with package.json by scripts/prepare-release.ts.
@@ -38,35 +40,3 @@ debug = "line-tables-only"
 
 [profile.release]
 strip = true
-
-# The voice helper's: gstreamer-rs's prebuilt bundle support, until it is
-# merged: https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/-/merge_requests/1980
-[patch."https://gitlab.freedesktop.org/gstreamer/gstreamer-rs"]
-gstreamer = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-base = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-base-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-audio = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-audio-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-app = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-app-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-tag = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-tag-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-webrtc = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-webrtc-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-sdp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-sdp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-rtp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-rtp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-pbutils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-pbutils-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-video = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-video-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-net = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-net-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-utils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-
-# The voice helper's: any-tts with the Metal and CUDA speedups, streaming
-# Qwen3-TTS decoding and voice cloning, until they are merged upstream.
-[patch.crates-io]
-any-tts = { git = "https://github.com/thiblahute/any-tts", branch = "roamgate" }

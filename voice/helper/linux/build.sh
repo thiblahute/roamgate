@@ -85,8 +85,9 @@ esac
 
 here=$(cd "$(dirname "$0")" && pwd)
 helper=$(dirname "$here")
-# The helper is a member of the repository's Cargo workspace: its lockfile,
-# [patch] sections and release profile are the root's.
+# The helper is a Cargo workspace of its own (its lockfile, [patch] sections
+# and release profile are in voice/helper); the repository is mounted for
+# the crates it shares with the server (crates/, by path).
 repo=$(cd "$helper/../.." && pwd)
 image=${ROAMGATE_VOICE_BUILD_IMAGE:-roamgate-voice-build}
 cache=${ROAMGATE_VOICE_BUILD_CACHE:-roamgate-voice-build-cache}

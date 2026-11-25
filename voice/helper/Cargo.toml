@@ -146,5 +146,43 @@ gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugi
 gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "cuda"] }
 gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "cuda"] }
 
-# Its [patch] sections and release profile are the workspace's (the
-# repository's Cargo.toml): Cargo reads them only there.
+# Its own workspace, with its own Cargo.lock: the repository's workspace
+# excludes it, so building the server never resolves the git dependencies
+# below. The crates it shares with the server (crates/) are path
+# dependencies.
+[workspace]
+
+[profile.release]
+strip = true
+
+# gstreamer-rs's prebuilt bundle support, until it is
+# merged: https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/-/merge_requests/1980
+[patch."https://gitlab.freedesktop.org/gstreamer/gstreamer-rs"]
+gstreamer = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-base = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-base-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-audio = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-audio-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-app = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-app-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-tag = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-tag-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-webrtc = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-webrtc-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-sdp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-sdp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-rtp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-rtp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-pbutils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-pbutils-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-video = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-video-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-net = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-net-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-utils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+
+# any-tts with the Metal and CUDA speedups, streaming
+# Qwen3-TTS decoding and voice cloning, until they are merged upstream.
+[patch.crates-io]
+any-tts = { git = "https://github.com/thiblahute/any-tts", branch = "roamgate" }

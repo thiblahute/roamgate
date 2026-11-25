@@ -108,15 +108,16 @@ each run's directory.
 The repository root is a Cargo workspace: `crates/roamgate` (the server
 binary: `roamgate [server flags]` runs the front with its core and serves the web build it carries, read from `server/public` in a debug
 build and embedded in a release one; the management commands), `parity/`,
-`xtask/`, and the voice helper, which builds only when
-asked (`-p roamgate-voice`, or from `voice/helper`). Check it with
+and `xtask/`. The voice helper (`voice/helper`) is a workspace of its own,
+with its own `Cargo.lock` and the `[patch]` sections that point at its git
+dependencies; build and check it from its directory. Check the root one with
 `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D warnings`
 and `cargo nextest run --locked` (the Rust workflow runs them).
 
 With a `CARGO_TARGET_DIR` outside the checkout (one shared by several
 worktrees, say), the build script of `system-deps-meta` (pulled by the
 voice helper's GStreamer crates) cannot find the workspace from its own
-directory: set `SYSTEM_DEPS_BUILD_MANIFEST` to this checkout's `Cargo.toml`.
+directory: set `SYSTEM_DEPS_BUILD_MANIFEST` to `voice/helper/Cargo.toml`.
 The parity suite finds its checkout at run time, so its binaries may be
 shared, but run them from the checkout they should read and write.
 
