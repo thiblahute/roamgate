@@ -6,10 +6,10 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::Value;
 
-use crate::js;
+use crate::js::{self, Obj};
 
 /// The commands, sorted by name as `localeCompare` sorts them.
-pub fn parse_session_commands(records: &[Value]) -> Vec<Value> {
+pub fn parse_session_commands(records: &[Obj]) -> Vec<Value> {
     static NAME: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_:.-]{1,100}$").unwrap());
     let mut commands: Vec<(String, String)> = Vec::new();

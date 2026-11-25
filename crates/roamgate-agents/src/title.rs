@@ -2,16 +2,13 @@
 
 use serde_json::Value;
 
-use crate::js;
+use crate::js::{self, Obj};
 
 /// The name the user gave the session, else Claude Code's title.
-pub fn parse_session_title(records: &[Value]) -> Option<String> {
+pub fn parse_session_title(records: &[Obj]) -> Option<String> {
     let mut custom: Option<String> = None;
     let mut generated: Option<String> = None;
     for record in records {
-        let Value::Object(record) = record else {
-            continue;
-        };
         let kind = record.get("type").and_then(Value::as_str);
         match (kind, record.get("customTitle"), record.get("aiTitle")) {
             (Some("custom-title"), Some(Value::String(title)), _) => {

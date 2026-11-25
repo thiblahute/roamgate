@@ -291,18 +291,18 @@ impl Runner {
                 &text_arg(call, 1),
             )
             .map(Value::Object)),
-            "session-artifacts.parseSessionArtifacts" => {
-                Value::Array(artifacts::parse_session_artifacts(&values(&arg(call, 0))))
-            }
-            "session-commands.parseSessionCommands" => {
-                Value::Array(commands::parse_session_commands(&values(&arg(call, 0))))
-            }
+            "session-artifacts.parseSessionArtifacts" => Value::Array(
+                artifacts::parse_session_artifacts(&objects(&values(&arg(call, 0)))),
+            ),
+            "session-commands.parseSessionCommands" => Value::Array(
+                commands::parse_session_commands(&objects(&values(&arg(call, 0)))),
+            ),
             "session-compaction.compactedSince" => Value::Bool(compaction::compacted_since(
                 &text_arg(call, 0),
                 &text_arg(call, 1),
             )),
             "session-title.parseSessionTitle" => {
-                opt(title::parse_session_title(&values(&arg(call, 0))).map(Value::String))
+                opt(title::parse_session_title(&objects(&values(&arg(call, 0)))).map(Value::String))
             }
             "token-usage.tokenUsageFrom" => opt(token_usage::token_usage_from(Some(
                 &js::js_value(arg(call, 0)),
@@ -601,3 +601,12 @@ vector_test!(agent_message_vectors, "agent-message");
 vector_test!(bash_mode_vectors, "bash-mode");
 vector_test!(file_edits_vectors, "file-edits");
 vector_test!(tool_summary_vectors, "tool-summary");
+
+/// The objects of a list of records (the readers skip the rest).
+fn objects(records: &[Value]) -> Vec<crate::js::Obj> {
+    records
+        .iter()
+        .filter_map(Value::as_object)
+        .cloned()
+        .collect()
+}

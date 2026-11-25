@@ -198,11 +198,6 @@ pub async fn read_session_projection(
         .iter()
         .filter(|m| sv(m.get("role")) == "user")
         .count();
-    let record_values: Vec<Value> = if claude {
-        records.iter().cloned().map(Value::Object).collect()
-    } else {
-        Vec::new()
-    };
     let aggregates = Aggregates {
         tasks: if claude {
             tasks::parse_session_tasks(&read, rewound.as_ref())
@@ -210,17 +205,17 @@ pub async fn read_session_projection(
             Vec::new()
         },
         title: if claude {
-            title::parse_session_title(&record_values)
+            title::parse_session_title(&records)
         } else {
             None
         },
         artifacts: if claude {
-            artifacts::parse_session_artifacts(&record_values)
+            artifacts::parse_session_artifacts(&records)
         } else {
             Vec::new()
         },
         commands: if claude {
-            commands::parse_session_commands(&record_values)
+            commands::parse_session_commands(&records)
         } else {
             Vec::new()
         },
@@ -309,8 +304,13 @@ pub async fn read_tail_projection(
 /// What needs the whole session, from slim records.
 fn indexed_aggregates(slim: &[Obj], parsed: usize) -> Aggregates {
     let rewound = rewound_record_ids(slim);
-    let kept = kept_records(slim.to_vec(), Some(&rewound));
-    let kept_values: Vec<Value> = kept.iter().cloned().map(Value::Object).collect();
+    // The index's own records when none was rewound (the usual case), not
+    // a copy: a large session's records are hundreds of megabytes.
+    let kept: std::borrow::Cow<[Obj]> = if rewound.is_empty() {
+        std::borrow::Cow::Borrowed(slim)
+    } else {
+        std::borrow::Cow::Owned(kept_records(slim.to_vec(), Some(&rewound)))
+    };
     let slim_file = SessionFile {
         path: String::new(),
         mtime_ms: 0.0,
@@ -325,9 +325,9 @@ fn indexed_aggregates(slim: &[Obj], parsed: usize) -> Aggregates {
     .count();
     Aggregates {
         tasks: tasks::parse_session_tasks(slim, Some(&rewound)),
-        artifacts: artifacts::parse_session_artifacts(&kept_values),
-        title: title::parse_session_title(&kept_values),
-        commands: commands::parse_session_commands(&kept_values),
+        artifacts: artifacts::parse_session_artifacts(&kept),
+        title: title::parse_session_title(&kept),
+        commands: commands::parse_session_commands(&kept),
         stats: stats(
             turns,
             parsed - rewound.len(),
@@ -337,6 +337,14 @@ fn indexed_aggregates(slim: &[Obj], parsed: usize) -> Aggregates {
 }
 
 const KNOWN_LIMIT: usize = 256;
+
+/// A very large session's aggregates are worked out again only once this
+/// many times as long as their last working out has passed since it ended.
+const AGGREGATES_IDLE_FACTOR: u32 = 4;
+
+/// Sessions smaller than this have their aggregates worked out again at
+/// each change.
+const AGGREGATES_THROTTLED_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Indexes built in the background, one at a time for the whole process.
 static WARM_QUEUE: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -349,6 +357,8 @@ struct LargeState {
     end: u64,
     first_span: u64,
     aggregates: Option<(u64, Aggregates)>,
+    /// When the last aggregates were worked out, and how long that took.
+    computed: Option<(std::time::Instant, std::time::Duration)>,
     saved: Option<(u64, Aggregates)>,
     warming: bool,
     persisted: Option<(f64, u64)>,
@@ -757,6 +767,7 @@ impl ProjectionCache {
                         start: tail.start,
                         end: tail.end,
                         aggregates: None,
+                        computed: None,
                         saved: None,
                         warming: false,
                         persisted: None,
@@ -1138,7 +1149,9 @@ impl ProjectionCache {
         if let Some(value) = cached {
             return Ok(value);
         }
+        let started = std::time::Instant::now();
         let value = indexed_aggregates(&built.records, built.parsed);
+        let took = started.elapsed();
         remember(
             &self.known,
             path,
@@ -1149,6 +1162,7 @@ impl ProjectionCache {
         let persist = {
             let mut s = large.state.lock().await;
             s.aggregates = Some((index_end, value.clone()));
+            s.computed = Some((std::time::Instant::now(), took));
             let now = js::now_ms();
             let due = self.store.is_some()
                 && s.persisted
@@ -1198,6 +1212,15 @@ impl ProjectionCache {
         }
         let (warming, end, identity) = {
             let s = large.state.lock().await;
+            // Slow to work out over a very large session (a second for
+            // 200 MB), they are worked out again at most a fifth of the
+            // time while it grows: its agent appends to it all the time.
+            if let (Some((_, value)), Some((at, took))) = (&s.aggregates, s.computed)
+                && s.end >= AGGREGATES_THROTTLED_BYTES
+                && at.elapsed() < took * AGGREGATES_IDLE_FACTOR
+            {
+                return Ok((value.clone(), false));
+            }
             (s.warming, s.end, s.identity.clone())
         };
         if !warming

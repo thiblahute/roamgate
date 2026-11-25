@@ -82,7 +82,7 @@ fn result_text(content: Option<&Value>) -> String {
 }
 
 /// Every artifact a Claude session published, the most recent first.
-pub fn parse_session_artifacts(records: &[Value]) -> Vec<Value> {
+pub fn parse_session_artifacts(records: &[Obj]) -> Vec<Value> {
     let mut calls: std::collections::HashMap<String, Obj> = Default::default();
     let mut artifacts: Vec<(String, Obj)> = Vec::new();
     for record in records {
