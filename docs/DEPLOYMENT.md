@@ -54,12 +54,16 @@ See [endpoint contracts](./ARCHITECTURE.md#terminal-endpoints).
 ## Install a release
 
 Releases include Linux, macOS, and Windows binaries for x86-64 and ARM64, and
-a Linux x86-64 musl build. Each archive holds `roamgate`, the Pi sidecar
-`roamgate-pi` Ranger runs for models other than Claude Code, and `VERSION`;
-keep `roamgate-pi` beside `roamgate`, where the server looks for it.
+a Linux x86-64 musl build. Each archive (`.tar.xz`, `.zip` on Windows) holds
+`roamgate`, the Pi sidecar `roamgate-pi` Ranger runs for models other than
+Claude Code, `VERSION`, and `THIRD_PARTY_LICENSES.md` (the licences of
+everything the two binaries contain); keep `roamgate-pi` beside `roamgate`,
+where the server looks for it.
 
 On Linux/macOS, the checksum-verifying installer writes `~/.local/bin/roamgate`
-and `~/.local/bin/roamgate-pi`:
+and `~/.local/bin/roamgate-pi`. On Linux x86-64 it installs the musl build when
+`ldd` is musl's (Alpine); its `roamgate-pi` needs `libstdc++` and `libgcc`
+(`apk add libstdc++ libgcc`):
 
 ```bash
 curl -fsSL \
@@ -74,12 +78,21 @@ the previous binary (`roamgate.previous`) and its sidecar
 installs `roamgate` only, since that release's updater does the install: run
 `roamgate update` once more to add `roamgate-pi`.
 
-On Windows, download `roamgate-windows-<arch>.tar.xz` and its `.sha256` from the
-[latest release](https://github.com/powerfooI/roamgate/releases/latest), verify
-with `Get-FileHash`, extract with `tar.exe`, and run `roamgate.exe` with
-`roamgate-pi.exe` beside it.
+On Windows (10 1803 or later), the PowerShell installer does the same into
+`%LOCALAPPDATA%\Programs\roamgate` and prints how to add it to PATH:
 
-Installer settings go on the `sh` side of the pipe (`curl ... | <setting> sh`):
+```powershell
+irm https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.ps1 | iex
+```
+
+`roamgate update` and `roamgate rollback` work there too: Windows cannot
+overwrite a running executable, so `roamgate.exe` and `roamgate-pi.exe` are
+renamed to `roamgate.exe.previous` and `roamgate-pi.exe.previous` and the new
+ones take their names; restart a running Roamgate to use the new version.
+
+Installer settings go on the `sh` side of the pipe (`curl ... | <setting> sh`),
+or in the environment before `irm ... | iex` on Windows
+(`$env:ROAMGATE_VERSION = 'X.Y.Z'`):
 
 | Installer setting | Example / behavior                                                   |
 | ----------------- | -------------------------------------------------------------------- |
@@ -2224,7 +2237,7 @@ and 2 on bad arguments; many accept `--json`.
 | `roamgate history status\|commit`                                 | Show the [local history](#local-history)'s place, last commit, size and problems, or write and commit every area now.                                                                                                                                                                            |
 | `roamgate push test`                                              | Send a test [Web Push](#web-push-notifications) notification.                                                                                                                                                                                                                                    |
 | `roamgate activity today\|day\|range\|events\|workspaces\|status` | Read the [activity log](./activity.md#command-line) read-only, without the server.                                                                                                                                                                                                               |
-| `roamgate update [--check]` / `roamgate rollback`                 | Update to the latest release or restore `roamgate.previous` (Linux/macOS).                                                                                                                                                                                                                       |
+| `roamgate update [--check]` / `roamgate rollback`                 | Update to the latest release or restore `roamgate.previous`.                                                                                                                                                                                                                                     |
 | `roamgate service logs [-f] [-n <count>]`                         | Show service output (not available for Windows tasks).                                                                                                                                                                                                                                           |
 | `roamgate completion bash\|zsh\|fish`                             | Print a shell completion script.                                                                                                                                                                                                                                                                 |
 
@@ -2239,16 +2252,17 @@ cargo build --release -p roamgate
 
 The release build embeds the web app from `server/public`. `cargo xtask
 package <platform...|all>` builds and packages release archives (`roamgate`,
-`roamgate-pi` and `VERSION`, with checksums and update manifests) in
+`roamgate-pi`, `VERSION` and `THIRD_PARTY_LICENSES.md`, with checksums and
+update manifests) in
 `target/dist`; see [Rust workspace](../CONTRIBUTING.md#rust-workspace). The
 targets are listed in `targets.toml`:
 
-| Targets                        | Architectures                                                          |
-| ------------------------------ | ---------------------------------------------------------------------- |
-| `linux-x64`, `linux-arm64`     | Linux x86-64 / ARM64 (glibc 2.28+)                                     |
-| `linux-x64-musl`               | Linux x86-64 (musl; not handled by the installer or `roamgate update`) |
-| `darwin-x64`, `darwin-arm64`   | macOS Intel / Apple Silicon                                            |
-| `windows-x64`, `windows-arm64` | Windows x86-64 / ARM64                                                 |
+| Targets                        | Architectures                      |
+| ------------------------------ | ---------------------------------- |
+| `linux-x64`, `linux-arm64`     | Linux x86-64 / ARM64 (glibc 2.28+) |
+| `linux-x64-musl`               | Linux x86-64 (musl)                |
+| `darwin-x64`, `darwin-arm64`   | macOS Intel / Apple Silicon        |
+| `windows-x64`, `windows-arm64` | Windows x86-64 / ARM64             |
 
 Releases are this build: the Release workflow runs `cargo xtask package` for
 every target in `targets.toml` on its runner (cargo-zigbuild for Linux,

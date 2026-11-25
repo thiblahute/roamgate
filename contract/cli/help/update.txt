@@ -13,8 +13,10 @@ kept as roamgate.previous, and the Pi sidecar roamgate-pi beside it as
 roamgate-pi.previous; `roamgate rollback` restores them. When the executable is
 already the latest release but its roamgate-pi is missing, update installs it.
 A running managed service that uses this executable is restarted afterwards.
+On Windows the files are .exe, and the running executable is renamed aside
+rather than replaced.
 
 ROAMGATE_UPDATE_BASE_URL selects a mirror (from the shell, else the service
 config). To install a specific version, rerun the installer with
-ROAMGATE_VERSION=X.Y.Z. Windows builds update by downloading a release.
+ROAMGATE_VERSION=X.Y.Z.
 
