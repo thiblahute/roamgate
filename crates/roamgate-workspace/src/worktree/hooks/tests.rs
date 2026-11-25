@@ -21,6 +21,27 @@ fn path(dir: &Path) -> String {
     dir.to_str().unwrap().to_owned()
 }
 
+/// `name` in `dir` as the hooks name it on the host: joined with `/`.
+fn host_join(dir: &Path, name: &str) -> String {
+    format!("{}/{name}", path(dir))
+}
+
+/// The shell's `$PWD` in `dir`: Git for Windows' bash says `/c/x/y` for
+/// `C:\x\y`.
+fn shell_pwd(dir: &str) -> String {
+    if !cfg!(windows) {
+        return dir.to_owned();
+    }
+    match dir.split_once(":\\") {
+        Some((drive, rest)) => format!(
+            "/{}/{}",
+            drive.to_ascii_lowercase(),
+            rest.replace('\\', "/")
+        ),
+        None => dir.to_owned(),
+    }
+}
+
 fn enabled_always(value: bool) -> HookRunner {
     HookRunner {
         hooks_enabled: Some(Arc::new(move |_| Box::pin(async move { value }))),
@@ -70,7 +91,7 @@ async fn loads_paseo_json_from_checkout_before_source_checkout() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(loaded.path, path(&checkout.join("paseo.json")));
+    assert_eq!(loaded.path, host_join(&checkout, "paseo.json"));
     assert_eq!(loaded.command(Hook::Setup), Some("echo checkout"));
 }
 
@@ -107,10 +128,7 @@ async fn runs_configured_paseo_hooks_with_expected_environment() {
     assert_eq!(result.status, "succeeded");
     assert_eq!(result.event, "worktree.created");
     let stdout = result.stdout.unwrap();
-    assert!(stdout.contains(&format!(
-        "config: {}",
-        path(&root.path().join("paseo.json"))
-    )));
+    assert!(stdout.contains(&format!("config: {}", host_join(root.path(), "paseo.json"))));
     assert!(stdout.contains(&format!("setup|{}|{}", path(root.path()), path(&source))));
 }
 
@@ -386,7 +404,7 @@ async fn runs_the_s_opened_hook_when_the_source_workspace_has_no_path_metadata()
             assert_eq!(result.status, "succeeded", "{ssh} {location} {result:?}");
             assert!(result.stdout.unwrap().contains(&format!(
                 "{}|{}",
-                path(&checkout),
+                shell_pwd(&path(&checkout)),
                 path(&source)
             )));
         }
@@ -406,6 +424,12 @@ async fn selects_one_file_in_native_legacy_target_source_order_for_every_combina
             source.join("roamgate.json"),
             checkout.join("paseo.json"),
             source.join("paseo.json"),
+        ];
+        let hosted = [
+            host_join(&checkout, "roamgate.json"),
+            host_join(&source, "roamgate.json"),
+            host_join(&checkout, "paseo.json"),
+            host_join(&source, "paseo.json"),
         ];
         let (conn, hooks) = shell(ssh);
         for mask in 0..16 {
@@ -442,7 +466,7 @@ async fn selects_one_file_in_native_legacy_target_source_order_for_every_combina
                 }
                 Some(selected) => {
                     let loaded = loaded.unwrap();
-                    assert_eq!(loaded.path, path(&paths[selected]));
+                    assert_eq!(loaded.path, hosted[selected]);
                     assert_eq!(
                         loaded.source,
                         if selected < 2 { "roamgate" } else { "paseo" }
@@ -498,7 +522,7 @@ async fn invalid_json_types_and_unreadable_files_fail_with_their_path_without_fa
         let root = temp();
         let (conn, hooks) = shell(ssh);
         let file = root.path().join("roamgate.json");
-        let file_path = path(&file);
+        let file_path = host_join(root.path(), "roamgate.json");
         fs::write(
             root.path().join("paseo.json"),
             r#"{"worktree":{"setup":"true"}}"#,
@@ -587,7 +611,7 @@ async fn reads_a_utf_8_bom_in_filename_and_runs_teardown() {
                 .await
                 .unwrap()
                 .unwrap();
-            assert_eq!(loaded.path, path(&file));
+            assert_eq!(loaded.path, host_join(root.path(), filename));
             assert_eq!(loaded.command(Hook::Teardown), Some(teardown));
             let result = hooks
                 .run_worktree_hook(&conn, HookCall::new(Hook::Teardown, path(root.path())))
@@ -664,9 +688,13 @@ async fn runs_all_lifecycle_hooks_from_filename_with_cwd_aliases_and_source_afte
                 (teardown, "worktree.before_remove"),
             ] {
                 assert_eq!(result.status, "succeeded", "{event} {result:?}");
-                assert!(result.stdout.unwrap().contains(&format!(
-                    "{checkout_path}|{event}|{checkout_path}|{source_path}"
-                )));
+                let pwd = shell_pwd(&checkout_path);
+                assert!(
+                    result
+                        .stdout
+                        .unwrap()
+                        .contains(&format!("{pwd}|{event}|{checkout_path}|{source_path}"))
+                );
             }
             fs::remove_dir_all(&checkout).unwrap();
             let removed = hooks

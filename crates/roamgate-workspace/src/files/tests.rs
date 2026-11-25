@@ -17,11 +17,12 @@ use super::*;
 use crate::test_support::{Loopback, LoopbackStreams, Scripted, connection};
 
 /// Under the temporary directory's real path: macOS's is under a link
-/// (/var to /private/var), and the server answers real paths.
+/// (/var to /private/var), Windows' can be a short 8.3 name, and the
+/// server answers real paths.
 fn temp(prefix: &str) -> tempfile::TempDir {
     tempfile::Builder::new()
         .prefix(prefix)
-        .tempdir_in(std::env::temp_dir().canonicalize().unwrap())
+        .tempdir_in(roamgate_base::paths::realpath(&std::env::temp_dir()).unwrap())
         .unwrap()
 }
 
@@ -1115,7 +1116,14 @@ async fn runs_file_and_repo_actions_against_a_real_repository() {
     .await
     .unwrap();
     assert_eq!(staged["workspace_id"], "w1");
-    assert_eq!(staged["root"], text(&fs::canonicalize(root).unwrap()));
+    // Git names the root, with `/` on Windows too.
+    let git_root = text(&roamgate_base::paths::realpath(root).unwrap());
+    let git_root = if cfg!(windows) {
+        git_root.replace('\\', "/")
+    } else {
+        git_root
+    };
+    assert_eq!(staged["root"], git_root);
     assert_eq!(staged["action"], "stage");
     assert_eq!(staged["path"], "new.txt");
     let status = git_in(
