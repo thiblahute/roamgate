@@ -161,7 +161,8 @@ async fn host(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result<Va
         "catalog" => Ok(Value::Array(
             layer
                 .host
-                .profiles()
+                .profiles_once_started()
+                .await
                 .into_iter()
                 .map(|item| json!({"id": item["id"], "label": item["label"]}))
                 .collect(),

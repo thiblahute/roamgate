@@ -108,6 +108,16 @@ impl HostHandle {
             .unwrap_or_default()
     }
 
+    /// [`profiles`](Self::profiles) once the core's connections started
+    /// (a while at most): read early, the list would be empty, and Ranger
+    /// would take every saved connection for one removed.
+    pub async fn profiles_once_started(&self) -> Vec<Value> {
+        match self.0.running_or_wait().await {
+            Ok(running) => running.service.list().unwrap_or_default(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     /// A connection's profile.
     pub fn profile(&self, connection_id: &str) -> Option<ConnectionProfile> {
         self.0.running()?.service.profile(connection_id)
