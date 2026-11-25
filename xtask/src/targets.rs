@@ -27,7 +27,7 @@ pub struct Target {
     /// checkout instead).
     #[serde(default = "yes")]
     pub release_updates: bool,
-    /// A container image the check also smokes the package in.
+    /// A container image the check smokes and update-proves the package in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container: Option<String>,
 }

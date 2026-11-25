@@ -23,7 +23,7 @@
 #             false: the last published release's `roamgate update` does
 #             not install it, so its update proof starts from a build of
 #             this checkout (default true)
-#   container a container image the check also smokes the package in (the
+#   container a container image the check smokes the package in (the
 #             system the target is for, when the runner is not it)
 
 [[target]]

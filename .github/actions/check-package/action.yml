@@ -49,7 +49,10 @@ runs:
         else
           curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
         fi
+    # A target with a container runs there only: it is that system's
+    # (musl's roamgate-pi needs musl's loader, which the runner lacks).
     - name: Smoke-test the package
+      if: inputs.container == ''
       shell: bash
       env:
         PLATFORM: ${{ inputs.platform }}
