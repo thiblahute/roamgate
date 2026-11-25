@@ -459,6 +459,58 @@ describe("a node page", () => {
   });
 });
 
+describe("a node page's catalogs and first requests", () => {
+  test("the bridge status's catalog carries the page's generation of the node's connection", async () => {
+    const { bridge, home, local } = await nodePage();
+    const status = bridge.call("bridge.status");
+    home.reply("bridge.status", {
+      version: "1",
+      connections: [
+        { id: "desktop", generation: 5 },
+        { id: "local", generation: 3 },
+      ],
+    });
+    const result = await status;
+    expect(result.version).toBe("1");
+    expect(result.default_connection_id).toBeUndefined();
+    expect(
+      result.connections.find((entry: { id: string }) => entry.id === "local")
+        .generation,
+    ).toBe(local);
+  });
+
+  test("a node's entry document routes the page's first requests to the home", async () => {
+    const meta = {
+      getAttribute: (name: string) =>
+        name === "content"
+          ? HOME
+          : name === "data-connection-id"
+            ? "local"
+            : null,
+    };
+    const original = Object.getOwnPropertyDescriptor(globalThis, "document");
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { querySelector: () => meta },
+    });
+    try {
+      routed();
+      expect(routeHttpUrl("/api/instance-settings")).toBe(
+        `${HOME}/api/instance-settings`,
+      );
+      await fetch("/api/update/check");
+      expect(fetched[0]).toMatchObject({
+        url: `${HOME}/api/update/check`,
+        init: { credentials: "include" },
+      });
+      expect(routeHttpUrl("/api/node")).toBe("/api/node");
+    } finally {
+      if (original) Object.defineProperty(globalThis, "document", original);
+      else Reflect.deleteProperty(globalThis, "document");
+    }
+  });
+});
+
 describe("the routing table", () => {
   test("serves terminals, Herdr, files, git reads and agent session reads from the node", () => {
     for (const method of [

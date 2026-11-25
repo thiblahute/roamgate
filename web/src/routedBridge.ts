@@ -164,6 +164,21 @@ export class RoutedBridge {
   ) {
     this.page = createBridge({});
     this.attach(this.page, "page");
+    // A node's entry document names its home: the page's first requests,
+    // sent before the node's hello, already go there.
+    this.announced = announcedNode(this.pageOrigin());
+    if (this.announced) this.routeHttpThroughHome(this.announced);
+  }
+
+  /** The node the entry document announced, until the hello confirms it. */
+  private announced: NodeAdvertisement | null = null;
+  private httpRouted = false;
+
+  private routeHttpThroughHome(node: NodeAdvertisement): void {
+    if (this.httpRouted) return;
+    this.httpRouted = true;
+    setHttpRouter((path) => this.routeHttp(path));
+    installHomeFetch(node.home, (path) => this.routeHttp(path));
   }
 
   /** The node this page was served by, and how its home is reached. */
@@ -369,7 +384,8 @@ export class RoutedBridge {
             )
           : new Error("not connected to bridge"),
       );
-    if (method === "connections.list")
+    // Both answer the catalog, which the page applies.
+    if (method === "connections.list" || method === "bridge.status")
       return target
         .call(method, params, timeoutMs, options)
         .then((result) => this.pageCatalog(target, result));
@@ -566,7 +582,9 @@ export class RoutedBridge {
     }
     return {
       ...catalog,
-      default_connection_id: local,
+      ...("default_connection_id" in catalog
+        ? { default_connection_id: local }
+        : {}),
       ...(Array.isArray(catalog.connections)
         ? {
             connections: catalog.connections.map((entry) =>
@@ -666,8 +684,7 @@ export class RoutedBridge {
     this.home = home;
     home.setActiveConnection(this._activeConnectionId);
     this.attach(home, "home");
-    setHttpRouter((path) => this.routeHttp(path));
-    installHomeFetch(node.home, (path) => this.routeHttp(path));
+    this.routeHttpThroughHome(node);
     this.emitNodeHome();
     this.readNodeCatalog();
     home.connect();
@@ -888,9 +905,9 @@ export class RoutedBridge {
    * other `/api/` route from the home, by absolute URL.
    */
   routeHttp(path: string): string {
-    if (!this.node || !path.startsWith("/") || path.startsWith("//"))
-      return path;
-    const local = this.node.connection_id;
+    const node = this.node ?? this.announced;
+    if (!node || !path.startsWith("/") || path.startsWith("//")) return path;
+    const local = node.connection_id;
     const scoped = `/api/connections/${encodeURIComponent(local)}/`;
     if (path.startsWith(scoped)) {
       const nodeUp = this.nodeRouteUp();
@@ -901,13 +918,30 @@ export class RoutedBridge {
       if (url.searchParams.has("connection_generation") && real !== null)
         url.searchParams.set("connection_generation", String(real));
       const relative = `${url.pathname}${url.search}${url.hash}`;
-      return nodeUp ? relative : `${this.node.home}${relative}`;
+      return nodeUp ? relative : `${node.home}${relative}`;
     }
     if (nodeServesHttpPath(path, local)) return path;
     if (path === "/api" || path.startsWith("/api/") || path.startsWith("/api?"))
-      return `${this.node.home}${path}`;
+      return `${node.home}${path}`;
     return path;
   }
+}
+
+/** The node a node's entry document announces (`<meta name="roamgate-node">`). */
+function announcedNode(pageOrigin: string): NodeAdvertisement | null {
+  if (typeof document === "undefined") return null;
+  const meta = document.querySelector('meta[name="roamgate-node"]');
+  if (!meta) return null;
+  return parseNodeAdvertisement(
+    {
+      node: {
+        home: meta.getAttribute("content"),
+        connection_id: meta.getAttribute("data-connection-id"),
+        version: "",
+      },
+    },
+    pageOrigin,
+  );
 }
 
 /**
