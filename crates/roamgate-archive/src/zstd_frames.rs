@@ -18,12 +18,27 @@ pub struct FrameResult {
     pub zst_bytes: u64,
 }
 
-fn open_append(dest: &Path) -> io::Result<File> {
+fn open_dest(dest: &Path, append: bool) -> io::Result<File> {
     let mut options = OpenOptions::new();
-    options.read(true).append(true).create(true);
+    options.read(true).create(true);
+    if append {
+        options.append(true);
+    } else {
+        options.write(true);
+    }
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     options.open(dest)
+}
+
+fn open_append(dest: &Path) -> io::Result<File> {
+    open_dest(dest, true)
+}
+
+/// Cuts `dest` to `len` bytes. Through a writing handle: Windows refuses
+/// to resize, or flush, a file opened only to append or to read.
+fn cut(dest: &Path, len: u64) -> io::Result<()> {
+    open_dest(dest, false)?.set_len(len)
 }
 
 /// Source bytes [start, end) as one frame appended to `dest`, which is
@@ -39,7 +54,7 @@ pub fn append_frame_at(
     if let Some(parent) = dest.parent() {
         roamgate_base::private::create_dir_all_mode(parent)?;
     }
-    open_append(dest)?.set_len(keep)?;
+    cut(dest, keep)?;
     let result = (|| {
         let mut input = Sha256::new();
         let mut bytes = 0u64;
@@ -63,7 +78,7 @@ pub fn append_frame_at(
             encoder.finish()?.flush()?;
         }
         let after = std::fs::metadata(dest)?.len();
-        File::open(dest)?.sync_all()?;
+        open_dest(dest, false)?.sync_all()?;
         let digest = hex::encode(input.finalize());
         if end > start {
             let mut file = File::open(dest)?;
@@ -94,7 +109,7 @@ pub fn append_frame_at(
         })
     })();
     if result.is_err() {
-        let _ = open_append(dest).and_then(|file| file.set_len(keep));
+        let _ = cut(dest, keep);
     }
     result
 }
