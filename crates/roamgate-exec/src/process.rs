@@ -606,6 +606,18 @@ impl ProcessRunner {
             }
         };
         match finish {
+            // The process may end (SIGPIPE) before the overflow is seen:
+            // a fatal overflow is the failure all the same.
+            Finish::Done(_, (_, stdout_cut), (_, stderr_cut))
+                if command.overflow == Overflow::Fail && (stdout_cut || stderr_cut) =>
+            {
+                let error = ExecError::TooMuchOutput {
+                    program,
+                    cap: command.output_cap.unwrap_or(0),
+                };
+                self.report(&info, started, None, Some(&error));
+                Err(error)
+            }
             Finish::Done(status, (stdout, stdout_cut), (stderr, stderr_cut)) => {
                 let status = status.map_err(|source| ExecError::Io {
                     program: program.clone(),
