@@ -30,6 +30,9 @@ jobs:
         shell: pwsh
         run: |
           $tar = "$env:SystemRoot\System32\tar.exe"
+          # Only Windows itself on PATH: no Git for Windows xz to fall back on.
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          Write-Host "xz on PATH: $([bool](Get-Command xz -ErrorAction SilentlyContinue))"
           foreach ($case in @(@('probe.tar.xz','-xJf'), @('probe.tar.xz','-xf'), @('probe.tar.gz','-xzf'), @('probe.zip','-xf'))) {
             $dir = "out-$($case[0])-$($case[1])"
             New-Item -ItemType Directory -Force $dir | Out-Null
