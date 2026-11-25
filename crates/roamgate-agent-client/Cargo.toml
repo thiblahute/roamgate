@@ -1,0 +1,27 @@
+[package]
+name = "roamgate-agent-client"
+version = "0.0.0"
+description = "The agent-side clients the roamgate binary runs as `roamgate-review` and `roamgate-hold` (the review client and conversation mode's pane holder, contract/assets/python's on SSH hosts), and the Claude start hook's installer"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fancy-regex = "0.17"
+httparse = "1"
+regex = "1"
+roamgate-base = { path = "../roamgate-base" }
+serde_json = { version = "1", features = ["preserve_order"] }
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "signal"] }
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+rustix = { version = "1", features = ["fs", "process", "termios"] }
+
+[dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }

@@ -13,6 +13,7 @@ workspace = true
 base64 = "0.22"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 regex = "1"
+roamgate-agent-client = { path = "../roamgate-agent-client" }
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
 serde = { version = "1", features = ["derive"] }
