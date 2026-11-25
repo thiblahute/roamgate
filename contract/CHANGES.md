@@ -6,6 +6,18 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.42
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+The node link carries terminals and the host's agent socket (family
+connections, wire/node-link.md): a node profile's render socket is a proxy
+whose streams go over the link while it is up, and the new `node.listen`
+call has the node listen on the host's review socket and stream each of its
+connections back to the connection's agent socket, instead of the master's
+`ssh -O forward -R`, which stays the fallback and is set up again whenever
+the link goes down. The inventory is unchanged.
+
 ## 1.41
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

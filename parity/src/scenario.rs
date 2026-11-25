@@ -1661,7 +1661,11 @@ impl Runner {
         let command = str_of(&step["agent"])
             .context("agent: a command")?
             .to_owned();
-        let socket = crate::agent::socket_path(&self.run.home);
+        // `socket`: another agent socket (an SSH host's, in its fake home).
+        let socket = match get(step, "socket") {
+            Some(path) => self.path(path)?,
+            None => crate::agent::socket_path(&self.run.home),
+        };
         self.wait_for(&socket, WAIT).await?;
         let headers: Vec<(String, String)> = get(step, "headers")
             .and_then(Value::as_object)

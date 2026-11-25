@@ -99,17 +99,13 @@ fn first_300(text: &str) -> String {
     roamgate_agents::js::head16(roamgate_agents::js::trim(text), 300)
 }
 
-/// Makes `roamgate-review` work in the host's panes: installs the client and
-/// forwards the host's well-known socket to this connection's agent socket.
-/// Both ride the connection's SSH master. A host without python3 or one
-/// whose sshd refuses socket forwards only loses the review client.
-pub async fn setup_remote_review_agent<R, F>(
+/// Installs the review client on the host unless this version is there and
+/// clears a stale socket; gives the socket path the host's agents use.
+pub async fn setup_remote_review_client<R, F>(
     sessions: &SshSessions,
     host: &str,
-    control_path: &str,
-    local_socket: &str,
     connection_id: &str,
-    run: R,
+    run: &R,
 ) -> Result<String, String>
 where
     R: Fn(SshCommand, Duration) -> F,
@@ -129,7 +125,24 @@ where
         };
         return Err(first_300(error));
     }
-    let argv = remote_forward_argv(host, control_path, &remote_socket, local_socket)
+    Ok(remote_socket)
+}
+
+/// Forwards the host's agent socket `remote_socket` to `local_socket` with
+/// a reverse socket forward on the connection's master.
+pub async fn forward_remote_review_socket<R, F>(
+    host: &str,
+    control_path: &str,
+    remote_socket: &str,
+    local_socket: &str,
+    connection_id: &str,
+    run: &R,
+) -> Result<(), String>
+where
+    R: Fn(SshCommand, Duration) -> F,
+    F: Future<Output = RunOutput>,
+{
+    let argv = remote_forward_argv(host, control_path, remote_socket, local_socket)
         .map_err(|_| "invalid SSH destination".to_owned())?;
     let forward = SshCommand::plain(argv).annotated(SshAnnotation {
         tag: Some("review.forward".into()),
@@ -145,5 +158,34 @@ where
         };
         return Err(first_300(error));
     }
+    Ok(())
+}
+
+/// Makes `roamgate-review` work in the host's panes: installs the client and
+/// forwards the host's well-known socket to this connection's agent socket.
+/// Both ride the connection's SSH master. A host without python3 or one
+/// whose sshd refuses socket forwards only loses the review client.
+pub async fn setup_remote_review_agent<R, F>(
+    sessions: &SshSessions,
+    host: &str,
+    control_path: &str,
+    local_socket: &str,
+    connection_id: &str,
+    run: R,
+) -> Result<String, String>
+where
+    R: Fn(SshCommand, Duration) -> F,
+    F: Future<Output = RunOutput>,
+{
+    let remote_socket = setup_remote_review_client(sessions, host, connection_id, &run).await?;
+    forward_remote_review_socket(
+        host,
+        control_path,
+        &remote_socket,
+        local_socket,
+        connection_id,
+        &run,
+    )
+    .await?;
     Ok(remote_socket)
 }

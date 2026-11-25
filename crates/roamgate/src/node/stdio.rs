@@ -3,8 +3,9 @@
 //!
 //! A pure executor: it answers the home's calls on this machine (host
 //! commands as local spawns through [`Local`], byte streams to the local
-//! Herdr sockets) and writes nothing global: no install, no Herdr
-//! lifecycle, no hooks, no pane environment, no log file. Its diagnostics
+//! Herdr sockets, a socket listened on for the home as `ssh -R` would) and
+//! writes nothing global of its own: no install, no Herdr lifecycle, no
+//! hooks, no pane environment, no log file. Its diagnostics
 //! go to stderr, which ssh hands to the home; stdout carries only the
 //! preamble and the frames. It exits when the link closes.
 
@@ -16,7 +17,8 @@ use base64::Engine as _;
 use roamgate_exec::host::{Host, Local};
 use roamgate_exec::process::{Command, ProcessRunner};
 use roamgate_sidecar::node::{
-    CLIENT_SOCKET, CONNECT, CONTROL_SOCKET, PREAMBLE, RUN, RunParams, RunReply,
+    AGENT_PREFIX, CLIENT_SOCKET, CONNECT, CONTROL_SOCKET, LISTEN, ListenParams, PREAMBLE, RUN,
+    RunParams, RunReply, bridge, serve_stream,
 };
 use roamgate_sidecar::peer::{
     BodyReceiver, BoxFuture, Handler, HttpRequest, HttpResponse, IncomingCall, Peer, PeerOptions,
@@ -27,8 +29,7 @@ use roamgate_sidecar::protocol::{
 };
 use roamgate_sidecar::transport::BoxStream;
 use serde_json::Value;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::mpsc;
+use tokio::io::AsyncWriteExt;
 
 /// How long the home has to say `hello`.
 const HELLO_WAIT: Duration = Duration::from_secs(30);
@@ -69,17 +70,45 @@ pub async fn run_stdio(_args: &[String]) -> u8 {
     let handler = Arc::new(NodeHandler {
         host: Local::new(ProcessRunner::new(clock.clone())),
         home,
+        listeners: Arc::default(),
     });
+    let listeners = handler.listeners.clone();
     let peer = Peer::start(stream, handler, PeerOptions::core(clock));
     peer.closed().await;
+    // The sockets listened on for the home go with the link.
+    for (path, listening) in listeners.lock().unwrap().iter() {
+        if listening.inode.is_some() && inode(path) == listening.inode {
+            let _ = std::fs::remove_file(path);
+        }
+    }
     // A read of stdin may still wait on its blocking thread: leave now.
     std::process::exit(0)
+}
+
+/// A socket listened on for the home: its accept loop and the inode bound,
+/// so the node removes only its own file.
+struct Listening {
+    task: tokio::task::JoinHandle<()>,
+    inode: Option<u64>,
+}
+
+#[cfg(unix)]
+fn inode(path: &std::path::Path) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::symlink_metadata(path).ok().map(|meta| meta.ino())
+}
+
+#[cfg(not(unix))]
+fn inode(_path: &std::path::Path) -> Option<u64> {
+    None
 }
 
 #[derive(Clone)]
 struct NodeHandler {
     host: Local,
     home: Option<PathBuf>,
+    /// The sockets listened on for the home, by path.
+    listeners: Arc<std::sync::Mutex<std::collections::HashMap<PathBuf, Listening>>>,
 }
 
 impl NodeHandler {
@@ -96,6 +125,48 @@ impl NodeHandler {
             path if path.starts_with('/') => Some(PathBuf::from(path)),
             _ => None,
         }
+    }
+
+    /// Listens on a socket for the home (an agent socket, as `ssh -R`
+    /// would): each connection is streamed back as `agent:<id>`. The socket
+    /// goes with the link.
+    #[cfg(unix)]
+    fn listen(&self, peer: &Peer, params: Value) -> Result<Value, RpcError> {
+        let params: ListenParams = serde_json::from_value(params)
+            .map_err(|error| RpcError::with_code(format!("node.listen: {error}"), "invalid"))?;
+        let path = PathBuf::from(&params.path);
+        if !path.is_absolute() {
+            return Err(RpcError::with_code(
+                "node.listen: a relative path",
+                "invalid",
+            ));
+        }
+        let _ = std::fs::remove_file(&path);
+        let listener = tokio::net::UnixListener::bind(&path)
+            .map_err(|error| RpcError::new(format!("{}: {error}", path.display())))?;
+        let url = format!("{AGENT_PREFIX}{}", params.id);
+        let peer = peer.clone();
+        let task = tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let (peer, url) = (peer.clone(), url.clone());
+                tokio::spawn(async move { bridge(&peer, &url, stream).await });
+            }
+        });
+        let inode = inode(&path);
+        if let Some(previous) = self
+            .listeners
+            .lock()
+            .unwrap()
+            .insert(path, Listening { task, inode })
+        {
+            previous.task.abort();
+        }
+        Ok(serde_json::json!({"ok": true}))
+    }
+
+    #[cfg(not(unix))]
+    fn listen(&self, _peer: &Peer, _params: Value) -> Result<Value, RpcError> {
+        Err(RpcError::new("node.listen: no Unix sockets here"))
     }
 
     async fn run(&self, params: Value) -> Result<Value, RpcError> {
@@ -128,79 +199,19 @@ impl NodeHandler {
     }
 }
 
-#[cfg(unix)]
-async fn connect(path: &std::path::Path) -> std::io::Result<tokio::net::UnixStream> {
-    tokio::net::UnixStream::connect(path).await
-}
-
-#[cfg(not(unix))]
-async fn connect(path: &std::path::Path) -> std::io::Result<tokio::net::TcpStream> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        format!("no Unix sockets here: {}", path.display()),
-    ))
-}
-
-/// A socket stream: the home's request body to the socket, the socket's
-/// bytes as the response body. The socket is opened once the first bytes
-/// came, and written at once: Herdr reads a connection whose request has
-/// not arrived 100 ms later (contract/wire/node-link.md).
-async fn stream(path: PathBuf, mut body: BodyReceiver) -> Result<HttpResponse, RpcError> {
-    let Some(first) = body.chunk().await else {
-        return Ok(HttpResponse::status(204));
-    };
-    let socket = match connect(&path).await {
-        Ok(socket) => socket,
-        Err(error) => {
-            eprintln!("roamgate node: {}: {error}", path.display());
-            return Ok(HttpResponse::status(502));
-        }
-    };
-    let (mut reader, mut writer) = tokio::io::split(socket);
-    if writer.write_all(&first).await.is_err() {
-        return Ok(HttpResponse::status(502));
-    }
-    let (tx, rx) = mpsc::channel::<Vec<u8>>(16);
-    let read = tokio::spawn(async move {
-        let mut chunk = vec![0u8; 64 * 1024];
-        loop {
-            match reader.read(&mut chunk).await {
-                Ok(0) | Err(_) => break,
-                Ok(read) => {
-                    if tx.send(chunk[..read].to_vec()).await.is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-    });
-    tokio::spawn(async move {
-        while let Some(chunk) = body.chunk().await {
-            if writer.write_all(&chunk).await.is_err() {
-                break;
-            }
-        }
-        // The home closed its end: so does the socket.
-        read.abort();
-    });
-    Ok(HttpResponse {
-        status: 200,
-        headers: Vec::new(),
-        body: Some(rx),
-    })
-}
-
 impl Handler for NodeHandler {
-    fn call(&self, _peer: &Peer, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
+    fn call(&self, peer: &Peer, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
         let this = self.clone();
+        let peer = peer.clone();
         Box::pin(async move {
-            if call.method != RUN {
-                return Err(RpcError::with_code(
+            match call.method.as_str() {
+                RUN => this.run(call.params).await,
+                LISTEN => this.listen(&peer, call.params),
+                _ => Err(RpcError::with_code(
                     format!("unknown method {}", call.method),
                     "unknown_method",
-                ));
+                )),
             }
-            this.run(call.params).await
         })
     }
 
@@ -215,7 +226,7 @@ impl Handler for NodeHandler {
             .flatten();
         Box::pin(async move {
             match (path, body) {
-                (Some(path), Some(body)) => stream(path, body).await,
+                (Some(path), Some(body)) => Ok(serve_stream(path, body, true).await),
                 _ => Ok(HttpResponse::status(404)),
             }
         })

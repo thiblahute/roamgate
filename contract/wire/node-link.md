@@ -60,6 +60,11 @@ commands over the master). A link that was up and closes (the ssh child ended,
 go back to the tunnel at once and the home starts the link again after 1 s,
 doubling up to 60 s while it fails.
 
+Each time the link comes up or goes down, the home sets the host's agent
+socket up again (as when the command master becomes ready): over the link
+with `node.listen` while it is up, with the master's `ssh -O forward -R`
+otherwise, or when `node.listen` fails.
+
 ## Calls
 
 ### `node.run`
@@ -77,7 +82,8 @@ The result is `{"code": <exit code>, "stdout": <base64>, "stderr": <text>}`.
 The home gives up `timeout_ms` plus 5 s after the call. While a link is up,
 every host command of the profile's destination that would have run whole over
 ssh (`HostOps::run`) runs this way; commands the home spawns itself (streams,
-uploads, bridges) stay on ssh.
+uploads, bridges) and the master's own commands (the review client setup)
+stay on ssh.
 
 ### Socket streams
 
@@ -102,4 +108,30 @@ to the socket, the response body what the socket sends back.
 Each Herdr control call of the profile's runtime and its event subscription
 is one such stream while the link is up (the Herdr client's connector); the
 events then reach the home as the subscription's lines, with no polling.
-Terminal render streams stay on the SSH tunnel.
+
+The runtime's render socket (`client_socket_path`) is a proxy the home
+listens on beside the tunnel's (`node-render.sock` in the profile's runtime
+directory): each connection to it (a terminal, the notifications client, the
+boot id read) is a `CONNECT` to the profile's render socket (`herdr:client`
+or `remote_client_socket_path`) while the link is up, the tunnel's socket
+otherwise. A stream keeps the way it opened with; one over a link that
+closes ends, and its client reconnects through the tunnel.
+
+### `node.listen`
+
+The node listens on a Unix socket for the home, as `ssh -R` would:
+
+| Params |                                                               |
+| ------ | ------------------------------------------------------------- |
+| `path` | an absolute socket path on the node; a file there is replaced |
+| `id`   | what the node's streams name: `agent:<id>`                    |
+
+Each connection accepted there is a `CONNECT` the node opens to the home
+with the URL `agent:<id>`; the home connects it at once (no first-bytes
+wait) to the local socket it named for that id, here the connection's agent
+socket, and the two are bridged until either ends. Calling it again for a
+path replaces its listener. The node removes the files it bound, unless
+something else replaced them, when the link closes. The home uses it for
+the host's review socket (`~/.cache/roamgate/review.sock`, which
+`roamgate-review` and `roamgate-hold` connect to), after the review client
+setup, which still runs as an ssh command.

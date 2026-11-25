@@ -27,9 +27,14 @@ use roamgate_exec::ssh::command::SshCommand;
 use roamgate_exec::ssh::sessions::{SshSessionHold, SshSessionWait, SshSessions};
 use roamgate_exec::ssh::supervised::{SupervisedSsh, stop_child};
 use roamgate_herdr::control::{Connector, HerdrStream};
-use roamgate_sidecar::node::{FAMILY, RUN, RunParams, RunReply, open_stream, skip_preamble};
-use roamgate_sidecar::peer::{Handler, Peer, PeerOptions, say_hello};
-use roamgate_sidecar::protocol::{Message, NODE_CONTRACT, NodeIdentity, PROTOCOL, Side};
+use roamgate_sidecar::node::{
+    AGENT_PREFIX, CONNECT, FAMILY, LISTEN, ListenParams, RUN, RunParams, RunReply, open_stream,
+    serve_stream, skip_preamble,
+};
+use roamgate_sidecar::peer::{
+    BodyReceiver, Handler, HttpRequest, HttpResponse, Peer, PeerOptions, say_hello,
+};
+use roamgate_sidecar::protocol::{Message, NODE_CONTRACT, NodeIdentity, PROTOCOL, RpcError, Side};
 use roamgate_sidecar::transport::BoxStream;
 use tokio::io::AsyncReadExt;
 
@@ -68,7 +73,11 @@ struct LinkInner {
     identity: NodeIdentity,
     hold: SshSessionHold,
     clock: SharedClock,
+    /// The local sockets the node's `agent:<id>` streams connect to.
+    agents: Agents,
 }
+
+type Agents = Arc<Mutex<HashMap<String, std::path::PathBuf>>>;
 
 /// A running link to a node. Clones are the same link.
 #[derive(Clone)]
@@ -85,10 +94,31 @@ impl std::fmt::Debug for NodeLink {
     }
 }
 
-/// The home answers nothing the node might ask.
-struct Home;
+/// What the home answers the node: the streams of a socket the node
+/// listens on for it, to the local socket named for their id.
+struct Home {
+    agents: Agents,
+}
 
-impl Handler for Home {}
+impl Handler for Home {
+    fn http(
+        &self,
+        _peer: &Peer,
+        request: HttpRequest,
+        body: Option<BodyReceiver>,
+    ) -> roamgate_sidecar::peer::BoxFuture<Result<HttpResponse, RpcError>> {
+        let path = (request.method == CONNECT)
+            .then(|| request.url.strip_prefix(AGENT_PREFIX))
+            .flatten()
+            .and_then(|id| self.agents.lock().unwrap().get(id).cloned());
+        Box::pin(async move {
+            Ok(match (path, body) {
+                (Some(path), Some(body)) => serve_stream(path, body, false).await,
+                _ => HttpResponse::status(404),
+            })
+        })
+    }
+}
 
 /// The home's `hello`: no token (ssh authenticated the link).
 fn hello(version: &str) -> Message {
@@ -198,9 +228,12 @@ impl NodeLink {
                 return Err("the program answered without a node identity".into());
             }
         };
+        let agents = Agents::default();
         let peer = Peer::start(
             stream,
-            Arc::new(Home),
+            Arc::new(Home {
+                agents: agents.clone(),
+            }),
             PeerOptions::front(start.clock.clone()),
         );
         Ok(Self {
@@ -211,8 +244,35 @@ impl NodeLink {
                 identity,
                 hold,
                 clock: start.clock,
+                agents,
             }),
         })
+    }
+
+    /// The node listens on `remote` (replacing a file there) and each of
+    /// its connections reaches `local` here: an agent socket carried as
+    /// `ssh -R remote:local` would carry it, for as long as the link lasts.
+    pub async fn listen(&self, remote: &str, id: &str, local: &str) -> Result<(), String> {
+        self.inner
+            .agents
+            .lock()
+            .unwrap()
+            .insert(id.to_owned(), local.into());
+        let params = ListenParams {
+            path: remote.to_owned(),
+            id: id.to_owned(),
+        };
+        self.inner
+            .peer
+            .call(
+                LISTEN,
+                serde_json::to_value(params).unwrap_or_default(),
+                Default::default(),
+                false,
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| error.message)
     }
 
     pub fn destination(&self) -> &str {
@@ -349,6 +409,53 @@ impl NodeSlot {
             }
             .boxed()
         })
+    }
+}
+
+impl NodeSlot {
+    /// Listens on `path` here for a socket of the node (its Herdr render
+    /// socket): each connection goes to `remote` over the link while it is
+    /// up, to the local `fallback` socket (the tunnel's) otherwise. Ends
+    /// when the task returned is aborted.
+    #[cfg(unix)]
+    pub fn proxy(
+        &self,
+        path: &str,
+        remote: String,
+        fallback: String,
+        connection: String,
+    ) -> std::io::Result<tokio::task::JoinHandle<()>> {
+        let _ = std::fs::remove_file(path);
+        let listener = tokio::net::UnixListener::bind(path)?;
+        let slot = self.clone();
+        Ok(tokio::spawn(async move {
+            let connection = connection;
+            while let Ok((mut local, _)) = listener.accept().await {
+                let link = slot.get();
+                tracing::debug!(
+                    scope = "bridge.connection",
+                    connection = %connection,
+                    via = if link.is_some() { "node" } else { "tunnel" },
+                    "render stream"
+                );
+                let (remote, fallback) = (remote.clone(), fallback.clone());
+                tokio::spawn(async move {
+                    match link {
+                        Some(link) => {
+                            let mut stream = link.open(&remote);
+                            let _ = tokio::io::copy_bidirectional(&mut local, &mut stream).await;
+                        }
+                        None => {
+                            if let Ok(mut stream) = tokio::net::UnixStream::connect(&fallback).await
+                            {
+                                let _ =
+                                    tokio::io::copy_bidirectional(&mut local, &mut stream).await;
+                            }
+                        }
+                    }
+                });
+            }
+        }))
     }
 }
 

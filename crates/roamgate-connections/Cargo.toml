@@ -31,6 +31,7 @@ tempfile = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net", "io-util", "process"] }
+tracing = "0.1"
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process"] }

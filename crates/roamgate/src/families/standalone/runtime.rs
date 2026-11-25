@@ -634,15 +634,48 @@ fn setup_remote_review_agent(
                 }
             }
         };
-        let outcome = roamgate_review::agent_socket::remote::setup_remote_review_agent(
-            &ops.sessions,
-            &host,
-            &control_path,
-            &local_socket.to_string_lossy(),
-            &id,
-            run,
-        )
-        .await;
+        let local = local_socket.to_string_lossy().into_owned();
+        // On a node (contract/wire/node-link.md), the node listens on the
+        // host's agent socket and streams each connection back over its
+        // link; the master's reverse forward is the fallback.
+        let mut via = "ssh";
+        let outcome = match ops.nodes.get(&host) {
+            Some(link) => {
+                use roamgate_review::agent_socket::remote::{
+                    forward_remote_review_socket, setup_remote_review_client,
+                };
+                match setup_remote_review_client(&ops.sessions, &host, &id, &run).await {
+                    Ok(remote) => match link.listen(&remote, &id, &local).await {
+                        Ok(()) => {
+                            via = "node";
+                            Ok(remote)
+                        }
+                        Err(_) => forward_remote_review_socket(
+                            &host,
+                            &control_path,
+                            &remote,
+                            &local,
+                            &id,
+                            &run,
+                        )
+                        .await
+                        .map(|()| remote),
+                    },
+                    Err(error) => Err(error),
+                }
+            }
+            None => {
+                roamgate_review::agent_socket::remote::setup_remote_review_agent(
+                    &ops.sessions,
+                    &host,
+                    &control_path,
+                    &local,
+                    &id,
+                    run,
+                )
+                .await
+            }
+        };
         let log = logger(&cx.clock, "bridge");
         match outcome {
             Ok(_) => {
@@ -650,7 +683,7 @@ fn setup_remote_review_agent(
                 send_review_agents(&layer, &cx);
                 log.debug(
                     "review client ready",
-                    Some(&fields(json!({"connection": id}))),
+                    Some(&fields(json!({"connection": id, "via": via}))),
                 );
             }
             Err(error) => log.warn(

@@ -504,15 +504,17 @@ absolute, stable path; changing it requires logging in again).
 the connection form keep it). The server then runs
 `~/.local/share/roamgate-node/bin/roamgate node --stdio` on the host over the
 profile's command master and sends Herdr's control calls, its event
-subscription and host commands (Git, files, transcripts) through that one link,
-where they run as local calls on the host. The node writes nothing on the host:
-it is installed there by the deploy, separately from anything else. Terminal
-streams stay on the SSH tunnel. When the node is missing, fails to start, does
-not answer within 8 seconds or speaks another node contract, the server logs
-`node unavailable, using the SSH tunnel` once and the profile works as one
-without `node`; a link that drops mid-connection falls back the same way and is
-brought back in the background. The link's contract is
-[contract/wire/node-link.md](../contract/wire/node-link.md).
+subscription, its terminals and host commands (Git, files, transcripts) through
+that one link, where they run as local calls on the host. The host's agent
+socket (`roamgate-review`, conversation mode's holders) is the node's too,
+instead of the master's reverse forward. The node installs nothing: the deploy
+puts it on the host, separately from anything else. When the node is missing,
+fails to start, does not answer within 8 seconds or speaks another node
+contract, the server logs `node unavailable, using the SSH tunnel` once and the
+profile works as one without `node`; a link that drops mid-connection falls
+back the same way (terminals reconnect through the tunnel, the agent socket is
+forwarded by the master again) and is brought back in the background. The
+link's contract is [contract/wire/node-link.md](../contract/wire/node-link.md).
 
 Connection flags or variables such as `--ssh-host` create a read-only
 `legacy-default` profile:

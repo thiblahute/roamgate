@@ -37,7 +37,7 @@ use crate::manager::{
 };
 use crate::node_host::{NodeLink, NodeOptions, NodeSlot, NodeStart};
 use crate::subscription_loop::{EventSubscriptionLoop, LoopSubscription, SubscriptionLoopArgs};
-use roamgate_sidecar::node::CONTROL_SOCKET;
+use roamgate_sidecar::node::{CLIENT_SOCKET, CONTROL_SOCKET};
 
 /// The Herdr events a runtime subscribes to (runtime.ts `DEFAULT_EVENTS`).
 pub const DEFAULT_EVENTS: &[&str] = &[
@@ -234,6 +234,10 @@ struct NodeRuntime {
     options: NodeOptions,
     slot: NodeSlot,
     sessions: SshSessions,
+    /// The render socket's proxy: (where it listens, the node's socket, the
+    /// tunnel's), and its task once it listens.
+    render: Option<(String, String, String)>,
+    render_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The link's watcher (it reconnects a link that went down).
     watcher: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
@@ -341,6 +345,8 @@ impl Inner {
         inner.logger.info("node link up", Some(&fields));
         node.slot.set(Some(link.clone()));
         node.options.routes.insert(&link);
+        // The agent socket moves to the link: the front sets it up again.
+        inner.master_ready.ready();
         let watched = inner.clone();
         let watcher = tokio::spawn(async move { Self::watch_node(watched, link).await });
         if let Some(previous) = node.watcher.lock().unwrap().replace(watcher) {
@@ -360,6 +366,8 @@ impl Inner {
         if inner.disposed.load(Ordering::SeqCst) {
             return;
         }
+        // The agent socket goes back to the master's forward.
+        inner.master_ready.ready();
         inner.logger.warn(
             "node link closed, using the SSH tunnel",
             Some(&inner.node_fields()),
@@ -381,6 +389,7 @@ impl Inner {
                     inner.logger.info("node link up", Some(&fields));
                     node.slot.set(Some(next.clone()));
                     node.options.routes.insert(&next);
+                    inner.master_ready.ready();
                     // Follow the new link from this same task.
                     next.closed().await;
                     node.slot.clear(&next);
@@ -388,6 +397,7 @@ impl Inner {
                     if inner.disposed.load(Ordering::SeqCst) {
                         return;
                     }
+                    inner.master_ready.ready();
                     inner.logger.warn(
                         "node link closed, using the SSH tunnel",
                         Some(&inner.node_fields()),
@@ -404,11 +414,47 @@ impl Inner {
         }
     }
 
+    /// Listens on the render socket's proxy, once.
+    fn start_render_proxy(&self) -> Result<(), RuntimeError> {
+        let Some(node) = &self.node else {
+            return Ok(());
+        };
+        let Some((proxy, remote, fallback)) = &node.render else {
+            return Ok(());
+        };
+        let mut task = node.render_task.lock().unwrap();
+        if task.is_some() {
+            return Ok(());
+        }
+        #[cfg(unix)]
+        {
+            *task = Some(
+                node.slot
+                    .proxy(
+                        proxy,
+                        remote.clone(),
+                        fallback.clone(),
+                        self.identity.id.clone(),
+                    )
+                    .map_err(|error| RuntimeError::new(format!("{proxy}: {error}")))?,
+            );
+        }
+        #[cfg(not(unix))]
+        let _ = (proxy, remote, fallback);
+        Ok(())
+    }
+
     /// Ends the link with the runtime.
     async fn stop_node(&self) {
         let Some(node) = &self.node else {
             return;
         };
+        if let Some(task) = node.render_task.lock().unwrap().take() {
+            task.abort();
+        }
+        if let Some((proxy, _, _)) = &node.render {
+            let _ = std::fs::remove_file(proxy);
+        }
         if let Some(watcher) = node.watcher.lock().unwrap().take() {
             watcher.abort();
         }
@@ -426,10 +472,32 @@ impl HostRuntime {
         let id = identity.id.clone();
         let node = match (&args.node, &args.config.ssh_host) {
             (Some(options), Some(_)) if args.config.remote_platform.is_none() => {
+                // The render socket the runtime's clients use becomes a
+                // proxy beside the tunnel's: over the link while it is up.
+                let render = args
+                    .config
+                    .owned_runtime_directory
+                    .as_ref()
+                    .map(|directory| {
+                        (
+                            std::path::Path::new(directory)
+                                .join("node-render.sock")
+                                .to_string_lossy()
+                                .into_owned(),
+                            args.config
+                                .remote_client_socket_path
+                                .clone()
+                                .filter(|path| !path.is_empty())
+                                .unwrap_or_else(|| CLIENT_SOCKET.to_owned()),
+                            args.config.client_socket_path.clone(),
+                        )
+                    });
                 Some(NodeRuntime {
                     options: options.clone(),
                     slot: NodeSlot::default(),
                     sessions: args.sessions.clone(),
+                    render,
+                    render_task: Mutex::new(None),
                     watcher: Mutex::new(None),
                 })
             }
@@ -617,7 +685,13 @@ impl HostRuntime {
         let inner = Arc::new(Inner {
             identity,
             generation: args.context.generation,
-            config: args.config,
+            config: match node.as_ref().and_then(|node| node.render.as_ref()) {
+                Some((proxy, _, _)) => SshTunnelConfig {
+                    client_socket_path: proxy.clone(),
+                    ..args.config
+                },
+                None => args.config,
+            },
             herdr,
             tunnel,
             logger: args.logger,
@@ -743,6 +817,7 @@ impl ConnectionRuntime for HostRuntime {
             if let Some(tunnel) = &inner.tunnel {
                 tunnel.start().await.map_err(tunnel_error)?;
             }
+            inner.start_render_proxy()?;
             (inner.probe)(
                 inner.config.socket_path.clone(),
                 inner.config.client_socket_path.clone(),
