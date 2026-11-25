@@ -2,10 +2,9 @@ name: both servers read the same settings.json, real-shaped and older, alike
 family: settings
 description: >
   Forward data test of the settings family (plan 5.7): a sanitised file of
-  the dogfood's shape with every section set, as the Bun server and the
-  Rust core (with PARITY_RUST_OWNERS=settings) read it. The same exact
-  answers on both runs are the proof; contract/vectors/settings.json holds
-  the normaliser to every value case.
+  the dogfood's shape with every section set, as the server reads it; the
+  answers were the same when the Bun server read it, and
+  contract/vectors/settings.json holds the normaliser to every value case.
 server:
   files:
     ".config/roamgate/settings.json":
