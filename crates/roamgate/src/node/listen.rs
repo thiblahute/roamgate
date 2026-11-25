@@ -97,7 +97,8 @@ pub fn parse(args: &[String], env: &dyn Env) -> Result<ListenOptions, String> {
             | "--title-suffix"
             | "--socket-path"
             | "--client-socket-path"
-            | "--log-level" => &name[2..],
+            | "--log-level"
+            | "--public-dir" => &name[2..],
             _ => return Err(format!("unknown argument {word}")),
         };
         let value = match inline {

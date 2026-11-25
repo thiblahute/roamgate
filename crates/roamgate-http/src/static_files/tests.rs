@@ -323,3 +323,13 @@ async fn a_binary_serves_the_build_it_carries_after_the_public_directory() {
         404
     );
 }
+
+#[test]
+fn a_node_page_names_its_home_before_any_script() {
+    let html = b"<html><head><title>x</title><script src=\"/a.js\"></script></head></html>";
+    let marked =
+        String::from_utf8(mark_node_page(html, "https://home.example", "local").unwrap()).unwrap();
+    assert!(marked.starts_with(
+        "<html><head><meta name=\"roamgate-node\" content=\"https://home.example\" data-connection-id=\"local\"><title>"
+    ));
+}

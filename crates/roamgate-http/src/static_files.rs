@@ -163,10 +163,49 @@ fn serve_bytes(bytes: Bytes, pathname: &str, title_suffix: &str) -> Response {
     if pathname != "/index.html" {
         return response::with(200, &headers, bytes);
     }
-    match name_entry_document(&bytes, &instance_display_name(title_suffix)) {
+    let named =
+        name_entry_document(&bytes, &instance_display_name(title_suffix)).and_then(|named| {
+            match roamgate_base::node::process_home() {
+                Some(home) => mark_node_page(&named, home, roamgate_base::node::NODE_CONNECTION_ID),
+                None => Ok(named),
+            }
+        });
+    match named {
         Ok(named) => response::with(200, &headers, named),
         Err(_) => response::text(500, &[], "Internal Server Error"),
     }
+}
+
+/// A node's entry document says so before any script runs
+/// (`<meta name="roamgate-node">`, the home's origin and the node's
+/// connection), so the page's first requests already go to the home.
+pub fn mark_node_page(html: &[u8], home: &str, connection_id: &str) -> Result<Vec<u8>, String> {
+    use lol_html::html_content::ContentType;
+    use lol_html::{RewriteStrSettings, element, rewrite_str};
+    let escape = |value: &str| {
+        value
+            .replace('&', "&amp;")
+            .replace('"', "&quot;")
+            .replace('<', "&lt;")
+    };
+    let meta = format!(
+        r#"<meta name="roamgate-node" content="{}" data-connection-id="{}">"#,
+        escape(home),
+        escape(connection_id)
+    );
+    let text = String::from_utf8_lossy(html);
+    rewrite_str(
+        &text,
+        RewriteStrSettings {
+            element_content_handlers: vec![element!("head", |el| {
+                el.prepend(&meta, ContentType::Html);
+                Ok(())
+            })],
+            ..RewriteStrSettings::new()
+        },
+    )
+    .map(String::into_bytes)
+    .map_err(|error| error.to_string())
 }
 
 async fn is_file(path: &Path) -> bool {
