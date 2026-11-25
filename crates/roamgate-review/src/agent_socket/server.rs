@@ -1519,34 +1519,7 @@ impl AgentSocket {
 
     /// Links `link` to `target` when its directory exists and it is free.
     fn link_if_free(target: &Path, link: &Path) {
-        let made = (|| -> std::io::Result<()> {
-            let Some(parent) = link.parent() else {
-                return Ok(());
-            };
-            if !std::fs::metadata(parent).is_ok_and(|m| m.is_dir()) {
-                return Ok(());
-            }
-            match std::fs::symlink_metadata(link) {
-                Ok(meta) => {
-                    if !meta.file_type().is_symlink() {
-                        return Ok(());
-                    }
-                    let current = std::fs::read_link(link)?;
-                    if current == target {
-                        return Ok(());
-                    }
-                    // A link to an old install of ours is replaced; others are kept.
-                    if !current.to_string_lossy().contains(REVIEW_HOME_DIR) {
-                        return Ok(());
-                    }
-                    let _ = std::fs::remove_file(link);
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => return Ok(()),
-            }
-            symlink(target, link)
-        })();
-        if let Err(error) = made {
+        if let Err(error) = place_link(target, link, true) {
             tracing::warn!(link = %link.display(), error = %error, "review link not made");
         }
     }
@@ -1851,6 +1824,106 @@ fn install_client(bin: &Path, name: &str, program: &Path) -> std::io::Result<Pat
         let _ = std::fs::remove_file(bin.join(name));
         Ok(client)
     }
+}
+
+/// Makes `link` lead to `target` when its directory exists and nothing
+/// of the user's is there: a link to an old install of ours is replaced.
+/// On Windows, where a symbolic link needs developer mode or an admin, a
+/// directory falls back to a junction and a file to a hard link or a copy
+/// (recorded beside the target, so a later install knows it is ours);
+/// `symlinks` false starts there.
+pub(crate) fn place_link(target: &Path, link: &Path, symlinks: bool) -> std::io::Result<()> {
+    let Some(parent) = link.parent() else {
+        return Ok(());
+    };
+    if !std::fs::metadata(parent).is_ok_and(|m| m.is_dir()) {
+        return Ok(());
+    }
+    match std::fs::symlink_metadata(link) {
+        // A symbolic link, or a junction on Windows.
+        Ok(meta) if meta.file_type().is_symlink() => {
+            let current = std::fs::read_link(link)?;
+            if same_path(&current, target) {
+                return Ok(());
+            }
+            // A link to an old install of ours is replaced; others are kept
+            // (Windows names it with backslashes).
+            let ours = current.to_string_lossy().replace('\\', "/");
+            if !ours.contains(REVIEW_HOME_DIR) {
+                return Ok(());
+            }
+            if meta.is_dir() || std::fs::remove_file(link).is_err() {
+                // A junction, or a directory's symbolic link on Windows.
+                std::fs::remove_dir(link)?;
+            }
+        }
+        Ok(meta) => {
+            // A copy or a hard link we placed (Windows) is ours; anything
+            // else is the user's.
+            if !meta.is_file() || !placed(target).contains(&link.to_path_buf()) {
+                return Ok(());
+            }
+            if std::fs::read(link).ok() == std::fs::read(target).ok() {
+                return Ok(());
+            }
+            std::fs::remove_file(link)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Ok(()),
+    }
+    let linked = if symlinks {
+        symlink(target, link)
+    } else {
+        Err(std::io::Error::other("symbolic links not tried"))
+    };
+    match linked {
+        Ok(()) => Ok(()),
+        #[cfg(windows)]
+        Err(_) if target.is_dir() => roamgate_base::junction::create(target, link),
+        #[cfg(windows)]
+        Err(_) => {
+            if std::fs::hard_link(target, link).is_err() {
+                std::fs::copy(target, link)?;
+            }
+            let mut list = placed(target);
+            if !list.contains(&link.to_path_buf()) {
+                list.push(link.to_path_buf());
+            }
+            let text: String = list
+                .iter()
+                .map(|path| format!("{}\n", path.display()))
+                .collect();
+            std::fs::write(placed_record(target), text)
+        }
+        #[cfg(not(windows))]
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether two paths name the same place, Windows' verbatim prefix aside.
+fn same_path(a: &Path, b: &Path) -> bool {
+    let plain = |path: &Path| {
+        let text = path.to_string_lossy().into_owned();
+        text.strip_prefix(r"\\?\")
+            .map_or(text.clone(), str::to_owned)
+    };
+    a == b || plain(a) == plain(b)
+}
+
+/// Where the copies and hard links of `target` (Windows) are recorded.
+fn placed_record(target: &Path) -> PathBuf {
+    let name = target.file_name().unwrap_or_default().to_string_lossy();
+    target.with_file_name(format!(".{name}.placed"))
+}
+
+/// The copies and hard links of `target` placed so far.
+fn placed(target: &Path) -> Vec<PathBuf> {
+    std::fs::read_to_string(placed_record(target))
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(PathBuf::from)
+        .collect()
 }
 
 fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
