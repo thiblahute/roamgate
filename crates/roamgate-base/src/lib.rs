@@ -33,6 +33,8 @@ pub mod env;
 pub mod error;
 pub mod json;
 pub mod json_store;
+#[cfg(windows)]
+pub mod junction;
 pub mod local_socket;
 pub mod lock;
 pub mod log;
