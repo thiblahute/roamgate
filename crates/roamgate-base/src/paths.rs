@@ -112,6 +112,38 @@ pub fn join_relative(root: &Path, relative: &str) -> PathBuf {
         .fold(root.to_path_buf(), |path, part| path.join(part))
 }
 
+/// A file's change time (Node's `ctimeMs` on Windows, the NTFS change time)
+/// in milliseconds since the epoch; None when it cannot be read.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+pub fn change_time_ms(path: &Path) -> Option<f64> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_READ_ATTRIBUTES, FileBasicInfo,
+        GetFileInformationByHandleEx,
+    };
+    let file = std::fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .ok()?;
+    // SAFETY: plain data, filled by the call below.
+    let mut info: FILE_BASIC_INFO = unsafe { std::mem::zeroed() };
+    // SAFETY: an open handle and a buffer of FILE_BASIC_INFO's size.
+    let read = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileBasicInfo,
+            (&raw mut info).cast(),
+            std::mem::size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    };
+    // 100 ns intervals since 1601-01-01.
+    (read != 0).then(|| info.ChangeTime as f64 / 10_000.0 - 11_644_473_600_000.0)
+}
+
 /// A temporary directory with a short real path, for Unix socket
 /// addresses (about 100 bytes at most): /tmp's on Unix (macOS' TMPDIR is
 /// long, and /tmp is a link there), the system's temporary directory on

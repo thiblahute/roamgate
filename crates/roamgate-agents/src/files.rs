@@ -154,10 +154,15 @@ pub fn session_file_of(path: &str, meta: &std::fs::Metadata) -> SessionFile {
             js::number_text(ctime),
         )
     };
+    // The change time, as Node's ctimeMs; the modification time where it
+    // cannot be read.
     #[cfg(not(unix))]
     let (identity, change) = (
         String::from("0:0"),
-        js::number_text(crate::paths::mtime_ms(meta)),
+        js::number_text(
+            roamgate_base::paths::change_time_ms(Path::new(path))
+                .unwrap_or_else(|| crate::paths::mtime_ms(meta)),
+        ),
     );
     SessionFile {
         path: path.to_owned(),
