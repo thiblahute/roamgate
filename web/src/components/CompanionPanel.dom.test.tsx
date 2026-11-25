@@ -475,6 +475,8 @@ if (
       const editor = panel.querySelector<HTMLElement>(".cm-editor");
       return editor ? EditorView.findFromDOM(editor) : null;
     };
+    // The Vim box is lazy: shown once loaded, however long it takes.
+    if (vim) while (!view()) await settle();
     const field = () =>
       panel.querySelector<HTMLElement>(
         ".companion-panel-composer :is(textarea, [contenteditable='true'])",

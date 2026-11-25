@@ -83,6 +83,10 @@ if (
           }) as unknown as Event,
         );
       });
+    /** The Vim box is lazy: shown once loaded, however long it takes. */
+    const shown = async () => {
+      while (!view()) await settle();
+    };
     return {
       AgentHistoryComposer,
       Vim,
@@ -90,6 +94,7 @@ if (
       container,
       root,
       settle,
+      shown,
       view,
       cm,
       insertMode,
@@ -169,7 +174,7 @@ if (
       );
     try {
       await render();
-      await t.settle();
+      await t.shown();
       expect(t.view()).not.toBeNull();
       await React.act(async () => {
         t.view()!.contentDOM.dispatchEvent(new Event("focus"));
@@ -304,7 +309,7 @@ if (
           />,
         ),
       );
-      await t.settle();
+      await t.shown();
       await React.act(async () => {
         t.view()!.contentDOM.dispatchEvent(new Event("focus"));
         t.view()!.contentDOM.dispatchEvent(

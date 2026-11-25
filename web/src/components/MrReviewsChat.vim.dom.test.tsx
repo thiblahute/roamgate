@@ -137,7 +137,8 @@ if (
           </div>,
         );
       });
-      await settle();
+      // The chats' Vim box is lazy: shown once loaded, however long it takes.
+      while (!host.querySelector(".mr-reviews-chat .cm-editor")) await settle();
       // The chats' Vim box, no textarea; no @ picker here, and no Queue:
       // the reviews agent cannot be steered.
       expect(host.querySelector(".mr-reviews-chat textarea")).toBeNull();
