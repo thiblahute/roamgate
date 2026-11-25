@@ -519,7 +519,7 @@ fn its_keys_are_checked_the_old_players_are_ignored() {
     let dir = tempfile::tempdir().unwrap();
     let read = |extra: Value| {
         let path = dir.path().join("voice.json");
-        let mut body = json!({"helper": "/bin/sh", "whisper_model": "/bin/sh", "tts_models": [{"model": "kokoro"}]});
+        let mut body = json!({"helper": crate::testdata::a_file(), "whisper_model": crate::testdata::a_file(), "tts_models": [{"model": "kokoro"}]});
         body.as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());

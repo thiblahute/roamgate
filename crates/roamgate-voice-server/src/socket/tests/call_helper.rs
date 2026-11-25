@@ -289,7 +289,7 @@ async fn a_helper_that_mixes_but_makes_no_webrtc_call_is_not_used() {
 fn written(extra: Value) -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("voice.json");
-    let mut raw = json!({"helper": "/bin/sh", "tts_models": [{"model": "kokoro"}]});
+    let mut raw = json!({"helper": crate::testdata::a_file(), "tts_models": [{"model": "kokoro"}]});
     for (key, value) in extra.as_object().unwrap() {
         raw[key] = value.clone();
     }
@@ -337,42 +337,50 @@ fn brings_the_replies_to_call_reply_loudness_or_leaves_them_on_false() {
         None
     );
     for loudness in [json!(-3), json!(-50), json!("loud"), json!(true)] {
-        let error = read(json!({"whisper_model": "/bin/sh", "call_reply_loudness": loudness}))
-            .err()
-            .unwrap();
+        let error = read(
+            json!({"whisper_model": crate::testdata::a_file(), "call_reply_loudness": loudness}),
+        )
+        .err()
+        .unwrap();
         assert!(error.contains("call_reply_loudness"), "{error}");
     }
-    let kept = read(json!({"whisper_model": "/bin/sh", "call_reply_loudness": false})).unwrap();
+    let kept =
+        read(json!({"whisper_model": crate::testdata::a_file(), "call_reply_loudness": false}))
+            .unwrap();
     assert_eq!(kept.raw["call_reply_loudness"], false);
 }
 
 #[test]
 fn voice_json_takes_call_music_at_start_as_a_boolean_only() {
-    let error = read(json!({"whisper_model": "/bin/sh", "call_music_at_start": "yes"}))
-        .err()
-        .unwrap();
+    let error =
+        read(json!({"whisper_model": crate::testdata::a_file(), "call_music_at_start": "yes"}))
+            .err()
+            .unwrap();
     assert!(error.contains("call_music_at_start"), "{error}");
 }
 
 #[test]
 fn voice_json_takes_call_music_device_as_a_string_only() {
-    let error = read(json!({"whisper_model": "/bin/sh", "call_music_device": 3}))
+    let error = read(json!({"whisper_model": crate::testdata::a_file(), "call_music_device": 3}))
         .err()
         .unwrap();
     assert!(error.contains("call_music_device"), "{error}");
-    let kept =
-        read(json!({"whisper_model": "/bin/sh", "call_music_device": "amd-desktop"})).unwrap();
+    let kept = read(
+        json!({"whisper_model": crate::testdata::a_file(), "call_music_device": "amd-desktop"}),
+    )
+    .unwrap();
     assert_eq!(kept.raw["call_music_device"], "amd-desktop");
 }
 
 #[test]
 fn voice_json_refuses_levels_out_of_range() {
-    let error = read(json!({"whisper_model": "/bin/sh", "call_background_ducked": 2}))
-        .err()
-        .unwrap();
+    let error =
+        read(json!({"whisper_model": crate::testdata::a_file(), "call_background_ducked": 2}))
+            .err()
+            .unwrap();
     assert!(error.contains("call_background_ducked"), "{error}");
     let fine = read(json!({
-        "whisper_model": "/bin/sh",
+        "whisper_model": crate::testdata::a_file(),
         "call_background": "osxprocesstapsrc bundle-id=com.spotify.client",
         "call_background_volume": 0.5,
     }))
