@@ -198,18 +198,21 @@ test.skipIf(process.platform !== "win32")(
       expect(installed("roamgate-pi.exe")).toBe("roamgate 2.0.0");
       expect(installed("roamgate.exe.previous")).toBe("roamgate 1.0.0");
 
-      // A pinned version, from its own archive name. While the old
-      // roamgate.exe.previous still runs, it cannot make way: refused,
-      // nothing moved.
+      // A pinned version, from its own archive name, while the replaced
+      // roamgate.exe.previous still runs (as a pane's holder would): it
+      // moves aside, and the install after it stops removes it.
       release(`roamgate-v1.0.0-${platform}.zip`, "1.0.0");
       ran = await install({ ROAMGATE_VERSION: "1.0.0" });
-      expect(ran.exitCode).not.toBe(0);
-      expect(ran.stderr).toContain("is in use");
-      expect(installed("roamgate.exe")).toBe("roamgate 2.0.0");
+      expect(ran.exitCode, ran.stderr).toBe(0);
+      expect(installed("roamgate.exe")).toBe("roamgate 1.0.0");
+      expect(names().filter((name) => name.includes(".stale-"))).toHaveLength(
+        1,
+      );
       running.kill();
       await running.exited;
       ran = await install({ ROAMGATE_VERSION: "1.0.0" });
       expect(ran.exitCode, ran.stderr).toBe(0);
+      expect(names().filter((name) => name.includes(".stale-"))).toEqual([]);
       expect(installed("roamgate.exe")).toBe("roamgate 1.0.0");
 
       // Every refusal leaves the installation as it was.
