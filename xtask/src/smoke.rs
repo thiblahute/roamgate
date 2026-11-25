@@ -6,7 +6,8 @@
 //! a sandbox with a login password: `/healthz`, the login page for a
 //! stranger, a refused and an accepted login, the web app, the `/ws` hello,
 //! and the review client's calls on the agent socket
-//! (`~/.cache/roamgate/review.sock`, AF_UNIX on every platform).
+//! (`~/.cache/roamgate/review.sock`, AF_UNIX on every platform) through
+//! `roamgate review`.
 //!
 //! `--exec-prefix` runs the sandbox's commands through a prefix (an Alpine
 //! container for the musl target); the checks run from here.
@@ -134,8 +135,8 @@ pub fn run(smoke: &Smoke) -> Result<()> {
     let hello = ws_hello(address, &cookie)?;
     eprintln!("xtask: smoke: /ws said hello: {hello}");
 
-    let listed = agent_call(&sandbox.home, &mut || server.running())?;
-    eprintln!("xtask: smoke: the agent socket gave the skill, and for list: {listed}");
+    let listed = agent_calls(&sandbox, &bin, target, &mut || server.running())?;
+    eprintln!("xtask: smoke: roamgate review gave the skill, and for list: {listed}");
 
     drop(server);
     eprintln!(
@@ -346,11 +347,18 @@ fn ws_hello(address: SocketAddr, cookie: &str) -> Result<Value> {
     bail!("no hello on /ws")
 }
 
-/// The review client's calls (contract/assets/python/roamgate-review.py)
-/// over the agent socket its link names: `skill`, which needs no Herdr, and
-/// `list`, which answers that no connection is ready (the sandbox has no
-/// Herdr) as JSON.
-fn agent_call(home: &Path, running: &mut dyn FnMut() -> bool) -> Result<Value> {
+/// The review client's calls over the agent socket, as an agent makes
+/// them: `roamgate review` of the package and the `roamgate-review` the
+/// server installs under `~/.cache/roamgate/bin`. `skill` needs no Herdr;
+/// `list --all` answers that no connection is ready (the sandbox has no
+/// Herdr), as JSON on stderr with exit 1.
+fn agent_calls(
+    sandbox: &Sandbox,
+    bin: &Path,
+    target: &Target,
+    running: &mut dyn FnMut() -> bool,
+) -> Result<String> {
+    let home = &sandbox.home;
     let link = home.join(".cache/roamgate/review.sock");
     let deadline = Instant::now() + Duration::from_secs(60);
     // The link itself: Windows may not stat through it to an AF_UNIX socket.
@@ -363,61 +371,29 @@ fn agent_call(home: &Path, running: &mut dyn FnMut() -> bool) -> Result<Value> {
         );
         std::thread::sleep(Duration::from_millis(250));
     }
-    let body = json!({
-        "pane": "",
-        "workspace": "",
-        "herdr_socket": "",
-        "cwd": home.to_string_lossy(),
-        "agent": "smoke",
-    });
-    let skill = agent_request(&link, "skill", &body)?;
+    let suffix = if target.os == "win32" { ".exe" } else { "" };
+    let installed = home.join(format!(".cache/roamgate/bin/roamgate-review{suffix}"));
+    for (client, args) in [
+        (bin, &["review", "skill"][..]),
+        (installed.as_path(), &["skill"][..]),
+    ] {
+        let output = sandbox.run(client, args)?;
+        ensure!(
+            output.status.success()
+                && String::from_utf8_lossy(&output.stdout).contains("roamgate-review"),
+            "{} {args:?} did not give the skill ({})",
+            client.display(),
+            output.status
+        );
+    }
+    let list = sandbox.run(bin, &["review", "list", "--all"])?;
+    let said = String::from_utf8_lossy(&list.stderr).into_owned();
+    let answer: Value = serde_json::from_str(said.trim())
+        .with_context(|| format!("roamgate review list --all said {said:?}"))?;
     ensure!(
-        skill.status == 200,
-        "skill on the agent socket answered {}: {}",
-        skill.status,
-        skill.text()
-    );
-    let skill: Value = serde_json::from_slice(&skill.body).context("the skill's answer")?;
-    ensure!(
-        skill["skill"]
-            .as_str()
-            .is_some_and(|text| text.contains("roamgate-review")),
-        "skill answered {skill}"
-    );
-    let mut all = body.clone();
-    all["all"] = json!("1");
-    let list = agent_request(&link, "list", &all)?;
-    let answer: Value = serde_json::from_slice(&list.body).context("the list's answer")?;
-    ensure!(
-        list.status == 503 && answer["error"] == "no local connection is ready",
-        "list on the agent socket answered {}: {answer}",
+        list.status.code() == Some(1) && answer["error"] == "no local connection is ready",
+        "roamgate review list --all answered {} with {answer}",
         list.status
     );
-    Ok(answer)
-}
-
-/// `POST /v1/<command>` with `body` over the agent socket at `link`.
-fn agent_request(link: &Path, command: &str, body: &Value) -> Result<Response> {
-    let body = body.to_string();
-    let request = format!(
-        "POST /v1/{command} HTTP/1.1\r\nHost: roamgate\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    parse_response(&unix_exchange(link, request.as_bytes())?)
-}
-
-/// Writes `request` on the AF_UNIX socket at `path` (Windows has them since
-/// 10 1803), reads to the end.
-fn unix_exchange(path: &Path, request: &[u8]) -> Result<Vec<u8>> {
-    use socket2::{Domain, SockAddr, Socket, Type};
-    let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
-    socket.set_read_timeout(Some(Duration::from_secs(30)))?;
-    socket
-        .connect(&SockAddr::unix(path)?)
-        .with_context(|| format!("connecting to {}", path.display()))?;
-    let mut socket = socket;
-    socket.write_all(request)?;
-    let mut response = Vec::new();
-    socket.read_to_end(&mut response)?;
-    Ok(response)
+    Ok(answer.to_string())
 }
