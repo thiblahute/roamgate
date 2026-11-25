@@ -222,6 +222,30 @@ describe("a node page", () => {
     expect(home.last("review.get")?.connection_generation).toBe(3);
   });
 
+  test("keeps the connection the page chose before the node's hello", async () => {
+    const bridge = routed();
+    bridge.setActiveConnection("desktop");
+    bridge.connect();
+    FakeSocket.all[0]!.hello({
+      home: HOME,
+      connection_id: "local",
+      version: "1.0.0",
+    });
+    expect(bridge.activeConnectionId).toBe("desktop");
+    const home = FakeSocket.all[1]!;
+    home.hello();
+    expect(bridge.activeConnectionId).toBe("desktop");
+    bridge.setConnectionRuntimeGenerations([{ id: "desktop", generation: 5 }]);
+    const catalog = bridge.call("connections.list");
+    home.reply("connections.list", {
+      connections: [{ id: "desktop", generation: 5 }],
+    });
+    await catalog;
+    bridge.setConnectionRuntimeGenerations([{ id: "desktop", generation: 5 }]);
+    fire(bridge.connection("desktop", 5).call("pane.list", {}));
+    expect(home.last("pane.list")?.connection_id).toBe("desktop");
+  });
+
   test("sends other connections and shared calls to the home", async () => {
     const { bridge, node, home } = await nodePage();
     bridge.setActiveConnection("desktop");

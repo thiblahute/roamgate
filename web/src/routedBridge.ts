@@ -653,17 +653,18 @@ export class RoutedBridge {
 
   private startRouting(node: NodeAdvertisement): void {
     this.node = node;
-    this._activeConnectionId = node.connection_id;
+    // The connection the page already chose, or the node's own (the node's
+    // hello made it the page socket's default).
+    this._activeConnectionId = this.page.activeConnectionId;
     this._clientGeneration = this.page.clientGeneration + 1;
     this._status =
       this.page.status === "disconnected" ? "disconnected" : "connecting";
-    this.page.setActiveConnection(node.connection_id);
     const home = this.createBridge({
       url: () => homeSocketUrl(node.home),
       onLoggedOut: () => this.setHomeReach("signin"),
     });
     this.home = home;
-    home.setActiveConnection(node.connection_id);
+    home.setActiveConnection(this._activeConnectionId);
     this.attach(home, "home");
     setHttpRouter((path) => this.routeHttp(path));
     installHomeFetch(node.home, (path) => this.routeHttp(path));
