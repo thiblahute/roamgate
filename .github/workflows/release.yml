@@ -1,10 +1,15 @@
 name: Release
 
+# A run on a v* tag publishes that release. A run on any other ref (a
+# dispatch on a ci/** branch) is a dry run: it validates, builds, packages,
+# smokes and update-proves every target with the next patch version, and
+# publishes nothing: the publish job, the only one with write permissions,
+# runs only on refs/tags/v*.
 on:
   push:
     tags: ["v*"]
   # Allows the Publish Release workflow (or a maintainer) to dispatch a run
-  # on an existing tag ref.
+  # on an existing tag ref, and a dry run on a branch.
   workflow_dispatch:
 
 permissions:
@@ -19,6 +24,8 @@ jobs:
     name: Validate release
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -30,6 +37,7 @@ jobs:
           no-cache: true
       - run: bun install --frozen-lockfile
       - name: Verify release metadata
+        id: version
         shell: bash
         run: |
           package_version="$(bun -e 'console.log(require("./package.json").version)')"
@@ -37,12 +45,20 @@ jobs:
           server_version="$(bun -e 'console.log(require("./server/package.json").version)')"
 
           [[ "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          test "$GITHUB_REF_NAME" = "v$package_version"
           test "$web_version" = "$package_version"
           test "$server_version" = "$package_version"
           # The binary's version is the Cargo workspace's.
           test "$(cargo xtask version)" = "$package_version"
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            test "$GITHUB_REF_NAME" = "v$package_version"
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+            version="$package_version"
+          else
+            # A dry run: packages above the last release, so that the
+            # update proof has something to update to.
+            version="$(cargo xtask version --next)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: bun run precommit
 
   targets:
@@ -85,7 +101,7 @@ jobs:
 
   package:
     name: Package ${{ matrix.target.platform }}
-    needs: [targets, web]
+    needs: [validate, targets, web]
     strategy:
       fail-fast: false
       matrix:
@@ -124,11 +140,15 @@ jobs:
           esac
       - name: Build, package and verify
         shell: bash
-        run: cargo xtask package "${{ matrix.target.platform }}" --version "${GITHUB_REF_NAME#v}"
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: cargo xtask package "${{ matrix.target.platform }}" --version "$VERSION"
       - name: Verify release package
         shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="$VERSION"
           platform="${{ matrix.target.platform }}"
           dist="target/dist"
           package_dir="roamgate-$platform"
@@ -181,7 +201,7 @@ jobs:
 
   check:
     name: Run ${{ matrix.target.platform }}
-    needs: [targets, web, package]
+    needs: [validate, targets, web, package]
     strategy:
       fail-fast: false
       matrix:
@@ -198,8 +218,10 @@ jobs:
           path: target/dist
       - name: Run the packaged binary
         shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="$VERSION"
           platform="${{ matrix.target.platform }}"
           dir="$RUNNER_TEMP/run"
           mkdir -p "$dir"
@@ -217,29 +239,34 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          # Releases are published upstream; a fork has none to update from.
+          RELEASES_REPO: powerfooI/roamgate
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           command -v cargo >/dev/null || {
             curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
             export PATH="$HOME/.cargo/bin:$PATH"
           }
           platform="${{ matrix.target.platform }}"
-          previous="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '[.[] | select(.tagName != env.GITHUB_REF_NAME)][0].tagName // ""')"
+          previous="$(gh release list --repo "$RELEASES_REPO" --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '[.[] | select(.tagName != env.GITHUB_REF_NAME)][0].tagName // ""')"
           if [ -z "$previous" ]; then
             echo "No earlier release to update from."
             exit 0
           fi
           from="$RUNNER_TEMP/previous"
           mkdir -p "$from"
-          gh release download "$previous" --repo "$GITHUB_REPOSITORY" \
+          gh release download "$previous" --repo "$RELEASES_REPO" \
             --pattern "roamgate-$platform.tar.xz" --dir "$from"
           tar -xJf "$from/roamgate-$platform.tar.xz" -C "$from" "roamgate-$platform/roamgate"
           cargo xtask update-proof "$platform" \
             --from "$from/roamgate-$platform/roamgate" \
-            --version "${GITHUB_REF_NAME#v}"
+            --version "$VERSION"
 
   publish:
     name: Publish GitHub Release
-    needs: [package, check]
+    needs: [validate, package, check]
+    # Only a v* tag publishes; a dry run on a branch stops before this job.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -254,7 +281,9 @@ jobs:
           pattern: roamgate-*
           merge-multiple: true
       - name: Reject missing assets and legacy update aliases
-        run: node scripts/check-release-assets.mjs "${GITHUB_REF_NAME#v}"
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: node scripts/check-release-assets.mjs "$VERSION"
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

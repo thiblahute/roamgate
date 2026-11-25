@@ -2,6 +2,10 @@ name: CI
 
 on:
   pull_request:
+  # ci/** branches run it on a fork, where workflow_dispatch reaches only
+  # the workflows of the default branch.
+  push:
+    branches: [main, "ci/**"]
   workflow_dispatch:
 
 permissions:
