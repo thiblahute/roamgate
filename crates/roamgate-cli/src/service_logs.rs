@@ -111,7 +111,7 @@ mod tests {
             |_| None,
         );
         assert_eq!(run(&[], &cli.context), Ok(EXIT_FAILURE));
-        let logs = cli.home().join("Library/Logs");
+        let logs = cli.in_home("Library/Logs");
         std::fs::create_dir_all(&logs).unwrap();
         std::fs::write(logs.join("roamgate.stderr.log"), "").unwrap();
         std::fs::write(logs.join("roamgate.stdout.log"), "").unwrap();

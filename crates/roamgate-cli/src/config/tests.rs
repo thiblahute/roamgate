@@ -136,7 +136,13 @@ async fn set_creates_the_file_from_the_template_with_private_permissions() {
             .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
-    assert_eq!(cli.output(), ["Updated ~/.config/roamgate/roamgate.env"]);
+    assert_eq!(
+        cli.output(),
+        [format!(
+            "Updated {}",
+            cli.shown(".config/roamgate/roamgate.env")
+        )]
+    );
 }
 
 #[tokio::test]

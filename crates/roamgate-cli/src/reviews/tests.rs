@@ -207,7 +207,10 @@ fn export_the_authored_state_only_key_sorted_stable_without_secrets() {
     assert_eq!(printed.code, 0, "{}", printed.stderr);
     assert_eq!(
         printed.stdout,
-        "Wrote the Reviews export to ~/out.json\n".to_owned()
+        format!(
+            "Wrote the Reviews export to {}\n",
+            crate::context::testing::shown(seeded.home.path(), "out.json")
+        )
     );
     assert_eq!(seeded.read(&out), format!("{text}\n"));
     assert!(text.find("\"efforts\"").unwrap() < text.find("\"exported_at\"").unwrap());
