@@ -39,10 +39,12 @@ url = "2"
 rustix = { version = "1", features = ["fs", "process"] }
 
 # Unix sockets on Windows (local_socket): tokio has no AF_UNIX there.
+# Owner-only ACLs (private.rs): windows-sys.
 [target.'cfg(windows)'.dependencies]
 async-io = "2"
 futures-io = "0.3"
 socket2 = "0.6"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 
 [dev-dependencies]
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }

@@ -4,9 +4,11 @@
 //! assistant/task-storage.ts).
 //!
 //! On Windows there is no O_NOFOLLOW (Node's `constants.O_NOFOLLOW ?? 0`),
-//! modes are only the read-only bit (Node's chmod), and std cannot read a
-//! file's link count yet, so the single-link check is Unix only there; the
-//! symlink checks of [`crate::paths`] still run.
+//! modes are the read-only bit (Node's chmod) plus, for an owner-only mode
+//! (0700, 0600), a protected DACL that only the account can use, inherited
+//! by what is created under a directory ([`restrict_to_owner`]); std cannot
+//! read a file's link count yet, so the single-link check is Unix only
+//! there; the symlink checks of [`crate::paths`] still run.
 
 use std::fs::File;
 use std::io::{self, Read};
@@ -31,10 +33,134 @@ pub fn create_dir_all_mode(path: &Path) -> io::Result<()> {
     builder.create(path)
 }
 
-/// chmod, as Node does it: the mode on Unix, the read-only bit on Windows.
+/// chmod, as Node does it: the mode on Unix, the read-only bit on Windows,
+/// where an owner-only mode also leaves the path to this account
+/// ([`restrict_to_owner`]; a file system without ACLs keeps what it has).
 pub fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
     let permissions = mode_permissions(&std::fs::metadata(path)?, mode);
-    std::fs::set_permissions(path, permissions)
+    std::fs::set_permissions(path, permissions)?;
+    if cfg!(windows) && mode & 0o077 == 0 {
+        restrict_to_owner_or_warn(path);
+    }
+    Ok(())
+}
+
+/// [`restrict_to_owner`], a failure logged (FAT, some network shares).
+pub fn restrict_to_owner_or_warn(path: &Path) {
+    if let Err(error) = restrict_to_owner(path) {
+        tracing::warn!(path = %path.display(), %error, "could not restrict to its owner");
+    }
+}
+
+/// Leaves `path` to this account alone, as modes 0700 and 0600 do on Unix:
+/// on Windows a protected DACL with one entry, the process's user with full
+/// control, inherited by files and directories created under a directory
+/// (no other account, group or inherited entry). Nothing off Windows.
+pub fn restrict_to_owner(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        owner_acl::restrict(path)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod owner_acl {
+    use std::io;
+    use std::mem::size_of;
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::Path;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Security::Authorization::{SE_FILE_OBJECT, SetNamedSecurityInfoW};
+    use windows_sys::Win32::Security::{
+        ACCESS_ALLOWED_ACE, ACL, ACL_REVISION, AddAccessAllowedAceEx, CONTAINER_INHERIT_ACE,
+        DACL_SECURITY_INFORMATION, GetLengthSid, GetTokenInformation, InitializeAcl,
+        OBJECT_INHERIT_ACE, PROTECTED_DACL_SECURITY_INFORMATION, TOKEN_QUERY, TOKEN_USER,
+        TokenUser,
+    };
+    use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    /// The process token's TOKEN_USER, in an 8-aligned buffer (its SID
+    /// points inside it).
+    fn token_user() -> io::Result<Vec<u64>> {
+        let mut token: HANDLE = std::ptr::null_mut();
+        // SAFETY: this process's pseudo handle; the token handle it gives
+        // is closed below.
+        if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut needed = 0u32;
+        // SAFETY: a size query, no buffer.
+        unsafe { GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut needed) };
+        let mut buffer = vec![0u64; (needed as usize).div_ceil(8).max(1)];
+        // SAFETY: the buffer holds at least `needed` bytes.
+        let filled = unsafe {
+            GetTokenInformation(
+                token,
+                TokenUser,
+                buffer.as_mut_ptr().cast(),
+                (buffer.len() * 8) as u32,
+                &mut needed,
+            )
+        };
+        let error = io::Error::last_os_error();
+        // SAFETY: the handle OpenProcessToken gave.
+        unsafe { CloseHandle(token) };
+        if filled == 0 {
+            return Err(error);
+        }
+        Ok(buffer)
+    }
+
+    pub fn restrict(path: &Path) -> io::Result<()> {
+        let user = token_user()?;
+        // SAFETY: GetTokenInformation wrote a TOKEN_USER at its start.
+        let sid = unsafe { (*user.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+        // SAFETY: a valid SID of the token.
+        let sid_length = unsafe { GetLengthSid(sid) } as usize;
+        let size =
+            size_of::<ACL>() + size_of::<ACCESS_ALLOWED_ACE>() - size_of::<u32>() + sid_length;
+        let mut buffer = vec![0u32; size.div_ceil(4)];
+        let acl = buffer.as_mut_ptr().cast::<ACL>();
+        let flags = if path.is_dir() {
+            OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE
+        } else {
+            0
+        };
+        // SAFETY: a DWORD-aligned buffer of that many bytes, one entry
+        // with the token's SID added to it.
+        unsafe {
+            if InitializeAcl(acl, (buffer.len() * 4) as u32, ACL_REVISION) == 0
+                || AddAccessAllowedAceEx(acl, ACL_REVISION, flags, FILE_ALL_ACCESS, sid) == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        // SAFETY: a NUL-terminated path and the ACL built above.
+        let status = unsafe {
+            SetNamedSecurityInfoW(
+                wide.as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                acl,
+                std::ptr::null(),
+            )
+        };
+        if status != 0 {
+            return Err(io::Error::from_raw_os_error(status as i32));
+        }
+        Ok(())
+    }
 }
 
 /// fchmod on an open file, as [`set_mode`].
@@ -189,6 +315,40 @@ pub fn protect_sidecars(paths: &[std::path::PathBuf], invalid_message: &str) -> 
         set_mode(sidecar, 0o600)?;
     }
     Ok(())
+}
+
+/// What `icacls` says of a private directory and a file made in it.
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    fn acl(path: &Path) -> String {
+        let output = std::process::Command::new("icacls")
+            .arg(path)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    #[test]
+    fn a_private_directory_and_what_is_made_in_it_are_the_account_s_alone() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("private");
+        create_private_dir(&dir).unwrap();
+        let file = dir.join("secret.json");
+        std::fs::write(&file, "{}").unwrap();
+        let user = std::env::var("USERNAME").unwrap().to_lowercase();
+        for path in [&dir, &file] {
+            let text = acl(path).to_lowercase();
+            assert!(text.contains(&user), "{text}");
+            for other in ["everyone", "builtin\\users", "authenticated users"] {
+                assert!(!text.contains(other), "{other} in {text}");
+            }
+            // One entry: the path's line and nothing more before the summary.
+            let entries = text.lines().filter(|line| line.contains(":(")).count();
+            assert_eq!(entries, 1, "{text}");
+        }
+    }
 }
 
 #[cfg(all(test, unix))]
