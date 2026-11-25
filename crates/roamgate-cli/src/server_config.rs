@@ -296,7 +296,10 @@ pub fn resolve_server_profile(
 /// A read error as Bun's `readFileSync` words it.
 fn read_error(error: &std::io::Error, path: &str) -> String {
     let (code, text) = match error.raw_os_error() {
-        Some(2) => ("ENOENT", "no such file or directory"),
+        // ERROR_PATH_NOT_FOUND too, as libuv maps it on Windows.
+        _ if error.kind() == std::io::ErrorKind::NotFound => {
+            ("ENOENT", "no such file or directory")
+        }
         Some(13) => ("EACCES", "permission denied"),
         Some(1) => ("EPERM", "operation not permitted"),
         Some(20) => ("ENOTDIR", "not a directory"),
