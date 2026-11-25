@@ -404,6 +404,17 @@ pub(crate) mod tests {
     use super::*;
     use crate::clones::{ProjectRef, clones_script, match_clones, order_connections, parse_clones};
 
+    /// `dir`'s real path as git and the scripts print it: `/` separators
+    /// on Windows too.
+    pub(crate) fn git_form(dir: &Path) -> PathBuf {
+        let real = roamgate_base::paths::realpath(dir).unwrap();
+        if cfg!(windows) {
+            PathBuf::from(real.to_string_lossy().replace('\\', "/"))
+        } else {
+            real
+        }
+    }
+
     pub(crate) fn sh(script: &str, cwd: &Path) -> ShellResult {
         let output = Command::new("sh")
             .arg("-c")
@@ -442,7 +453,7 @@ pub(crate) mod tests {
 
     fn forge() -> Forge {
         let dir = tempfile::Builder::new().prefix("mr-wt-").tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = git_form(dir.path());
         let setup = sh(
             r#"
     set -e

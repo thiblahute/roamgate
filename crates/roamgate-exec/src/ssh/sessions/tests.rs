@@ -68,7 +68,7 @@ pub(crate) fn fake_master_with(
 ) -> FakeMaster {
     let directory = tempfile::Builder::new()
         .prefix("rg-sessions-test-")
-        .tempdir_in("/tmp")
+        .tempdir_in(roamgate_base::paths::short_temp_root())
         .unwrap();
     let control_path = directory.path().join("m.ctl");
     std::fs::write(&control_path, "").unwrap();

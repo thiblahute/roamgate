@@ -64,7 +64,7 @@ mod tests {
             return;
         }
         let sessions = sessions();
-        let directory = tempfile::tempdir_in("/tmp").unwrap();
+        let directory = tempfile::tempdir_in(roamgate_base::paths::short_temp_root()).unwrap();
         let control_path = directory
             .path()
             .join("m.ctl")
@@ -96,7 +96,7 @@ mod tests {
         if which("ssh").is_none() {
             return;
         }
-        let directory = tempfile::tempdir_in("/tmp").unwrap();
+        let directory = tempfile::tempdir_in(roamgate_base::paths::short_temp_root()).unwrap();
         let control_path = directory
             .path()
             .join("m.ctl")
@@ -170,7 +170,7 @@ echo "ran $mode"
         fn new() -> Self {
             let directory = tempfile::Builder::new()
                 .prefix("rg-openssh-test-")
-                .tempdir_in("/tmp")
+                .tempdir_in(roamgate_base::paths::short_temp_root())
                 .unwrap();
             let bin = directory.path().join("bin");
             std::fs::create_dir_all(bin.join("remote")).unwrap();

@@ -57,7 +57,7 @@ struct Setup {
 fn setup() -> Setup {
     let dir = tempfile::Builder::new()
         .prefix("mr-mod-")
-        .tempdir_in("/tmp")
+        .tempdir_in(roamgate_base::paths::short_temp_root())
         .unwrap();
     let context = DataContext::new(dir.path(), Platform::current(), None);
     let path = state_path(&context.data_root());
