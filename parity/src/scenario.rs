@@ -1829,8 +1829,19 @@ impl Runner {
         self.wait_for(&client, WAIT).await?;
         self.wait_for(&crate::agent::socket_path(&self.run.home), WAIT)
             .await?;
-        let python = std::env::var("PARITY_PYTHON").unwrap_or_else(|_| "python3".into());
-        let command = vec![python, client.to_string_lossy().into_owned()];
+        // The installed client is the server's binary; `python: true` runs
+        // the Python one SSH hosts get instead.
+        let command = if get(step, "python").and_then(Value::as_bool) == Some(true) {
+            let python = std::env::var("PARITY_PYTHON").unwrap_or_else(|_| "python3".into());
+            vec![
+                python,
+                crate::agent::python_client_path()
+                    .to_string_lossy()
+                    .into_owned(),
+            ]
+        } else {
+            vec![client.to_string_lossy().into_owned()]
+        };
         let env = self.step_env(step);
         let output = crate::cli::run(
             &command,

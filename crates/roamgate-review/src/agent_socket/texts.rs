@@ -1,7 +1,9 @@
 //! What the agent socket installs on each host (review/agent-client.ts,
 //! review/agent-skill.ts and conversation/holder-script.ts's installed
 //! script): the review client, conversation mode's pane holder and the
-//! skill, from contract/assets.
+//! skill, from contract/assets. This machine runs the clients as the
+//! roamgate binary itself (crates/roamgate-agent-client); SSH hosts get
+//! these Python versions.
 
 use std::sync::LazyLock;
 
@@ -9,8 +11,9 @@ use roamgate_base::assets::{REVIEW_SKILL_MD, ROAMGATE_HOLD_PY, ROAMGATE_REVIEW_P
 use sha2::{Digest, Sha256};
 
 /// The agent-side client, installed as `~/.cache/roamgate/bin/roamgate-review`
-/// on the bridge's machine and on each SSH host. Python 3 standard library
-/// only; it speaks JSON over the unix socket the bridge listens on.
+/// on each SSH host. Python 3 standard library only; it speaks JSON over
+/// the unix socket the bridge listens on, as the binary's own
+/// `roamgate-review` does on this machine.
 pub const REVIEW_CLIENT_SCRIPT: &str = ROAMGATE_REVIEW_PY;
 
 /// Instructions for coding agents, printed by `roamgate-review skill` and

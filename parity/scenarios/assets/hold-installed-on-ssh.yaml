@@ -1,9 +1,11 @@
-name: an SSH host gets the same roamgate-hold the server installs locally
+name: an SSH host gets the Python roamgate-hold, the server its own binary
 family: connections
 description: >
   When an SSH profile connects, the server installs its agent clients on
   the host (fake-ssh runs the setup in the fake remote home): the
-  roamgate-hold there is the one installed locally, byte for byte.
+  roamgate-hold and roamgate-review there are the Python ones of
+  contract/assets/python with their version line, byte for byte, while
+  this machine's are links to the server's own binary.
 server:
   herdr: false
   herdrs:
@@ -40,5 +42,11 @@ steps:
   - wait_file: "${ROOT}/remote-home/.cache/roamgate/bin/roamgate-hold"
     within_ms: 20000
   - wait_file: .cache/roamgate/bin/roamgate-hold
-  - sh: cmp "${HOME}/.cache/roamgate/bin/roamgate-hold" "${ROOT}/remote-home/.cache/roamgate/bin/roamgate-hold"
+  - sh: |
+      remote="${ROOT}/remote-home/.cache/roamgate/bin"
+      for name in roamgate-hold roamgate-review; do
+        sed '$d' "$remote/$name" | cmp - "${REPO}/contract/assets/python/$name.py" || exit 1
+        tail -n 1 "$remote/$name" | grep -Eq "^# $name [0-9a-f]{16}$" || exit 1
+      done
+      [ "$(readlink -f "${HOME}/.cache/roamgate/bin/roamgate-hold")" = "$(readlink -f "${SERVER_BIN}")" ]
   - fake_calls: { program: ssh, argv_match: "roamgate-hold", min: 1 }

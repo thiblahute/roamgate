@@ -1,5 +1,6 @@
 //! The agent socket (`POST /v1/<command>` on a Unix socket) and its real
-//! Python client, `roamgate-review`, as the server installs it.
+//! clients: `roamgate-review` as the server installs it (its own binary),
+//! and the Python one SSH hosts run.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -20,6 +21,15 @@ pub fn client_path(home: &Path) -> PathBuf {
         .join("roamgate")
         .join("bin")
         .join("roamgate-review")
+}
+
+/// The Python client SSH hosts get (contract/assets/python).
+pub fn python_client_path() -> PathBuf {
+    crate::paths::repo_root()
+        .join("contract")
+        .join("assets")
+        .join("python")
+        .join("roamgate-review.py")
 }
 
 pub async fn post(

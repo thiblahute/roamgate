@@ -1,6 +1,9 @@
 //! The `roamgate` executable: the server (`roamgate [server flags]`, the
 //! front with its standalone core), the management commands
-//! (`roamgate <command> [arguments]`) and the hidden `core`.
+//! (`roamgate <command> [arguments]`), the hidden `core`, and the agents'
+//! clients: run as `roamgate-review` or `roamgate-hold` (the links the
+//! server installs in `~/.cache/roamgate/bin`), or as `roamgate review`
+//! and `roamgate hold`.
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
@@ -13,9 +16,17 @@ use roamgate::{Options, parse_args};
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+fn main() -> ExitCode {
+    let argv: Vec<String> = std::env::args().collect();
+    // The clients block on their own threads: no runtime.
+    if let Some(code) = roamgate_agent_client::run_from_args(&argv) {
+        return ExitCode::from(u8::try_from(code).unwrap_or(1));
+    }
+    serve(argv.into_iter().skip(1).collect())
+}
+
 #[tokio::main]
-async fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+async fn serve(args: Vec<String>) -> ExitCode {
     let options = match parse_args(&args) {
         Ok(options) => options,
         Err(message) => {

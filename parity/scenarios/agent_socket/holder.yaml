@@ -73,6 +73,6 @@ steps:
     body: { pane: "w1:p1", session: "x" }
     expect: { status: 400, json: { error: invalid session id } }
   - wait_file: .cache/roamgate/bin/roamgate-hold
-  - sh: HERDR_PANE_ID=w1:p1 python3 "$HOME/.cache/roamgate/bin/roamgate-hold" --launch 0123456789abcdef0123
+  - sh: HERDR_PANE_ID=w1:p1 "$HOME/.cache/roamgate/bin/roamgate-hold" --launch 0123456789abcdef0123
     expect: { exit: "{{number}}" }
     golden: hold-launch-unknown

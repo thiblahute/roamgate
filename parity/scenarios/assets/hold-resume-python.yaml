@@ -1,0 +1,173 @@
+name: the Python roamgate-hold SSH hosts run holds a pane and resumes claude as the installed one does
+family: conversation
+description: >
+  The Python roamgate-hold (contract/assets/python, what SSH hosts get),
+  run as a pane would run it, against scripted agent sockets: what it asks, how it
+  takes a pane back on Enter alone, what it resumes and with which
+  arguments and environment. A fake claude prints how it was started; a
+  fake ps keeps the host's own processes out of it.
+server:
+  herdr: false
+  files:
+    .claude/projects/elsewhere/11111111-aaaa-bbbb-cccc-000000000000.jsonl: "{}\n"
+    .claude/projects/elsewhere/22222222-aaaa-bbbb-cccc-000000000000.jsonl: "{}\n"
+    .claude/projects/elsewhere/s-1.jsonl: "{}\n"
+    "${ROOT}/hbin/claude":
+      {
+        text: "#!/bin/sh\necho \"claude $* start=$ROAMGATE_CLAUDE_START\"\n",
+        mode: "0755",
+      }
+    "${ROOT}/hbin/other-agent":
+      { text: "#!/bin/sh\necho \"other-agent $*\"\n", mode: "0755" }
+    "${ROOT}/hbin/ps":
+      { text: "#!/bin/sh\necho '  1 /sbin/init'\n", mode: "0755" }
+    "${ROOT}/gone/claude":
+      { text: "#!/bin/sh\necho \"claude $*\"\n", mode: "0755" }
+    "${ROOT}/gone/ps":
+      {
+        text: "#!/bin/sh\necho '  42 claude -p --resume s-1 --input-format stream-json'\n",
+        mode: "0755",
+      }
+steps:
+  - wait_file: .cache/roamgate/bin/roamgate-hold
+  - set:
+      {
+        hold: "python3 ${REPO}/contract/assets/python/roamgate-hold.py",
+        base: "env -i PATH=${ROOT}/hbin:/usr/bin:/bin HOME=${HOME}",
+      }
+  # Roamgate says resume at once: claude --resume in its directory.
+  - serve_agent_socket: resume
+    replies:
+      {
+        "*":
+          {
+            action: resume,
+            session_id: 22222222-aaaa-bbbb-cccc-000000000000,
+            cwd: /,
+          },
+      }
+  - sh: "${base} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${resume_socket} ${hold} 11111111-aaaa-bbbb-cccc-000000000000 </dev/null"
+    expect:
+      exit: 0
+      stdout_contains:
+        [
+          "conversation mode; Enter takes it back here",
+          "claude --resume 22222222-aaaa-bbbb-cccc-000000000000 start=terminal",
+        ]
+  - agent_socket_requests:
+      name: resume
+      calls:
+        [
+          {
+            command: hold,
+            body:
+              { pane: "w1:p1", session: 11111111-aaaa-bbbb-cccc-000000000000 },
+          },
+        ]
+  # Enter asks for the session back; a refusal keeps holding, the next Enter resumes.
+  - serve_agent_socket: refusing
+    replies:
+      hold: { action: hold, session_id: s-1 }
+      handback:
+        [
+          { action: refused, reason: Claude is in the middle of a turn },
+          { action: resume, session_id: s-1, cwd: / },
+        ]
+  - sh: "printf '\\n\\n' | ${base} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${refusing_socket} ${hold} s-1"
+    within_ms: 20000
+    expect:
+      {
+        exit: 0,
+        stdout_contains:
+          [Claude is in the middle of a turn, "claude --resume s-1"],
+      }
+  - agent_socket_requests: { name: refusing, command: handback, count: 2 }
+  # --socket names the socket; claude resumes with the reply's flags.
+  - serve_agent_socket: flags
+    replies:
+      {
+        "*":
+          {
+            action: resume,
+            session_id: s-1,
+            cwd: /,
+            args: [--model, haiku, --resume, s-1],
+          },
+      }
+  - sh: "${base} HERDR_PANE_ID=w1:p1 ${hold} s-1 --socket ${flags_socket} </dev/null"
+    expect: { exit: 0, stdout_contains: "claude --model haiku --resume s-1" }
+  # A reply's whole argv wins over args, and another agent keeps its arguments.
+  - serve_agent_socket: argv
+    replies:
+      {
+        "*":
+          {
+            action: resume,
+            session_id: s-1,
+            cwd: /,
+            argv: [other-agent, resume, s-1],
+            args: [--resume, s-1],
+          },
+      }
+  - sh: "${base} HERDR_PANE_ID=w1:p1 ${hold} s-1 --socket ${argv_socket} </dev/null"
+    expect: { exit: 0, stdout_contains: other-agent resume s-1 }
+    save: { argv_out: /stdout }
+  - sh: "case '${argv_out}' in *'claude '*) exit 1;; esac"
+  # Text typed in the pane is no hand-back; Enter alone is.
+  - serve_agent_socket: typed
+    replies:
+      hold: { action: hold, session_id: s-1 }
+      handback: { action: resume, session_id: s-1, cwd: / }
+  - sh: "printf 'Explain how tides work\\n\\n' | ${base} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${typed_socket} ${hold} s-1"
+    within_ms: 20000
+    expect:
+      { exit: 0, stdout_contains: [Press Enter alone, "claude --resume s-1"] }
+  - agent_socket_requests: { name: typed, command: handback, count: 1 }
+  # A Roamgate that cannot answer for the pane (503): no headless claude
+  # on the host, so Enter resumes claude.
+  - serve_agent_socket: down
+    replies:
+      { "*": { $status: 503, $body: { error: this connection is not ready } } }
+  - sh: "printf '\\n' | ${base} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${down_socket} ${hold} s-1"
+    within_ms: 30000
+    expect: { exit: 0, stdout_contains: "claude --resume s-1" }
+  # No pane and no session: a usage error.
+  - sh: "${base} ROAMGATE_REVIEW_SOCKET=${down_socket} ${hold} </dev/null"
+    expect: { exit: 2 }
+  # A session with no transcript yet starts with its id, marked to stay in
+  # the terminal.
+  - serve_agent_socket: fresh
+    replies:
+      {
+        "*":
+          {
+            action: resume,
+            session_id: 33333333-aaaa-bbbb-cccc-000000000000,
+            cwd: /,
+            args:
+              [--model, haiku, --resume, 33333333-aaaa-bbbb-cccc-000000000000],
+          },
+      }
+  - sh: "${base} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${fresh_socket} ${hold} 33333333-aaaa-bbbb-cccc-000000000000 </dev/null"
+    expect:
+      {
+        exit: 0,
+        stdout_contains: "claude --model haiku --session-id 33333333-aaaa-bbbb-cccc-000000000000 start=terminal",
+      }
+  - sh: "${base} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${resume_socket} ${hold} s-1 </dev/null"
+    expect: { exit: 0, stdout_contains: "start=terminal" }
+  # Roamgate gone while a headless claude still runs on an earlier id
+  # (/clear moved the lease to s-2): Enter does not resume next to it.
+  - serve_agent_socket: leaving
+    replies: { hold: [{ action: hold, session_id: s-2 }, { $hang: true }] }
+  - spawn: holder
+    command: "env -i PATH=${ROOT}/gone:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${leaving_socket} ${hold} s-1"
+  - agent_socket_requests: { name: leaving, command: hold, count: 2 }
+  - stop_agent_socket: leaving
+  - write_stdin: { name: holder, text: "\n" }
+  - wait_process: holder
+    kill_after_ms: 1500
+    expect:
+      { stdout_contains: "a conversation process still runs, so not resuming" }
+    save: { gone_out: /stdout }
+  - sh: "case '${gone_out}' in *'claude --resume'*) exit 1;; esac"

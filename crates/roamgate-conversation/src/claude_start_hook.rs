@@ -4,19 +4,21 @@
 //! pane, and conversation mode takes it if the setting says so. Roamgate
 //! adds the hook to the host's `~/.claude/settings.json` once the setting
 //! is on for a connection to that host; the user's own hooks and settings
-//! are kept as they are.
+//! are kept as they are. This machine's is added in Rust
+//! (`roamgate_agent_client::hook_install`); an SSH host's by the Python
+//! installer below, which does the same.
 
 use base64::Engine;
 use roamgate_base::assets::CLAUDE_START_HOOK_INSTALL_PY;
 
 /// What the hook runs; also how Roamgate finds its own entry.
-pub const CLAUDE_START_HOOK_COMMAND: &str = "~/.cache/roamgate/bin/roamgate-review claude-start";
+pub const CLAUDE_START_HOOK_COMMAND: &str = roamgate_agent_client::hook_install::COMMAND;
 
 /// Adds the hook to Claude's user settings unless it is there. Prints one
 /// word: installed, present, no-claude, invalid or unwritable.
 pub const CLAUDE_START_HOOK_INSTALL_SCRIPT: &str = CLAUDE_START_HOOK_INSTALL_PY;
 
-/// The command that runs the script on a host: python3 decodes it.
+/// The command that runs the script on an SSH host: python3 decodes it.
 pub fn claude_start_hook_install_argv() -> Vec<String> {
     vec![
         "python3".into(),
@@ -26,7 +28,7 @@ pub fn claude_start_hook_install_argv() -> Vec<String> {
     ]
 }
 
-/// The same, as one shell command for an SSH host.
+/// The same, as one shell command.
 pub fn claude_start_hook_install_command() -> String {
     let argv = claude_start_hook_install_argv();
     format!("{} {} '{}' '{}'", argv[0], argv[1], argv[2], argv[3])
@@ -52,6 +54,10 @@ mod tests {
         assert!(CLAUDE_START_HOOK_INSTALL_PY.contains(&format!(
             "\nCOMMAND = {}\n",
             serde_json::to_string(CLAUDE_START_HOOK_COMMAND).unwrap()
+        )));
+        assert!(CLAUDE_START_HOOK_INSTALL_PY.contains(&format!(
+            "\nMARK = {}\n",
+            serde_json::to_string(roamgate_agent_client::hook_install::MARK).unwrap()
         )));
     }
 }

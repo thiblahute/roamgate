@@ -36,7 +36,7 @@ server:
       os.write(fd, b\"exit\\r\")\n"
 steps:
   - wait_file: .cache/roamgate/bin/roamgate-hold
-  - sh: cp ${HOME}/.cache/roamgate/bin/roamgate-hold ${ROOT}/hbin/roamgate-hold && chmod 755 ${ROOT}/hbin/roamgate-hold
+  - sh: ln -s ${HOME}/.cache/roamgate/bin/roamgate-hold ${ROOT}/hbin/roamgate-hold
   - serve_agent_socket: job
     replies:
       hold:

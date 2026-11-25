@@ -862,15 +862,17 @@ pub(super) async fn ensure_claude_start_hook(layer: &Layer, cx: &FamilyContext, 
                 ran.stderr,
             )
         }),
-        None => {
-            super::connections::run_local(
-                layer,
-                roamgate_conversation::claude_start_hook::claude_start_hook_install_argv(),
-                20_000,
-                None,
-            )
-            .await
-        }
+        // This host: the installer runs here, in Rust (no Python).
+        None => tokio::task::spawn_blocking(|| {
+            let claude = roamgate_agent_client::hook_install::claude_dir(
+                &roamgate_agent_client::py::home(),
+                std::env::var("CLAUDE_CONFIG_DIR").ok().as_deref(),
+            );
+            roamgate_agent_client::hook_install::install(&claude)
+        })
+        .await
+        .map(|outcome| (0, format!("{outcome}\n"), String::new()))
+        .map_err(|error| error.to_string()),
     };
     let (code, stdout, stderr) = ran.unwrap_or_else(|error| (-1, String::new(), error));
     let outcome = stdout.trim().to_owned();

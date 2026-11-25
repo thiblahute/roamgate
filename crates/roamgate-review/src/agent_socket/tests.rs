@@ -1,4 +1,6 @@
-//! The agent socket against the real review client (contract/assets/python),
+//! The agent socket against the real Python review client (contract/assets/python,
+//! what SSH hosts run; the binary's own is proven against the same
+//! vectors, contract/vectors/agent-client.json, and in parity),
 //! the Claude mod's tools (server/claude-mod/hooks/tools.ts, run by bun) and
 //! raw requests: server/src/review/agent-server.test.ts,
 //! agent-server.claude-mod.test.ts, agent-server.claude-mod-tools.test.ts,
@@ -374,8 +376,20 @@ impl Setup {
         self.home.join(".cache/roamgate/review.sock")
     }
 
-    fn client(&self) -> PathBuf {
+    /// Where the server installs its client (a link to its binary).
+    #[cfg(unix)]
+    fn installed(&self) -> PathBuf {
         self.home.join(".cache/roamgate/bin/roamgate-review")
+    }
+
+    /// The Python client SSH hosts run, which these tests drive.
+    fn client(&self) -> PathBuf {
+        let path = self.home.join(".python/roamgate-review");
+        if !path.exists() {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, &*super::texts::REVIEW_CLIENT_INSTALLED_SCRIPT).unwrap();
+        }
+        path
     }
 
     /// The review client, as an agent in pane w1:p2 runs it.
@@ -494,17 +508,42 @@ async fn installs_the_client_and_links_the_well_known_socket() {
         std::fs::read_link(&socket).unwrap(),
         s.agent.socket_path(LOCAL_SOCKET_KEY).unwrap()
     );
-    let client = std::fs::read_to_string(s.client()).unwrap();
-    assert!(client.starts_with("#!/usr/bin/env python3"));
+    // The clients are this binary, run under their names.
+    let exe = std::env::current_exe().unwrap();
+    assert_eq!(std::fs::read_link(s.installed()).unwrap(), exe);
     assert_eq!(
-        std::fs::metadata(s.client()).unwrap().permissions().mode() & 0o777,
-        0o755
+        std::fs::read_link(s.home.join(".cache/roamgate/bin/roamgate-hold")).unwrap(),
+        exe
     );
     let own = s.agent.socket_path(LOCAL_SOCKET_KEY).unwrap();
     assert_eq!(
         std::fs::metadata(own).unwrap().permissions().mode() & 0o777,
         0o600
     );
+}
+
+/// An install of the Python era (the scripts under those names) becomes
+/// links to the binary, in one step.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn replaces_the_python_clients_of_an_older_install() {
+    let s = setup();
+    let bin = s.home.join(".cache/roamgate/bin");
+    for name in ["roamgate-review", "roamgate-hold"] {
+        std::fs::remove_file(bin.join(name)).unwrap();
+        std::fs::write(bin.join(name), "#!/usr/bin/env python3\n").unwrap();
+    }
+    s.agent.install_local().unwrap();
+    let exe = std::env::current_exe().unwrap();
+    for name in ["roamgate-review", "roamgate-hold"] {
+        assert_eq!(std::fs::read_link(bin.join(name)).unwrap(), exe, "{name}");
+    }
+    let left: Vec<_> = std::fs::read_dir(&bin)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".tmp"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
 }
 
 #[cfg(unix)]
@@ -536,7 +575,7 @@ async fn links_the_skill_and_client_where_agents_look_not_over_the_users() {
     s.agent.install_local().unwrap();
     assert_eq!(
         std::fs::read_link(bin.join("roamgate-review")).unwrap(),
-        s.client()
+        s.installed()
     );
 }
 
