@@ -59,7 +59,7 @@ use roamgate_sidecar::peer::{
 use roamgate_sidecar::protocol::{Ctx, Message, RpcError, family_of};
 use roamgate_sidecar::standalone::Standalone;
 use serde_json::{Value, json};
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 use super::host::HostHandle;
 use super::standalone::{FrontConfig, Layer, browser};
@@ -89,6 +89,7 @@ pub fn family(host: HostHandle) -> Arc<dyn CoreFamily> {
         clients: OnceLock::new(),
         layer: OnceLock::new(),
         deltas: Mutex::default(),
+        input_lanes: Mutex::default(),
         legacy: LegacyRoutingLogger::new(|line| {
             let mut fields = LogFields::new();
             fields.insert("detail".into(), line.into());
@@ -106,7 +107,16 @@ struct Inner {
     layer: OnceLock<Arc<Layer>>,
     /// The topology lists each socket was given.
     deltas: Mutex<HashMap<u64, ListDeltas>>,
+    /// Each socket's keystrokes, answered one after the other in the order
+    /// they came (every other request runs as it comes).
+    input_lanes: Mutex<HashMap<u64, mpsc::UnboundedSender<(FamilyContext, String)>>>,
     legacy: LegacyRoutingLogger,
+}
+
+/// A terminal's input, which must reach it in the order it was typed.
+fn is_terminal_input(raw: &str) -> bool {
+    raw.contains("\"terminal.input\"")
+        && RpcMeta::parse(raw).method.as_deref() == Some("terminal.input")
 }
 
 struct FrontFamily(Arc<Inner>);
@@ -594,6 +604,24 @@ impl Inner {
     }
 
     /// One frame of a `/ws` socket: its RPC answered, then logged.
+    /// A keystroke, after the socket's earlier ones: requests run at once
+    /// each in its own task, which would let a fast typist's keys overtake
+    /// each other.
+    fn input(self: Arc<Self>, cx: FamilyContext, socket_id: u64, raw: String) {
+        let mut lanes = self.input_lanes.lock().unwrap();
+        let lane = lanes.entry(socket_id).or_insert_with(|| {
+            let (sender, mut receiver) = mpsc::unbounded_channel::<(FamilyContext, String)>();
+            let inner = self.clone();
+            tokio::spawn(async move {
+                while let Some((cx, raw)) = receiver.recv().await {
+                    inner.clone().rpc(cx, socket_id, raw).await;
+                }
+            });
+            sender
+        });
+        let _ = lane.send((cx, raw));
+    }
+
     async fn rpc(self: Arc<Self>, cx: FamilyContext, socket_id: u64, raw: String) {
         let Some(clients) = self.clients().cloned() else {
             return;
@@ -1097,13 +1125,20 @@ impl CoreFamily for FrontFamily {
                 data,
                 binary: false,
             } => {
-                tokio::spawn(self.0.clone().rpc(cx.clone(), socket_id, data));
+                if is_terminal_input(&data) {
+                    self.0.clone().input(cx.clone(), socket_id, data);
+                } else {
+                    tokio::spawn(self.0.clone().rpc(cx.clone(), socket_id, data));
+                }
             }
             Message::WsClose {
                 socket_id,
                 code,
                 reason,
-            } => self.0.closed_ws(cx, socket_id, code, &reason),
+            } => {
+                self.0.input_lanes.lock().unwrap().remove(&socket_id);
+                self.0.closed_ws(cx, socket_id, code, &reason)
+            }
             _ => {}
         }
     }
@@ -1118,6 +1153,19 @@ impl CoreFamily for FrontFamily {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keystrokes_are_told_from_other_requests() {
+        assert!(is_terminal_input(
+            r#"{"id":"c1","method":"terminal.input","params":{"data":"YQ=="},"connection_id":"local"}"#
+        ));
+        assert!(!is_terminal_input(
+            r#"{"id":"c2","method":"pane.list","params":{"note":"terminal.input"}}"#
+        ));
+        assert!(!is_terminal_input(
+            r#"{"id":"c3","method":"terminal.resize"}"#
+        ));
+    }
 
     #[test]
     fn the_methods_bun_answered_itself_are_named() {
