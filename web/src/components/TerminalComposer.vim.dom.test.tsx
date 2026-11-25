@@ -116,6 +116,9 @@ if (
       const editor = container.querySelector<HTMLElement>(".cm-editor");
       return editor ? EditorView.findFromDOM(editor) : null;
     };
+    // The first Vim box loads its lazy editor, which React shows only after
+    // its fallback's minimum time: wait for a box, the Vim one or the plain.
+    while (!view() && !container.querySelector("textarea")) await settle();
     const button = (label: string) =>
       container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
     return {
