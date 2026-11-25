@@ -99,20 +99,29 @@ pub fn clean_message_text(value: &str) -> String {
 
 /// The last part of a path (`basename`).
 pub fn basename(path: &str) -> &str {
-    let trimmed = path.trim_end_matches('/');
+    let trimmed = path.trim_end_matches(is_separator);
     if trimmed.is_empty() {
-        return if path.starts_with('/') { "" } else { path };
+        return if path.starts_with(is_separator) {
+            ""
+        } else {
+            path
+        };
     }
-    trimmed.rsplit('/').next().unwrap_or(trimmed)
+    trimmed.rsplit(is_separator).next().unwrap_or(trimmed)
+}
+
+/// `/`, and `\` on Windows too, as Node's `path` splits there.
+fn is_separator(c: char) -> bool {
+    c == '/' || (cfg!(windows) && c == '\\')
 }
 
 /// The directory of a path (`dirname`).
 pub fn dirname(path: &str) -> String {
-    let trimmed = path.trim_end_matches('/');
-    match trimmed.rfind('/') {
-        Some(0) => "/".into(),
-        Some(at) => trimmed[..at].trim_end_matches('/').to_owned(),
-        None if path.starts_with('/') => "/".into(),
+    let trimmed = path.trim_end_matches(is_separator);
+    match trimmed.rfind(is_separator) {
+        Some(0) => trimmed[..1].into(),
+        Some(at) => trimmed[..at].trim_end_matches(is_separator).to_owned(),
+        None if path.starts_with(is_separator) => path[..1].into(),
         None => ".".into(),
     }
 }
