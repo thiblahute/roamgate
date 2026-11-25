@@ -1,14 +1,19 @@
 //! The release archive layout, as scripts/package-release.sh makes it for
 //! the Bun build and `roamgate update` and the installers read it:
 //!
-//!   roamgate-v<version>-<platform>.tar.xz  roamgate-<platform>/{roamgate[.exe], roamgate-pi[.exe], VERSION}
+//!   roamgate-v<version>-<platform>.tar.xz  roamgate-<platform>/{roamgate[.exe], roamgate-pi[.exe], VERSION, THIRD_PARTY_LICENSES.md}
 //!   roamgate-<platform>.tar.xz             the same bytes
+//!
+//! (`.zip` instead of `.tar.xz` on Windows: Windows 10's tar.exe reads no
+//! xz.)
 //!   <archive>.sha256                       "<hex>  <archive>\n"
 //!   roamgate-<platform>.update.json        schema 1, one line
 //!
 //! `roamgate-pi` is the Pi sidecar (contract/wire/pi-sidecar.md), which
 //! the Bun build has no need of; the installers and the updater extract
 //! `roamgate` and VERSION by name, so the extra file leaves them as they are.
+//! THIRD_PARTY_LICENSES.md holds the licences of everything the binaries
+//! contain (notices.rs).
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -16,7 +21,16 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 
+use crate::notices;
 use crate::targets::Target;
+
+/// What a package holds besides VERSION.
+pub struct Files<'a> {
+    pub binary: &'a [u8],
+    pub pi: &'a [u8],
+    /// THIRD_PARTY_LICENSES.md.
+    pub notices: &'a str,
+}
 
 /// The VERSION file: `roamgate <version> <platform>`.
 pub fn version_file(version: &str, platform: &str) -> String {
@@ -70,24 +84,82 @@ fn header(kind: tar::EntryType, mode: u32, size: u64, mtime: u64) -> tar::Header
     header
 }
 
-/// The tar.xz bytes of a package.
-pub fn archive(target: &Target, binary: &[u8], pi: &[u8], version: &str) -> Result<Vec<u8>> {
+/// The archive bytes of a package: tar.xz, or zip on Windows.
+pub fn archive(target: &Target, files: &Files, version: &str) -> Result<Vec<u8>> {
     let dir = target.package_dir();
+    let version = version_file(version, &target.platform);
+    let entries: [(String, u32, &[u8]); 4] = [
+        (format!("{dir}/{}", target.binary), 0o755, files.binary),
+        (format!("{dir}/{}", target.pi_binary()), 0o755, files.pi),
+        (format!("{dir}/VERSION"), 0o644, version.as_bytes()),
+        (
+            format!("{dir}/{}", notices::FILE),
+            0o644,
+            files.notices.as_bytes(),
+        ),
+    ];
     let mtime = mtime();
+    if target.os == "win32" {
+        return zip_archive(&dir, &entries, mtime);
+    }
     let encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
     let mut builder = tar::Builder::new(encoder);
     builder.mode(tar::HeaderMode::Deterministic);
     let mut entry = header(tar::EntryType::Directory, 0o755, 0, mtime);
     builder.append_data(&mut entry, format!("{dir}/"), std::io::empty())?;
-    let mut entry = header(tar::EntryType::Regular, 0o755, binary.len() as u64, mtime);
-    builder.append_data(&mut entry, format!("{dir}/{}", target.binary), binary)?;
-    let mut entry = header(tar::EntryType::Regular, 0o755, pi.len() as u64, mtime);
-    builder.append_data(&mut entry, format!("{dir}/{}", target.pi_binary()), pi)?;
-    let version = version_file(version, &target.platform);
-    let mut entry = header(tar::EntryType::Regular, 0o644, version.len() as u64, mtime);
-    builder.append_data(&mut entry, format!("{dir}/VERSION"), version.as_bytes())?;
+    for (path, mode, data) in entries {
+        let mut entry = header(tar::EntryType::Regular, mode, data.len() as u64, mtime);
+        builder.append_data(&mut entry, path, data)?;
+    }
     let encoder = builder.into_inner()?;
     Ok(encoder.finish()?)
+}
+
+/// A zip of the package directory, with Unix modes and `mtime`.
+fn zip_archive(dir: &str, entries: &[(String, u32, &[u8])], mtime: u64) -> Result<Vec<u8>> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    // zip's DOS time starts in 1980.
+    let seconds = i64::try_from(mtime).unwrap_or(0).max(315_532_800);
+    let date = zip_time(seconds)?;
+    let options = |mode: u32| {
+        zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .compression_level(Some(9))
+            .last_modified_time(date)
+            .unix_permissions(mode)
+    };
+    writer.add_directory(format!("{dir}/"), options(0o755))?;
+    for (path, mode, data) in entries {
+        writer.start_file(path.as_str(), options(*mode))?;
+        writer.write_all(data)?;
+    }
+    Ok(writer.finish()?.into_inner())
+}
+
+/// A Unix time as zip's DOS date and time (UTC).
+fn zip_time(seconds: i64) -> Result<zip::DateTime> {
+    let days = seconds.div_euclid(86_400);
+    let rest = seconds.rem_euclid(86_400);
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    let narrow = |value: i64| u8::try_from(value).context("zip time");
+    zip::DateTime::from_date_and_time(
+        u16::try_from(year).context("zip time")?,
+        narrow(month)?,
+        narrow(day)?,
+        narrow(rest / 3600)?,
+        narrow(rest % 3600 / 60)?,
+        narrow(rest % 60)?,
+    )
+    .map_err(|error| anyhow::anyhow!("zip time: {error}"))
 }
 
 /// One file of an archive.
@@ -98,7 +170,11 @@ pub struct Entry {
     pub data: Vec<u8>,
 }
 
+/// The entries of a package archive, tar.xz or zip.
 pub fn read_archive(bytes: &[u8]) -> Result<Vec<Entry>> {
+    if bytes.starts_with(b"PK\x03\x04") {
+        return read_zip(bytes);
+    }
     let mut archive = tar::Archive::new(xz2::read::XzDecoder::new(bytes));
     let mut entries = Vec::new();
     for entry in archive.entries()? {
@@ -118,19 +194,44 @@ pub fn read_archive(bytes: &[u8]) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
+fn read_zip(bytes: &[u8]) -> Result<Vec<Entry>> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let mut entries = Vec::new();
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index)?;
+        let path = file.name()?.into_owned();
+        let directory = file.is_dir();
+        let mode = file.unix_mode().unwrap_or(0) & 0o7777;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        entries.push(Entry {
+            path,
+            mode,
+            kind: if directory {
+                tar::EntryType::Directory
+            } else {
+                tar::EntryType::Regular
+            },
+            data,
+        });
+    }
+    Ok(entries)
+}
+
 fn write(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = std::fs::File::create(path).with_context(|| path.display().to_string())?;
     file.write_all(bytes)?;
     Ok(())
 }
 
-/// Writes a target's package into `out`, with its Pi sidecar `pi`;
-/// returns the archive's digest.
+/// Writes a target's package into `out`, with its Pi sidecar `pi` and
+/// its THIRD_PARTY_LICENSES.md `notices`; returns the archive's digest.
 pub fn write_package(
     out: &Path,
     target: &Target,
     binary: &Path,
     pi: &Path,
+    notices: &str,
     version: &str,
 ) -> Result<String> {
     let bytes = std::fs::read(binary).with_context(|| binary.display().to_string())?;
@@ -161,8 +262,14 @@ pub fn write_package(
         &dir.join("VERSION"),
         version_file(version, &target.platform).as_bytes(),
     )?;
+    write(&dir.join(notices::FILE), notices.as_bytes())?;
 
-    let archive = archive(target, &bytes, &pi_bytes, version)?;
+    let files = Files {
+        binary: &bytes,
+        pi: &pi_bytes,
+        notices,
+    };
+    let archive = archive(target, &files, version)?;
     let digest = sha256_hex(&archive);
     let versioned = target.versioned_archive(version);
     let latest = target.latest_archive();
@@ -239,7 +346,8 @@ mod tests {
         let out = dir.path().join("dist");
         for platform in ["linux-x64", "windows-arm64"] {
             let target = target(platform);
-            let digest = write_package(&out, &target, &binary, &pi, "9.8.7").unwrap();
+            let digest =
+                write_package(&out, &target, &binary, &pi, "# notices\n", "9.8.7").unwrap();
             for path in package_paths(&out, &target, "9.8.7") {
                 assert!(path.is_file(), "{}", path.display());
             }
@@ -258,9 +366,12 @@ mod tests {
                     format!("{dir_name}/"),
                     format!("{dir_name}/{}", target.binary),
                     format!("{dir_name}/{}", target.pi_binary()),
-                    format!("{dir_name}/VERSION")
+                    format!("{dir_name}/VERSION"),
+                    format!("{dir_name}/THIRD_PARTY_LICENSES.md"),
                 ]
             );
+            assert_eq!(entries[4].mode, 0o644);
+            assert_eq!(entries[4].data, b"# notices\n");
             assert_eq!(entries[1].mode, 0o755);
             assert_eq!(entries[1].data, b"\x7fELF fake");
             assert_eq!(entries[2].mode, 0o755);
@@ -270,6 +381,15 @@ mod tests {
                 format!("roamgate 9.8.7 {platform}\n").as_bytes()
             );
         }
+    }
+
+    #[test]
+    fn zip_times_are_utc_civil_dates() {
+        let time = zip_time(1_795_590_489).unwrap();
+        assert_eq!((time.year(), time.month(), time.day()), (2026, 11, 25));
+        assert_eq!((time.hour(), time.minute(), time.second()), (7, 8, 8));
+        let leap = zip_time(951_782_400).unwrap();
+        assert_eq!((leap.year(), leap.month(), leap.day()), (2000, 2, 29));
     }
 
     #[test]
@@ -288,7 +408,15 @@ mod tests {
         let pi = dir.path().join("pi");
         std::fs::write(&pi, b"pi").unwrap();
         let target = target("linux-x64");
-        write_package(&dir.path().join("dist"), &target, &binary, &pi, "1.0.0").unwrap();
+        write_package(
+            &dir.path().join("dist"),
+            &target,
+            &binary,
+            &pi,
+            "n",
+            "1.0.0",
+        )
+        .unwrap();
         let extract = dir.path().join("x");
         std::fs::create_dir(&extract).unwrap();
         let status = std::process::Command::new("tar")

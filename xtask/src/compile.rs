@@ -134,7 +134,8 @@ pub fn build(build: &Build, target: &Target) -> Result<PathBuf> {
 }
 
 /// The Bun command line compiling the Pi sidecar `roamgate-pi` for
-/// `target` (server/package.json's `compile:pi`, on the target's `bun`).
+/// `target` (server/package.json's `compile:pi`, on the target's `bun`),
+/// with the metafile listing what it bundles (its licence notices).
 pub fn pi_command(root: &Path, target: &Target, outfile: &Path) -> Command {
     let mut command = Command::new("bun");
     command
@@ -146,6 +147,7 @@ pub fn pi_command(root: &Path, target: &Target, outfile: &Path) -> Command {
             "--no-compile-autoload-bunfig",
         ])
         .arg(format!("--target={}", target.bun))
+        .arg(format!("--metafile={}", pi_metafile(outfile).display()))
         .arg("src/assistant/pi-sidecar-main.ts")
         .arg("--outfile")
         .arg(outfile)
@@ -153,7 +155,15 @@ pub fn pi_command(root: &Path, target: &Target, outfile: &Path) -> Command {
     command
 }
 
-/// Builds `target`'s Pi sidecar; returns it.
+/// Bun's metafile of a sidecar build: its inputs are the bundled modules.
+pub fn pi_metafile(outfile: &Path) -> PathBuf {
+    let mut name = outfile.as_os_str().to_owned();
+    name.push(".meta.json");
+    PathBuf::from(name)
+}
+
+/// Builds `target`'s Pi sidecar; returns it (its metafile is
+/// [`pi_metafile`]).
 pub fn build_pi(root: &Path, target: &Target) -> Result<PathBuf> {
     let dir = target_dir(root).join(&target.triple).join("release");
     std::fs::create_dir_all(&dir)?;
@@ -179,8 +189,10 @@ pub fn build_pi(root: &Path, target: &Target) -> Result<PathBuf> {
             target.platform
         );
     }
-    if !outfile.is_file() {
-        bail!("{} was not built", outfile.display());
+    for built in [&outfile, &pi_metafile(&outfile)] {
+        if !built.is_file() {
+            bail!("{} was not built", built.display());
+        }
     }
     Ok(outfile)
 }
@@ -243,6 +255,7 @@ mod tests {
             );
             assert!(args.contains(&format!("--target={}", target.bun)));
             assert!(args.contains(&"src/assistant/pi-sidecar-main.ts".to_owned()));
+            assert!(args.contains(&format!("--metafile={outfile}.meta.json")));
             assert_eq!(args.last().map(String::as_str), Some(outfile));
         }
     }

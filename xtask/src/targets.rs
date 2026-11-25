@@ -95,12 +95,22 @@ impl Target {
         format!("roamgate-{}", self.platform)
     }
 
+    /// zip on Windows, whose tar.exe reads no xz before Windows 11 (a
+    /// windows-2022 runner's fails), tar.xz elsewhere.
+    pub fn archive_extension(&self) -> &'static str {
+        if self.os == "win32" { "zip" } else { "tar.xz" }
+    }
+
     pub fn latest_archive(&self) -> String {
-        format!("roamgate-{}.tar.xz", self.platform)
+        format!("roamgate-{}.{}", self.platform, self.archive_extension())
     }
 
     pub fn versioned_archive(&self, version: &str) -> String {
-        format!("roamgate-v{version}-{}.tar.xz", self.platform)
+        format!(
+            "roamgate-v{version}-{}.{}",
+            self.platform,
+            self.archive_extension()
+        )
     }
 
     pub fn manifest_name(&self) -> String {
@@ -212,12 +222,16 @@ mod tests {
     }
 
     #[test]
-    fn updatable_platforms_fit_the_updater() {
-        // server/src/http/update.ts parseUpdateManifest: /^[a-z0-9]+-[a-z0-9]+$/
-        for target in repo_targets().iter().filter(|t| t.update) {
-            assert_eq!(target.platform.split('-').count(), 2, "{}", target.platform);
-            assert_ne!(target.os, "win32");
-        }
+    fn archives() {
+        let targets = repo_targets();
+        let windows = select(&targets, &["windows-arm64".into()]).unwrap();
+        assert_eq!(windows[0].latest_archive(), "roamgate-windows-arm64.zip");
+        assert_eq!(
+            windows[0].versioned_archive("1.2.3"),
+            "roamgate-v1.2.3-windows-arm64.zip"
+        );
+        let musl = select(&targets, &["linux-x64-musl".into()]).unwrap();
+        assert_eq!(musl[0].latest_archive(), "roamgate-linux-x64-musl.tar.xz");
     }
 
     #[test]

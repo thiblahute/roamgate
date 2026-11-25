@@ -58,7 +58,7 @@ test.skipIf(process.platform !== "win32")(
           join(packagePath, "roamgate.exe"),
         ]).exitCode,
       ).toBe(0);
-      const archiveName = `roamgate-v9.8.7-${platform}.tar.xz`;
+      const archiveName = `roamgate-v9.8.7-${platform}.zip`;
       const archive = join(root, "assets", archiveName);
       const packageArchive = (version: string) => {
         writeFileSync(
@@ -68,11 +68,10 @@ test.skipIf(process.platform !== "win32")(
         expect(
           Bun.spawnSync([
             "tar.exe",
-            "--options",
-            "xz:compression-level=0",
+            "-a",
             "-C",
             join(root, "assets"),
-            "-cJf",
+            "-cf",
             archive,
             packageDir,
           ]).exitCode,

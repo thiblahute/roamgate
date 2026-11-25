@@ -227,8 +227,11 @@ jobs:
           gh release create "$GITHUB_REF_NAME"
           dist/roamgate-*.tar.xz
           dist/roamgate-*.tar.xz.sha256
+          dist/roamgate-*.zip
+          dist/roamgate-*.zip.sha256
           dist/roamgate-*.update.json
           scripts/install-roamgate.sh
+          scripts/install-roamgate.ps1
           --verify-tag
           --latest
           --generate-notes
