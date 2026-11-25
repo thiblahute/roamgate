@@ -89,9 +89,19 @@ pub fn connect_blocking(path: &Path, timeout: std::time::Duration) -> io::Result
         socket
     };
     drop(short);
-    inner.set_read_timeout(Some(timeout))?;
-    inner.set_write_timeout(Some(timeout))?;
+    timeout_set(inner.set_read_timeout(Some(timeout)))?;
+    timeout_set(inner.set_write_timeout(Some(timeout)))?;
     Ok(BlockingStream { inner })
+}
+
+/// A socket timeout set: macOS refuses it (EINVAL) once the peer closed
+/// the connection, which can happen before the client set it (a server
+/// that answered at once); reads then end at once anyway.
+fn timeout_set(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Err(error) if cfg!(target_os = "macos") && error.raw_os_error() == Some(22) => Ok(()),
+        other => other,
+    }
 }
 
 impl io::Read for BlockingStream {
