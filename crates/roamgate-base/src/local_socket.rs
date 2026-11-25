@@ -79,14 +79,16 @@ pub struct BlockingStream {
 /// [`connect`]), each read and write then failing with `TimedOut` or
 /// `WouldBlock` after `timeout`.
 pub fn connect_blocking(path: &Path, timeout: std::time::Duration) -> io::Result<BlockingStream> {
+    let short = crate::unix_socket::short_path(path)?;
     #[cfg(unix)]
-    let inner = std::os::unix::net::UnixStream::connect(path)?;
+    let inner = std::os::unix::net::UnixStream::connect(short.path())?;
     #[cfg(windows)]
     let inner = {
         let socket = socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)?;
-        socket.connect(&socket2::SockAddr::unix(path)?)?;
+        socket.connect(&socket2::SockAddr::unix(short.path())?)?;
         socket
     };
+    drop(short);
     inner.set_read_timeout(Some(timeout))?;
     inner.set_write_timeout(Some(timeout))?;
     Ok(BlockingStream { inner })
@@ -274,8 +276,42 @@ mod tests {
     #[tokio::test]
     async fn a_client_reaches_a_listener_at_a_path() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("s.sock");
+        ping_pong(&dir.path().join("s.sock")).await;
+    }
+
+    /// Past `SUN_LEN`: through the directory's descriptor on Linux, an
+    /// alias of it on macOS and a junction on Windows.
+    #[tokio::test]
+    async fn a_client_reaches_a_listener_at_a_long_path() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("d".repeat(60)).join("e".repeat(60));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("0123456789abcdef.sock");
+        assert!(!crate::unix_socket::fits(&path));
+        ping_pong(&path).await;
+        assert!(path.exists());
+        // The blocking client too, on a new listener there.
+        std::fs::remove_file(&path).unwrap();
         let listener = Listener::bind(&path).unwrap();
+        let server = tokio::spawn(async move {
+            let mut stream = listener.accept().await.unwrap();
+            stream.write_all(b"hi").await.unwrap();
+        });
+        let text = tokio::task::spawn_blocking(move || {
+            use std::io::Read;
+            let mut client = connect_blocking(&path, std::time::Duration::from_secs(10)).unwrap();
+            let mut text = [0u8; 2];
+            client.read_exact(&mut text).unwrap();
+            text
+        })
+        .await
+        .unwrap();
+        assert_eq!(&text, b"hi");
+        server.await.unwrap();
+    }
+
+    async fn ping_pong(path: &Path) {
+        let listener = Listener::bind(path).unwrap();
         let server = tokio::spawn(async move {
             let mut stream = listener.accept().await.unwrap();
             let mut line = [0u8; 4];
@@ -284,7 +320,7 @@ mod tests {
             stream.shutdown().await.unwrap();
             line
         });
-        let mut client = connect(&path).await.unwrap();
+        let mut client = connect(path).await.unwrap();
         client.write_all(b"ping").await.unwrap();
         let mut reply = String::new();
         client.read_to_string(&mut reply).await.unwrap();
