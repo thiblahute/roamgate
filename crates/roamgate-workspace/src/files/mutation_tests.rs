@@ -50,6 +50,17 @@ fn fixture(remote: bool, transform: impl Fn(&str) -> String + Send + Sync + 'sta
     }
 }
 
+/// Here, and on an SSH host played by this machine. On Windows here only:
+/// an SSH host's moves run a Linux or macOS script (renameat2 through
+/// libc), and Windows is no such host.
+fn hosts() -> &'static [bool] {
+    if cfg!(windows) {
+        &[false]
+    } else {
+        &[false, true]
+    }
+}
+
 fn plain(remote: bool) -> Fixture {
     fixture(remote, |command| command.to_owned())
 }
@@ -99,7 +110,7 @@ fn path_of(result: RpcResult) -> String {
 
 #[tokio::test]
 async fn creates_root_nested_folders_and_preserves_existing_entries() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         let name = "folder 'quoted $name";
         assert_eq!(path_of(f.mkdir(json!({ "name": name })).await), name);
@@ -119,7 +130,7 @@ async fn creates_root_nested_folders_and_preserves_existing_entries() {
 
 #[tokio::test]
 async fn moves_files_into_folders_and_back_to_root_without_changing_their_contents() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         f.mkdir_here("target");
         let name = "a 'quoted $name.txt";
@@ -147,7 +158,7 @@ async fn moves_files_into_folders_and_back_to_root_without_changing_their_conten
 // Unix only: a Windows file name cannot hold `\`, its separator.
 #[cfg(unix)]
 async fn literal_backslashes_in_posix_names_do_not_move_a_different_file() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         f.mkdir_here("from");
         f.mkdir_here("target");
@@ -166,7 +177,7 @@ async fn literal_backslashes_in_posix_names_do_not_move_a_different_file() {
 // Unix only: a Windows file name cannot hold `:` or `\`.
 #[cfg(unix)]
 async fn moves_posix_names_that_resemble_windows_paths() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         f.mkdir(json!({ "name": "a:target" })).await.unwrap();
         f.mkdir(json!({ "directory": "a:target", "name": "nested" }))
@@ -190,7 +201,7 @@ async fn moves_posix_names_that_resemble_windows_paths() {
 #[cfg(unix)]
 #[tokio::test]
 async fn never_overwrites_a_destination_file_directory_or_symlink() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         f.mkdir_here("target");
         for name in ["file", "folder", "link"] {
@@ -220,7 +231,7 @@ async fn never_overwrites_a_destination_file_directory_or_symlink() {
 // Unix only: a Windows file name cannot hold a newline.
 #[cfg(unix)]
 async fn trailing_newlines_in_directory_names_do_not_redirect_a_move() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         for directory in ["source", "source\n", "target", "target\n"] {
             f.mkdir_here(directory);
@@ -239,7 +250,7 @@ async fn trailing_newlines_in_directory_names_do_not_redirect_a_move() {
 
 #[tokio::test]
 async fn keeps_batch_failures_intact_while_independent_files_move() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         f.mkdir_here("target");
         f.write("a", "a");
@@ -279,7 +290,7 @@ fn racing_save(root: &Path) {
 
 #[tokio::test]
 async fn preserves_saves_immediately_before_and_after_the_atomic_move() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let script = REMOTE_EXCLUSIVE_RENAME.replace(
             "result = rename(*args)",
             "os.replace(source + \".save\", source)\nresult = rename(*args)\nif result == 0:\n    with open(source, \"w\") as saved:\n        saved.write(\"later save\")",
@@ -309,7 +320,7 @@ async fn a_read_only_source_directory_leaves_no_destination_and_can_be_retried()
         return;
     }
     use std::os::unix::fs::PermissionsExt as _;
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         let source = f.root.join("source");
         fs::create_dir(&source).unwrap();
@@ -332,7 +343,7 @@ async fn a_read_only_source_directory_leaves_no_destination_and_can_be_retried()
 
 #[tokio::test]
 async fn concurrent_moves_to_the_same_name_preserve_the_losing_source() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         for directory in ["one", "two", "target"] {
             f.mkdir_here(directory);
@@ -354,6 +365,8 @@ async fn concurrent_moves_to_the_same_name_preserve_the_losing_source() {
 }
 
 #[tokio::test]
+// Unix only: it runs the SSH host's move script, a Linux or macOS one.
+#[cfg(unix)]
 async fn unsupported_atomic_primitives_fail_without_changing_either_path() {
     let script = REMOTE_EXCLUSIVE_RENAME.replace(
         "import ctypes, os, sys",
@@ -391,7 +404,7 @@ async fn missing_python_fails_before_changing_either_path() {
 #[cfg(unix)]
 #[tokio::test]
 async fn moves_symlinks_themselves_and_rejects_directory_or_same_parent_moves() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         f.mkdir_here("target");
         std::os::unix::fs::symlink(f.outside.join("missing"), f.root.join("link")).unwrap();
@@ -424,7 +437,7 @@ async fn moves_symlinks_themselves_and_rejects_directory_or_same_parent_moves() 
 #[cfg(unix)]
 #[tokio::test]
 async fn blocks_symlink_parent_escapes_for_both_source_and_destination() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         std::os::unix::fs::symlink(&f.outside, f.root.join("escape")).unwrap();
         f.write("a", "inside");
@@ -452,7 +465,7 @@ async fn blocks_symlink_parent_escapes_for_both_source_and_destination() {
 
 #[tokio::test]
 async fn rejects_invalid_mutation_paths_names_scopes_and_missing_workspace_identity() {
-    for remote in [false, true] {
+    for &remote in hosts() {
         let f = plain(remote);
         let invalid = ["../outside", "/absolute", "bad\0path"];
         for directory in invalid {

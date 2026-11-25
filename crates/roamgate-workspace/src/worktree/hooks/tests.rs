@@ -402,11 +402,9 @@ async fn runs_the_s_opened_hook_when_the_source_workspace_has_no_path_metadata()
                 .await
                 .unwrap();
             assert_eq!(result.status, "succeeded", "{ssh} {location} {result:?}");
-            assert!(result.stdout.unwrap().contains(&format!(
-                "{}|{}",
-                shell_pwd(&path(&checkout)),
-                path(&source)
-            )));
+            let stdout = result.stdout.unwrap();
+            let expected = format!("{}|{}", shell_pwd(&path(&checkout)), path(&source));
+            assert!(stdout.contains(&expected), "{stdout:?} lacks {expected:?}");
         }
     }
 }
@@ -689,12 +687,9 @@ async fn runs_all_lifecycle_hooks_from_filename_with_cwd_aliases_and_source_afte
             ] {
                 assert_eq!(result.status, "succeeded", "{event} {result:?}");
                 let pwd = shell_pwd(&checkout_path);
-                assert!(
-                    result
-                        .stdout
-                        .unwrap()
-                        .contains(&format!("{pwd}|{event}|{checkout_path}|{source_path}"))
-                );
+                let stdout = result.stdout.unwrap();
+                let expected = format!("{pwd}|{event}|{checkout_path}|{source_path}");
+                assert!(stdout.contains(&expected), "{stdout:?} lacks {expected:?}");
             }
             fs::remove_dir_all(&checkout).unwrap();
             let removed = hooks

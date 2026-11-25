@@ -198,6 +198,9 @@ async fn changes_resolves_missing_files_and_removed_ancestor_directories_by_exis
 }
 
 #[tokio::test]
+// Unix only: ENOTDIR is POSIX's; Windows answers a path under a regular
+// file otherwise (lstat finds it, realpath does not).
+#[cfg(unix)]
 async fn changes_ascends_past_enotdir_while_ordinary_explorer_requests_still_reject() {
     let f = fixture(None, true);
     let ancestor = join(&f.checkout, "dir");
