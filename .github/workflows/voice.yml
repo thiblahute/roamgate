@@ -14,8 +14,10 @@ name: Voice helper
 # GStreamer bundle to build against.
 
 on:
+  # Only ci/ branches named for the voice: its macOS job would otherwise
+  # take the fork's few macOS runners on every ci/ push.
   push:
-    branches: ["ci/**"]
+    branches: ["ci/*voice*"]
   workflow_dispatch:
 
 permissions:
