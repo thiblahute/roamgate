@@ -12,9 +12,7 @@ use roamgate::{Options, parse_args};
 
 /// mimalloc, not the system's: glibc's per-thread arenas kept what the
 /// large transcripts' reads let go of (a core at 5 GB resident for 0.7 GB
-/// in use). Not on Windows on Arm, where the cross-built mimalloc made
-/// every run end in an access violation at exit.
-#[cfg(not(all(windows, target_arch = "aarch64")))]
+/// in use).
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
