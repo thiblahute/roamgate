@@ -292,7 +292,7 @@ pub fn run(args: &[String], picked: Option<Answer>, fakes: &Path) -> i32 {
         park();
     }
     let command = parsed.command.join(" ");
-    let mut child = Command::new("sh");
+    let mut child = Command::new(crate::paths::posix_shell());
     if command.is_empty() {
         child.arg("-s");
     } else {

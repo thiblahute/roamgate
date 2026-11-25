@@ -16,12 +16,11 @@ impl Clock {
         }
     }
 
-    #[cfg(unix)]
     async fn request(&self, line: &str) -> Result<String> {
-        let stream = tokio::net::UnixStream::connect(&self.path)
+        let stream = roamgate_base::local_socket::connect(&self.path)
             .await
             .with_context(|| format!("test clock at {}", self.path.display()))?;
-        let (read, mut write) = stream.into_split();
+        let (read, mut write) = tokio::io::split(stream);
         write.write_all(format!("{line}\n").as_bytes()).await?;
         let mut reply = String::new();
         BufReader::new(read).read_line(&mut reply).await?;
@@ -30,11 +29,6 @@ impl Clock {
             bail!("test clock refused {line:?}: {message}");
         }
         Ok(reply)
-    }
-
-    #[cfg(not(unix))]
-    async fn request(&self, _line: &str) -> Result<String> {
-        bail!("the test clock socket needs Unix sockets")
     }
 
     /// The virtual time, epoch milliseconds.

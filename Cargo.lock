@@ -3393,6 +3393,7 @@ dependencies = [
  "libtest-mimic",
  "p256",
  "regex",
+ "roamgate-base",
  "roamgate-protocol",
  "rusqlite",
  "serde",

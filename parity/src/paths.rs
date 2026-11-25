@@ -3,6 +3,18 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+/// The POSIX shell of `sh:` steps, spawned processes, pane jobs and the
+/// fake ssh: `sh`, or on Windows Git for Windows' bash, found as the server
+/// finds it (roamgate_base::posix_shell).
+pub fn posix_shell() -> String {
+    static SHELL: OnceLock<String> = OnceLock::new();
+    SHELL
+        .get_or_init(|| {
+            roamgate_base::posix_shell::posix_shell().unwrap_or_else(|_| "sh".to_owned())
+        })
+        .clone()
+}
+
 /// The repository's root, found at run time, never the one this binary was
 /// built in: worktrees sharing a `CARGO_TARGET_DIR` run the same binaries,
 /// and a run must read and write its own checkout (its ledger, contract and

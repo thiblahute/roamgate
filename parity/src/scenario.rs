@@ -2195,7 +2195,7 @@ impl Runner {
         let command = str_of(&step["sh"]).context("sh: a command")?.to_owned();
         let env = self.step_env(step);
         let output = crate::cli::run(
-            &["sh".to_owned(), "-c".to_owned()],
+            &[crate::paths::posix_shell(), "-c".to_owned()],
             std::slice::from_ref(&command),
             &env,
             &self.run.root,
@@ -2272,7 +2272,7 @@ impl Runner {
             Some(dir) => self.run.root.join(dir),
             None => self.run.root.clone(),
         };
-        let mut child = tokio::process::Command::new("sh")
+        let mut child = tokio::process::Command::new(crate::paths::posix_shell())
             .arg("-c")
             .arg(command)
             .env_clear()
