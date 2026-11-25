@@ -30,8 +30,9 @@ async fn a_helper_yielding_the_cpu_without_systemd_run_is_reniced() {
     let expected = YIELD_CPU_NICE.max(getpriority_process(None).unwrap());
     let dir = tempfile::tempdir().unwrap();
     let said = dir.path().join("nice");
+    // `ps -o nice=` (macOS's `nice` prints nothing without a command).
     let script = format!(
-        r#"while [ "$(nice)" -lt {expected} ]; do sleep 0.01; done; nice > "$0"; exec cat"#
+        r#"n() {{ ps -o nice= -p $$ | tr -d ' '; }}; while [ "$(n)" -lt {expected} ]; do sleep 0.01; done; n > "$0"; exec cat"#
     );
     let mut child = spawn(
         json!({

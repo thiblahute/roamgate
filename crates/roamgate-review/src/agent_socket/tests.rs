@@ -263,10 +263,11 @@ impl Drop for Setup {
 }
 
 fn temp(prefix: &str) -> tempfile::TempDir {
-    // Short paths: unix sockets are limited to about 100 bytes.
+    // Short paths: unix sockets are limited to about 100 bytes. Its real
+    // path: macOS's /tmp is a link, and data paths refuse links.
     tempfile::Builder::new()
         .prefix(prefix)
-        .tempdir_in("/tmp")
+        .tempdir_in(std::fs::canonicalize("/tmp").unwrap())
         .unwrap()
 }
 

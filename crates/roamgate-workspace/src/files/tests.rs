@@ -16,8 +16,13 @@ use serde_json::{Value, json};
 use super::*;
 use crate::test_support::{Loopback, LoopbackStreams, Scripted, connection};
 
+/// Under the temporary directory's real path: macOS's is under a link
+/// (/var to /private/var), and the server answers real paths.
 fn temp(prefix: &str) -> tempfile::TempDir {
-    tempfile::Builder::new().prefix(prefix).tempdir().unwrap()
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir_in(std::env::temp_dir().canonicalize().unwrap())
+        .unwrap()
 }
 
 fn text(path: &Path) -> String {

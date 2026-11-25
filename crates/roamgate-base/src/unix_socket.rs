@@ -51,10 +51,12 @@ fn bind_through_directory(path: &Path) -> std::io::Result<UnixListener> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
 
+    /// Linux only: macOS keeps its 104-byte socket addresses (as Bun did).
     #[test]
+    #[cfg(target_os = "linux")]
     fn binds_a_path_longer_than_the_socket_address() {
+        use std::io::{Read, Write};
         let base = tempfile::tempdir().unwrap();
         let dir = base.path().join("d".repeat(60)).join("e".repeat(60));
         std::fs::create_dir_all(&dir).unwrap();

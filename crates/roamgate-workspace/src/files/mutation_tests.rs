@@ -253,7 +253,8 @@ async fn keeps_batch_failures_intact_while_independent_files_move() {
 
 /// A save racing the move, right before and right after it.
 fn racing_save(root: &Path) {
-    let root = root.to_path_buf();
+    // The move sees real paths (macOS's temporary directory is a link).
+    let root = root.canonicalize().unwrap();
     let before_root = root.clone();
     let before: Box<dyn Fn(&Path) + Send> = Box::new(move |source: &Path| {
         if source.starts_with(&before_root) {
