@@ -2,3 +2,9 @@
 # its timeout: slow after 60 s, killed after 5 minutes.
 [profile.default]
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+# Parity scenarios may build the release server first (standalone,
+# update): up to 20 minutes.
+[[profile.default.overrides]]
+filter = "package(roamgate-parity)"
+slow-timeout = { period = "300s", terminate-after = 4 }
