@@ -57,6 +57,9 @@ fn repo(commit: bool) -> Repo {
     git(&root, &["init", "-q", "-b", "main"]);
     git(&root, &["config", "user.email", "test@example.com"]);
     git(&root, &["config", "user.name", "Herdr Test"]);
+    // Git for Windows' system config converts line endings on checkout;
+    // these tests compare the bytes a discard restores.
+    git(&root, &["config", "core.autocrlf", "false"]);
     if commit {
         fs::write(root.join("tracked.txt"), "base\n").unwrap();
         git(&root, &["add", "tracked.txt"]);
