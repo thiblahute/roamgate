@@ -42,7 +42,11 @@ impl Runner for FakeSsh {
                 self.prefix
             );
             let ran = LocalRunner::system()
-                .run_local(&["bash".into(), "-c".into(), line], None, request.timeout)
+                .run_local(
+                    &[crate::test_support::bash(), "-c".into(), line],
+                    None,
+                    request.timeout,
+                )
                 .await?;
             *self.transferred.lock().unwrap() = ran.stdout.len();
             Ok(ran)
