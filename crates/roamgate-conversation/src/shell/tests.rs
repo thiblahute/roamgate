@@ -34,7 +34,7 @@ fn runner(remote: bool, directory: &Path) -> ProcessShellRunner {
                     remote_shell_command(cwd, command, &sh_quote),
                 ]
             } else {
-                local_shell_argv(cwd, command, "/bin/sh")
+                local_shell_argv("/bin/sh", cwd, command, "/bin/sh")
             }
         }),
         hold: None,

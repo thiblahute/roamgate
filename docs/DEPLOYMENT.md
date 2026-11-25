@@ -12,8 +12,9 @@ remote access, see the [tutorial](./TUTORIAL.md#networking).
   executable with the web app embedded, beside the `roamgate-pi` helper Ranger
   uses for models other than Claude Code. Source builds need
   [Bun](https://bun.sh) 1.4.4+ (the web app) and a stable Rust toolchain.
-- On Windows, local Git features need [Git for Windows](https://gitforwindows.org/)
-  on PATH.
+- On Windows, local Git features and conversation mode's `!` shell lines need
+  [Git for Windows](https://gitforwindows.org/): its Bash is found from Git on
+  PATH or a standard Program Files or per-user install.
 
 ### Windows limits
 

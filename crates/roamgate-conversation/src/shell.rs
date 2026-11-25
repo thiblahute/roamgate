@@ -77,10 +77,23 @@ pub fn remote_shell_command(cwd: &str, command: &str, sh_quote: &dyn Fn(&str) ->
     )
 }
 
-/// A local run's argv: the wrapper under `/bin/sh`, with the login shell.
-pub fn local_shell_argv(cwd: &str, command: &str, login_shell: &str) -> Vec<String> {
+/// What a local `!` line needs on Windows and cannot find.
+pub const NO_LOCAL_SHELL: &str = "Shell commands need Git Bash on Windows. Install Git for Windows, or add its cmd or bin directory to PATH, then restart Roamgate.";
+
+/// The shell the wrapper runs under here: `/bin/sh`, or on Windows Git for
+/// Windows' bash, found as Git scripts find it.
+pub fn local_wrapper_shell() -> Result<String, String> {
+    if cfg!(windows) {
+        roamgate_base::posix_shell::posix_shell().map_err(|_| NO_LOCAL_SHELL.to_owned())
+    } else {
+        Ok("/bin/sh".to_owned())
+    }
+}
+
+/// A local run's argv: the wrapper under `shell`, with the login shell.
+pub fn local_shell_argv(shell: &str, cwd: &str, command: &str, login_shell: &str) -> Vec<String> {
     vec![
-        "/bin/sh".into(),
+        shell.into(),
         "-c".into(),
         WRAPPER.into(),
         "sh".into(),
@@ -90,8 +103,13 @@ pub fn local_shell_argv(cwd: &str, command: &str, login_shell: &str) -> Vec<Stri
     ]
 }
 
-/// The local login shell: the account's, not the server's environment's.
+/// The local login shell: the account's, not the server's environment's
+/// (on Windows, Git for Windows' bash when there is one).
 pub fn local_login_shell() -> String {
+    #[cfg(windows)]
+    if let Ok(shell) = roamgate_base::posix_shell::posix_shell() {
+        return shell;
+    }
     #[cfg(unix)]
     {
         let uid = rustix::process::getuid().as_raw();
@@ -139,11 +157,16 @@ pub struct ProcessShellRunner {
 }
 
 impl ProcessShellRunner {
-    /// Local runs with the account's login shell.
+    /// Local runs with the account's login shell. On Windows without Git
+    /// Bash every run fails with [`NO_LOCAL_SHELL`].
     pub fn local() -> Self {
         let login = local_login_shell();
+        let shell = local_wrapper_shell();
         Self {
-            argv: Arc::new(move |cwd, command| local_shell_argv(cwd, command, &login)),
+            argv: Arc::new(move |cwd, command| match &shell {
+                Ok(shell) => local_shell_argv(shell, cwd, command, &login),
+                Err(_) => Vec::new(),
+            }),
             hold: None,
         }
     }
@@ -206,6 +229,9 @@ impl ShellRunner for ProcessShellRunner {
         let output = Arc::new(Mutex::new(ShellOutput::default()));
         let run_state = state.clone();
         let done = Box::pin(async move {
+            if argv.is_empty() {
+                return Err(NO_LOCAL_SHELL.to_owned());
+            }
             let (argv, release) = match &hold {
                 Some(hold) => hold(argv).await?,
                 None => (argv, Box::new(()) as Box<dyn Send>),
@@ -311,3 +337,7 @@ fn terminate(pid: u32) {
 
 #[cfg(all(test, unix))]
 mod tests;
+
+// Runs on every platform (Git for Windows' bash on Windows).
+#[cfg(test)]
+mod local_tests;

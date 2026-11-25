@@ -38,6 +38,7 @@ pub mod log;
 pub mod loop_stall;
 pub mod node;
 pub mod paths;
+pub mod posix_shell;
 pub mod private;
 pub mod record;
 pub mod revoked_sessions;
