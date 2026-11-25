@@ -20,7 +20,8 @@ server:
         mode: "0755",
       }
 steps:
-  - sh: "[ -e /run/.toolboxenv ] || { echo 'not in a toolbox: GameMode is asked directly' >&2; exit 0; }"
+  # Outside a toolbox GameMode is asked directly: nothing to check.
+  - skip_unless: "[ -e /run/.toolboxenv ]"
   # The legacy name alone.
   - cli: [archive, rebuild-text]
     env:

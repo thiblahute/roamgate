@@ -2189,6 +2189,21 @@ impl Runner {
         Ok(())
     }
 
+    /// Whether a shell command holds (exits 0) in the run's root, with
+    /// the server's environment (`skip_unless`).
+    async fn holds(&self, command: &str) -> Result<bool> {
+        let output = crate::cli::run(
+            &[crate::paths::posix_shell(), "-c".to_owned()],
+            &[command.to_owned()],
+            &self.step_env(&Map::new()),
+            &self.run.root,
+            None,
+            Duration::from_secs(30),
+        )
+        .await?;
+        Ok(output.code == 0)
+    }
+
     /// A shell command in the run's root, with the server's environment:
     /// fixtures for T2 (git repositories and the like).
     async fn sh(&mut self, step: &Map<String, Value>) -> Result<()> {
@@ -2416,6 +2431,25 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
                 break;
             }
         };
+        // `skip_unless: <sh>`: what follows needs what this machine may
+        // lack (a toolbox); skipped, and said, when the command fails.
+        if let Some(command) = step.get("skip_unless").and_then(Value::as_str) {
+            match runner.holds(command).await {
+                Ok(true) => continue,
+                Ok(false) => {
+                    eprintln!(
+                        "parity: {}: steps {}.. skipped: `{command}` fails here",
+                        path.display(),
+                        index + 1
+                    );
+                    break;
+                }
+                Err(error) => {
+                    outcome = Err(error.context(format!("step {} {step}", index + 1)));
+                    break;
+                }
+            }
+        }
         let times = step.get("repeat").and_then(Value::as_u64).unwrap_or(1);
         let mut failed = None;
         for round in 0..times {
