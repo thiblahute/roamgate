@@ -164,7 +164,10 @@ type Socket = tokio::io::DuplexStream;
 async fn connect(path: &std::path::Path) -> io::Result<Socket> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
-        format!("no Unix sockets here: {}", path.display()),
+        format!(
+            "roamgate node runs on Linux and macOS only, not on Windows: {}",
+            path.display()
+        ),
     ))
 }
 

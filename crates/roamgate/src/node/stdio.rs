@@ -165,7 +165,9 @@ impl NodeHandler {
 
     #[cfg(not(unix))]
     fn listen(&self, _peer: &Peer, _params: Value) -> Result<Value, RpcError> {
-        Err(RpcError::new("node.listen: no Unix sockets here"))
+        Err(RpcError::new(
+            "node.listen: roamgate node runs on Linux and macOS only, not on Windows",
+        ))
     }
 
     async fn run(&self, params: Value) -> Result<Value, RpcError> {
