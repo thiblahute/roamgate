@@ -25,7 +25,7 @@ use serde::Deserialize;
 
 use crate::targets::Target;
 
-/// The cargo-about the release uses (release.yml installs it).
+/// The cargo-about packaging uses (.github/actions/rust-builder installs it).
 pub const CARGO_ABOUT_VERSION: &str = "0.9.3";
 
 /// The file name in the package.
@@ -911,6 +911,18 @@ mod tests {
         // A missing dependency that is not optional fails.
         std::fs::remove_dir_all(modules.join("@s")).unwrap();
         assert!(dependency_closure(root, &root.join("web")).is_err());
+    }
+
+    #[test]
+    fn ci_installs_the_pinned_cargo_about() {
+        let action = read(
+            &crate::repo_root(),
+            ".github/actions/rust-builder/action.yml",
+        )
+        .unwrap();
+        assert!(action.contains(&format!(
+            "cargo install --locked --features cli cargo-about@{CARGO_ABOUT_VERSION}"
+        )));
     }
 
     #[test]
