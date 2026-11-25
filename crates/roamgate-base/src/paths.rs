@@ -103,6 +103,15 @@ pub fn resolve_posix(path: &str) -> String {
     format!("/{}", parts.join("/"))
 }
 
+/// `root` and a `/`-separated relative path, joined part by part (one
+/// separator throughout on Windows).
+pub fn join_relative(root: &Path, relative: &str) -> PathBuf {
+    relative
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .fold(root.to_path_buf(), |path, part| path.join(part))
+}
+
 /// A temporary directory with a short real path, for Unix socket
 /// addresses (about 100 bytes at most): /tmp's on Unix (macOS' TMPDIR is
 /// long, and /tmp is a link there), the system's temporary directory on
