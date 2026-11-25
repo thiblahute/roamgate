@@ -801,8 +801,12 @@ async fn actual_timeout_during_phase_retains_ownership_and_blocks_retries() {
             },
             Some(Duration::from_millis(8000)),
         );
-        assert_fails(capture_with(&runner, repo.path()).await, "timed out");
-        assert_fails(capture(repo.path()).await, "capture locked");
+        let first = capture_with(&runner, repo.path()).await;
+        let listing = std::process::Command::new("ls").arg("-la").arg(repo.root.join(".git")).output().unwrap();
+        let second = capture(repo.path()).await;
+        eprintln!("DBG phase={phase} first={first:?} git={} second={second:?}", String::from_utf8_lossy(&listing.stdout));
+        assert_fails(first, "timed out");
+        assert_fails(second, "capture locked");
         let git_dir = repo.root.join(".git");
         assert!(!no_quarantine(&git_dir), "{phase}");
         assert!(listing(&git_dir.join("objects").join("pack")).is_empty());
