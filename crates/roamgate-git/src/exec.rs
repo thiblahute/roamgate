@@ -331,10 +331,16 @@ pub(crate) mod testing {
     }
 
     /// The text a request runs: a local argv joined, or the SSH line.
+    /// A request's command line, and its script when it is given on
+    /// stdin (Windows' snapshot).
     pub fn text(request: &Request) -> String {
-        match &request.invocation {
+        let line = match &request.invocation {
             Invocation::Local(argv) => argv.join(" "),
             Invocation::Ssh { command, .. } => command.clone(),
+        };
+        match &request.input {
+            Some(input) if cfg!(windows) => format!("{line} {}", String::from_utf8_lossy(input)),
+            _ => line,
         }
     }
 
@@ -408,13 +414,23 @@ pub(crate) mod testing {
                     return Err(RunError("not local".into()));
                 };
                 let mut words = argv.clone();
-                if let Some(last) = words.last_mut() {
-                    *last = (self.transform)(last);
-                }
+                // The script is the last word, or the input when it is
+                // given on stdin (Windows' snapshot).
+                let input = match &request.input {
+                    Some(input) => {
+                        Some((self.transform)(&String::from_utf8_lossy(input)).into_bytes())
+                    }
+                    None => {
+                        if let Some(last) = words.last_mut() {
+                            *last = (self.transform)(last);
+                        }
+                        None
+                    }
+                };
                 LocalRunner::system()
                     .run_local(
                         &words,
-                        request.input.as_deref(),
+                        input.as_deref(),
                         self.timeout.unwrap_or(request.timeout),
                     )
                     .await
