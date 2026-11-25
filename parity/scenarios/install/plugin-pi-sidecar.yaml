@@ -9,6 +9,9 @@ description: >
   on PATH: the install must not need Bun.
 ledger:
   - "scripts/install-plugin.test.ts > plugin installer stages a matching native release without Bun: ${failure}"
+# The POSIX installers (scripts/install-*.sh); Windows installs with
+# install-plugin.ps1 (plugin-windows.yaml).
+platforms: [linux, macos]
 server:
   herdr: false
   start: false

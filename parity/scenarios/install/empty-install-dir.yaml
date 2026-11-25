@@ -8,6 +8,9 @@ description: >
   install-herdr-gui.sh) run with real curl and tar against a release served
   by fake-models (fixture.sh makes it), into an install directory under the
   run's root.
+# The POSIX installers (scripts/install-*.sh); Windows installs with
+# install-plugin.ps1 (plugin-windows.yaml).
+platforms: [linux, macos]
 server:
   herdr: false
   start: false

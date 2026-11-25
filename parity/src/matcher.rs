@@ -105,6 +105,20 @@ fn show(value: Option<&Value>) -> String {
     }
 }
 
+/// On Windows, a path the scenario joins with `/` and the server answers
+/// with `\` (or the other way round): the same path. Only for an absolute
+/// path (a drive's, or a run directory's `$ROOT/...`).
+fn same_windows_path(expected: &str, actual: Option<&Value>) -> bool {
+    if !cfg!(windows) {
+        return false;
+    }
+    let Some(Value::String(actual)) = actual else {
+        return false;
+    };
+    let path = Regex::new(r"^([A-Za-z]:[\\/]|\$[A-Z]+([\\/]|$))").expect("regex");
+    path.is_match(expected) && expected.replace('\\', "/") == actual.replace('\\', "/")
+}
+
 /// Ok, or the first difference with its JSON path.
 pub fn check(expected: &Value, actual: Option<&Value>) -> Result<(), String> {
     check_at(expected, actual, "")
@@ -117,7 +131,7 @@ fn check_at(expected: &Value, actual: Option<&Value>, path: &str) -> Result<(), 
             if let Some(result) = placeholder(text, actual) {
                 return result.map_err(here);
             }
-            if actual == Some(expected) {
+            if actual == Some(expected) || same_windows_path(text, actual) {
                 Ok(())
             } else {
                 Err(here(format!(

@@ -484,7 +484,7 @@ impl Runner {
         Ok(if path.is_absolute() {
             path
         } else {
-            self.run.home.join(path)
+            crate::run::home_path(&self.run.home, &path)
         })
     }
 
