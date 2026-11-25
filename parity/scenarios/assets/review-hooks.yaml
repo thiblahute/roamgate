@@ -43,7 +43,7 @@ steps:
         answer: allow
   - sh:
       env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${allow_socket}
-      python3 ${HOME}/.cache/roamgate/bin/roamgate-review permission
+      ${HOME}/.cache/roamgate/bin/roamgate-review permission
     stdin: '{"hook_event_name": "PermissionRequest", "tool_name": "Bash", "tool_input": {"command": "ls"}}'
     expect:
       exit: 0
@@ -60,7 +60,7 @@ steps:
         dismissed: true
   - sh:
       env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${dismiss_socket}
-      python3 ${HOME}/.cache/roamgate/bin/roamgate-review permission
+      ${HOME}/.cache/roamgate/bin/roamgate-review permission
     stdin: '{"hook_event_name": "PermissionRequest", "tool_name": "Bash", "tool_input": {"command": "ls"}}'
     expect:
       exit: 0
@@ -72,7 +72,7 @@ steps:
             $exact: true
   - sh:
       env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${dismiss_socket}
-      python3 ${HOME}/.cache/roamgate/bin/roamgate-review questions
+      ${HOME}/.cache/roamgate/bin/roamgate-review questions
     stdin: '{"tool_input": {"questions": [{"question": "Q?"}]}}'
     expect:
       exit: 0
@@ -88,14 +88,14 @@ steps:
         answer: allow
   - sh:
       env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${headless_socket}
-      ROAMGATE_HEADLESS=1 python3 ${HOME}/.cache/roamgate/bin/roamgate-review permission
+      ROAMGATE_HEADLESS=1 ${HOME}/.cache/roamgate/bin/roamgate-review permission
     stdin: '{"hook_event_name": "PermissionRequest", "tool_name": "Bash", "tool_input": {"command": "ls"}}'
     expect:
       exit: 0
       stdout: ""
   - sh:
       env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${headless_socket}
-      ROAMGATE_HEADLESS=1 python3 ${HOME}/.cache/roamgate/bin/roamgate-review questions
+      ROAMGATE_HEADLESS=1 ${HOME}/.cache/roamgate/bin/roamgate-review questions
     stdin: '{"tool_input": {"questions": [{"question": "Q?"}]}}'
     expect:
       exit: 0
@@ -109,7 +109,7 @@ steps:
         action: conversation
   - sh:
       env -i PATH=${ROOT}/ps-plain:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 HERDR_SOCKET_PATH=/tmp/herdr.sock
-      ROAMGATE_REVIEW_SOCKET=${start_socket} python3 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
+      ROAMGATE_REVIEW_SOCKET=${start_socket} ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin:
       '{"hook_event_name": "SessionStart", "source": "startup", "session_id": "44444444-aaaa-bbbb-cccc-000000000000",
       "cwd": "/tmp"}'
@@ -131,7 +131,7 @@ steps:
       "*": {}
   - sh:
       env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${aside_socket}
-      ROAMGATE_CLAUDE_START=terminal python3 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
+      ROAMGATE_CLAUDE_START=terminal ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin:
       '{"hook_event_name": "SessionStart", "source": "startup", "session_id": "44444444-aaaa-bbbb-cccc-000000000000",
       "cwd": "/tmp"}'
@@ -140,7 +140,7 @@ steps:
       stdout: ""
   - sh:
       env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${aside_socket}
-      ROAMGATE_HEADLESS=1 python3 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
+      ROAMGATE_HEADLESS=1 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin:
       '{"hook_event_name": "SessionStart", "source": "startup", "session_id": "44444444-aaaa-bbbb-cccc-000000000000",
       "cwd": "/tmp"}'
@@ -149,7 +149,7 @@ steps:
       stdout: ""
   - sh:
       env -i PATH=${ROOT}/ps-print-p:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${aside_socket}
-      python3 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
+      ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin:
       '{"hook_event_name": "SessionStart", "source": "startup", "session_id": "44444444-aaaa-bbbb-cccc-000000000000",
       "cwd": "/tmp"}'
@@ -158,7 +158,7 @@ steps:
       stdout: ""
   - sh:
       env -i PATH=${ROOT}/ps-print:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${aside_socket}
-      python3 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
+      ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin:
       '{"hook_event_name": "SessionStart", "source": "startup", "session_id": "44444444-aaaa-bbbb-cccc-000000000000",
       "cwd": "/tmp"}'
@@ -167,20 +167,20 @@ steps:
       stdout: ""
   - sh:
       env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${aside_socket}
-      python3 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
+      ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin: '{"source": "clear", "session_id": "44444444-aaaa-bbbb-cccc-000000000000"}'
     expect:
       exit: 0
       stdout: ""
   - sh:
       env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${aside_socket}
-      python3 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
+      ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin: '{"source": "startup", "session_id": "44444444-aaaa-bbbb-cccc-000000000000", "agent_id": "a1"}'
     expect:
       exit: 0
       stdout: ""
   - sh:
-      env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} ROAMGATE_REVIEW_SOCKET=${aside_socket} python3
+      env -i PATH=${ROOT}/ps-none:/usr/bin:/bin HOME=${HOME} ROAMGATE_REVIEW_SOCKET=${aside_socket}
       ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin:
       '{"hook_event_name": "SessionStart", "source": "startup", "session_id": "44444444-aaaa-bbbb-cccc-000000000000",
@@ -196,7 +196,7 @@ steps:
       "*": {}
   - sh:
       env -i PATH=${ROOT}/ps-resume:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${resumed_socket}
-      python3 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
+      ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin: '{"source": "resume", "session_id": "44444444-aaaa-bbbb-cccc-000000000000"}'
     expect:
       exit: 0
@@ -208,7 +208,7 @@ steps:
             source: resume
   - sh:
       env -i PATH=${ROOT}/ps-resume:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1 ROAMGATE_REVIEW_SOCKET=${ROOT}/none.sock
-      python3 ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
+      ${HOME}/.cache/roamgate/bin/roamgate-review claude-start
     stdin: '{"source": "resume", "session_id": "44444444-aaaa-bbbb-cccc-000000000000"}'
     expect:
       exit: 0

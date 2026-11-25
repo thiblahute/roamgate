@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use super::form::{Form, automatic_target, form_of, parse_questions, parse_target_flags};
 use super::host::{AgentConnection, AgentSocketHost, HostError};
 use super::output::{not_held, session_output, thread_output};
-use super::texts::{HOLD_CLIENT_INSTALLED_SCRIPT, REVIEW_CLIENT_INSTALLED_SCRIPT, REVIEW_SKILL};
+use super::texts::REVIEW_SKILL;
 use super::{
     HOLD_OUTPUT_MAX_BODY_BYTES, LOCAL_SOCKET_KEY, REVIEW_AGENT_MAX_BODY_BYTES,
     REVIEW_AGENT_MAX_WATCHES, REVIEW_HOME_DIR,
@@ -1555,15 +1555,12 @@ impl AgentSocket {
         let bin = base.join("bin");
         create_dir_mode(&bin, 0o700)?;
         let pid = std::process::id();
-        let client = bin.join("roamgate-review");
-        let temp = PathBuf::from(format!("{}.{pid}.tmp", client.display()));
-        write_mode(&temp, REVIEW_CLIENT_INSTALLED_SCRIPT.as_bytes(), 0o755)?;
-        std::fs::rename(&temp, &client)?;
-        // Conversation mode's pane holder, beside it.
-        let holder = bin.join("roamgate-hold");
-        let temp = PathBuf::from(format!("{}.{pid}.tmp", holder.display()));
-        write_mode(&temp, HOLD_CLIENT_INSTALLED_SCRIPT.as_bytes(), 0o755)?;
-        std::fs::rename(&temp, &holder)?;
+        // The review client and conversation mode's pane holder: this
+        // binary, under their names (no Python here; SSH hosts get the
+        // Python ones, see remote.rs).
+        let program = client_program()?;
+        let client = install_client(&bin, "roamgate-review", &program)?;
+        install_client(&bin, "roamgate-hold", &program)?;
         let skill = base.join("skills").join("roamgate-review");
         create_dir_mode(&skill, 0o700)?;
         write_mode(&skill.join("SKILL.md"), REVIEW_SKILL.as_bytes(), 0o644)?;
@@ -1572,7 +1569,12 @@ impl AgentSocket {
         Self::link_if_free(&skill, &home.join(".claude/skills/roamgate-review"));
         // Codex reads ~/.codex/skills/<name>/SKILL.md the same way.
         Self::link_if_free(&skill, &home.join(".codex/skills/roamgate-review"));
-        Self::link_if_free(&client, &home.join(".local/bin/roamgate-review"));
+        Self::link_if_free(
+            &client,
+            &home
+                .join(".local/bin")
+                .join(client.file_name().unwrap_or_default()),
+        );
         // The Claude mod's marketplace: installed only if the user asks.
         if let Err(error) = roamgate_claude::plugin::write_claude_mod_plugin(home) {
             tracing::warn!(error = %error, "claude mod files not written");
@@ -1757,6 +1759,58 @@ fn write_mode(path: &Path, bytes: &[u8], mode: u32) -> std::io::Result<()> {
     #[cfg(not(unix))]
     let _ = mode;
     options.open(path)?.write_all(bytes)
+}
+
+/// The executable the clients run: this one. A binary replaced while it
+/// runs (an update) reads `... (deleted)` on Linux: the new one is at the
+/// same path.
+fn client_program() -> std::io::Result<PathBuf> {
+    let program = std::env::current_exe()?;
+    let text = program.to_string_lossy();
+    Ok(match text.strip_suffix(" (deleted)") {
+        Some(path) => PathBuf::from(path),
+        None => program,
+    })
+}
+
+/// Installs `bin/<name>` as `program` run under that name (it runs the
+/// client its name says), in one step over whatever was there (an older
+/// install: the Python script of that name). On Unix a link to it; on
+/// Windows `<name>.exe`, a hard link (symbolic ones need privileges
+/// there) or else a copy, and the older extensionless script goes, so
+/// Git Bash finds the executable. Gives the installed path.
+fn install_client(bin: &Path, name: &str, program: &Path) -> std::io::Result<PathBuf> {
+    let pid = std::process::id();
+    #[cfg(unix)]
+    {
+        let client = bin.join(name);
+        if std::fs::read_link(&client).is_ok_and(|current| current == program) {
+            return Ok(client);
+        }
+        let temp = PathBuf::from(format!("{}.{pid}.tmp", client.display()));
+        let _ = std::fs::remove_file(&temp);
+        std::os::unix::fs::symlink(program, &temp)?;
+        std::fs::rename(&temp, &client)?;
+        Ok(client)
+    }
+    #[cfg(not(unix))]
+    {
+        let client = bin.join(format!("{name}.exe"));
+        let temp = bin.join(format!("{name}.{pid}.tmp.exe"));
+        let _ = std::fs::remove_file(&temp);
+        if std::fs::hard_link(program, &temp).is_err() {
+            std::fs::copy(program, &temp)?;
+        }
+        if let Err(error) = std::fs::rename(&temp, &client) {
+            // One that runs (a pane's holder) cannot be replaced: kept.
+            let _ = std::fs::remove_file(&temp);
+            if !client.exists() {
+                return Err(error);
+            }
+        }
+        let _ = std::fs::remove_file(bin.join(name));
+        Ok(client)
+    }
 }
 
 fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {

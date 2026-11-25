@@ -32,7 +32,7 @@ steps:
   - wait_file: .cache/roamgate/bin/roamgate-hold
   - set:
       {
-        hold: "python3 ${HOME}/.cache/roamgate/bin/roamgate-hold",
+        hold: "${HOME}/.cache/roamgate/bin/roamgate-hold",
         base: "env -i PATH=${ROOT}/hbin:/usr/bin:/bin HOME=${HOME}",
       }
   # Roamgate says resume at once: claude --resume in its directory.

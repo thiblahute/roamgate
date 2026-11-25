@@ -1,10 +1,10 @@
 name: the installed roamgate-review client speaks the agent socket
 family: review
 description: >
-  The real Python client, as the server installs it under the run's HOME,
-  with the pane's Herdr variables: it opens a review, comments, lists,
-  reads the skill, lists sessions, notifies, and fails with exit 1
-  on a refusal.
+  The real client as the server installs it under the run's HOME (its
+  own binary, run as roamgate-review), with the pane's Herdr variables:
+  it opens a review, comments, lists, reads the skill, lists sessions,
+  notifies, and fails with exit 1 on a refusal.
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]

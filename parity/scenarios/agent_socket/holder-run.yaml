@@ -22,7 +22,7 @@ steps:
   - wait_file: .cache/roamgate/bin/roamgate-hold
   - spawn: holder
     cwd: work
-    command: exec python3 "$HOME/.cache/roamgate/bin/roamgate-hold" 11111111-aaaa-bbbb-cccc-000000000000
+    command: exec "$HOME/.cache/roamgate/bin/roamgate-hold" 11111111-aaaa-bbbb-cccc-000000000000
     env: { HERDR_PANE_ID: "w1:p1", HERDR_WORKSPACE_ID: w1 }
   - fake_calls: { program: claude, count: 0 }
   - write_stdin: { name: holder, text: "\n" }

@@ -1,0 +1,80 @@
+name: an SSH host gets the claude start hook from the Python installer, as this machine from the server
+family: settings
+description: >
+  With the claude start setting on conversation and an SSH profile
+  connected, the server runs the Python hook installer of
+  contract/assets/python on the host (fake-ssh runs it in the fake remote
+  home): it adds the SessionStart hook beside the user's own hooks, as
+  the server's own installer does on this machine.
+server:
+  herdr: false
+  herdrs:
+    remote: { workspaces: [{ workspace_id: w1, label: remote }] }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ALLOW_SSH: "1"
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: remote
+        profiles:
+          - {
+              id: remote,
+              label: REMOTE,
+              type: ssh,
+              ssh_destination: remote-host,
+              remote_control_socket_path: "${HERDR_remote_CONTROL}",
+              remote_client_socket_path: "${HERDR_remote_CLIENT}",
+              auto_connect: true,
+            }
+    "${ROOT}/remote-home/.claude/settings.json":
+      json:
+        model: opus
+        hooks:
+          SessionStart:
+            [{ matcher: "*", hooks: [{ type: command, command: my-hook session }] }]
+steps:
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    id: up
+    no_wait: true
+    params: { id: remote }
+  - await: up
+    advance_every: 50
+    reply: { state: ready, type: ssh }
+  - call: settings.claude_start.update
+    params: { mode: conversation }
+    reply: { mode: conversation }
+  - expect_log:
+      {
+        contains: "claude start hook connection=remote outcome=installed",
+        within_ms: 20000,
+      }
+  - assert_file:
+      path: "${ROOT}/remote-home/.claude/settings.json"
+      json:
+        $exact: true
+        model: opus
+        hooks:
+          $exact: true
+          SessionStart:
+            - {
+                matcher: "*",
+                hooks: [{ type: command, command: my-hook session }],
+              }
+            - {
+                matcher: "startup|resume",
+                hooks:
+                  [
+                    {
+                      type: command,
+                      command: "~/.cache/roamgate/bin/roamgate-review claude-start",
+                      timeout: 10,
+                      $exact: true,
+                    },
+                  ],
+              }
+  - fake_calls: { program: ssh, argv_match: "python3 -c", min: 1 }
