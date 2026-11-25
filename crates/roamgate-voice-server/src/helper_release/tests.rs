@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
+#[cfg(unix)]
 use sha2::{Digest, Sha256};
 
 use super::*;

@@ -323,8 +323,8 @@ async fn opus_by_default_reading_the_companions_memories() {
     let launch = spawned[0].launch.clone().unwrap();
     assert_eq!(launch.tools, "");
     assert!(launch.args.join(" ").contains(&format!(
-        "\"autoMemoryDirectory\":\"{}\"",
-        dir.path().display()
+        "\"autoMemoryDirectory\":{}",
+        serde_json::to_string(&dir.path().to_string_lossy()).unwrap()
     )));
     cleaner.stop();
 }
