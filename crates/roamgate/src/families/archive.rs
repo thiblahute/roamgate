@@ -51,10 +51,11 @@ pub(crate) fn settings(env: &dyn Env) -> ArchiveSettings {
     normalize_archive_settings(raw.as_ref().and_then(|raw| raw.get("archive")))
 }
 
+/// The OS's name on every platform (launchd and Windows services set no
+/// $HOSTNAME).
 fn hostname() -> String {
-    std::fs::read_to_string("/proc/sys/kernel/hostname")
-        .ok()
-        .map(|name| name.trim().to_owned())
+    Some(roamgate_history::place::os_hostname())
+        .filter(|name| !name.is_empty())
         .or_else(|| std::env::var("HOSTNAME").ok())
         .unwrap_or_else(|| "host".into())
 }
