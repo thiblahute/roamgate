@@ -37,6 +37,9 @@ tracing = "0.1"
 
 [dev-dependencies]
 hyper = { version = "1", features = ["http1", "client", "server"] }
+# The review client the tests drive on Windows, where CPython has no
+# AF_UNIX for the Python one.
+roamgate-agent-client = { path = "../roamgate-agent-client" }
 roamgate-git = { path = "../roamgate-git" }
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
 tempfile = "3"
