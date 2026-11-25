@@ -62,4 +62,8 @@ tokio = { version = "1", features = ["io-util", "macros", "net", "process", "tes
 
 # The allocator (main.rs): not on Windows on Arm.
 [target.'cfg(not(all(windows, target_arch = "aarch64")))'.dependencies]
-mimalloc = { version = "0.1", default-features = false }
+# 0.1.52 (mimalloc 3.3.2) at least: before it, an acquire load built by an
+# MSVC-compatible compiler for ARM64 was a compare-exchange, which wrote to
+# the read-only empty heap as each thread exited (windows-arm64 crashed
+# with 0xc0000005).
+mimalloc = { version = "0.1.52", default-features = false }
