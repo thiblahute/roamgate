@@ -705,7 +705,7 @@ async fn runs_all_lifecycle_hooks_from_filename_with_cwd_aliases_and_source_afte
                 .unwrap();
             assert_eq!(removed.status, "succeeded");
             let stdout = removed.stdout.unwrap();
-            assert!(stdout.contains(&format!("config: {}", path(&source.join(filename)))));
+            assert!(stdout.contains(&format!("config: {}", host_join(&source, filename))));
             assert!(stdout.contains(&format!(
                 "{source_path}|worktree.removed|{checkout_path}|{source_path}source-only"
             )));
