@@ -37,9 +37,15 @@ pub fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
     std::fs::set_permissions(path, permissions)
 }
 
-/// fchmod on an open file, as [`set_mode`].
+/// fchmod on an open file, as [`set_mode`]. On Windows a read-only bit
+/// already as asked is left alone: changing it needs a handle that may
+/// write attributes, and files are read through read-only ones.
 pub fn set_file_mode(file: &File, mode: u32) -> io::Result<()> {
-    let permissions = mode_permissions(&file.metadata()?, mode);
+    let metadata = file.metadata()?;
+    let permissions = mode_permissions(&metadata, mode);
+    if cfg!(windows) && permissions == metadata.permissions() {
+        return Ok(());
+    }
     file.set_permissions(permissions)
 }
 
