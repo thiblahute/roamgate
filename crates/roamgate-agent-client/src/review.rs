@@ -430,7 +430,10 @@ pub struct Socket;
 
 impl Transport for Socket {
     fn exists(&self, socket: &str) -> bool {
+        // Windows may not stat through a link (or at all) to an AF_UNIX
+        // socket, which connects all the same.
         std::fs::metadata(socket).is_ok()
+            || (cfg!(windows) && std::fs::symlink_metadata(socket).is_ok())
     }
 
     fn post(
