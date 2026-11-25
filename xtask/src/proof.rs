@@ -90,13 +90,14 @@ fn answer(mut stream: TcpStream, dir: &Path, log: &Mutex<Vec<String>>) -> Result
     Ok(())
 }
 
-/// GET over loopback: status and body.
+/// GET over loopback, accepting HTML as a browser's navigation does (an app
+/// route is the web app only then): status and body.
 fn get(address: SocketAddr, path: &str) -> Result<(u16, Vec<u8>)> {
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))?;
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     write!(
         stream,
-        "GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nHost: {address}\r\nAccept: text/html\r\nConnection: close\r\n\r\n"
     )?;
     let mut response = Vec::new();
     stream.read_to_end(&mut response)?;
