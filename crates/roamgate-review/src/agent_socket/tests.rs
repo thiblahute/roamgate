@@ -426,6 +426,9 @@ async fn run_client(
     stdin: Option<&str>,
     env: &[(String, Option<String>)],
 ) -> Run {
+    if cfg!(windows) {
+        return run_rust_client(home, cwd, args, stdin, env).await;
+    }
     let mut command = tokio::process::Command::new("python3");
     command
         .arg(client)
@@ -463,6 +466,59 @@ async fn run_client(
         code,
         stdout,
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
+}
+
+/// The binary's own client (roamgate-review on Windows), in this process:
+/// CPython on Windows has no AF_UNIX, so the Python client SSH hosts run
+/// cannot reach the socket there. The two are held to the same vectors
+/// (contract/vectors/agent-client.json).
+async fn run_rust_client(
+    home: &Path,
+    cwd: &Path,
+    args: &[&str],
+    stdin: Option<&str>,
+    env: &[(String, Option<String>)],
+) -> Run {
+    use roamgate_agent_client::review::{Env, Socket, run};
+    let mut vars: std::collections::BTreeMap<String, String> = env
+        .iter()
+        .filter_map(|(key, value)| value.clone().map(|value| (key.clone(), value)))
+        .collect();
+    vars.insert("HOME".into(), home.display().to_string());
+    vars.entry("ROAMGATE_REVIEW_SOCKET".into())
+        .or_insert_with(|| {
+            home.join(".cache")
+                .join("roamgate")
+                .join("review.sock")
+                .display()
+                .to_string()
+        });
+    let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+    let cwd = roamgate_base::paths::realpath(cwd)
+        .unwrap_or_else(|_| cwd.to_path_buf())
+        .display()
+        .to_string();
+    let input = stdin.unwrap_or_default().to_owned();
+    let outcome = tokio::task::spawn_blocking(move || {
+        let env = Env {
+            vars: Box::new(move |name| vars.get(name).cloned()),
+            cwd,
+        };
+        let mut stdin = move || input.clone();
+        run(&args, &env, &Socket, &mut stdin)
+    })
+    .await
+    .unwrap();
+    Run {
+        json: if outcome.code == 0 {
+            serde_json::from_str(&outcome.stdout).unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        },
+        code: outcome.code,
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
     }
 }
 

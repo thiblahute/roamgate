@@ -3475,6 +3475,7 @@ dependencies = [
  "jiff",
  "rand 0.9.5",
  "regex",
+ "roamgate-agent-client",
  "roamgate-agents",
  "roamgate-base",
  "roamgate-claude",
