@@ -24,7 +24,7 @@
 //! | [`record`] | record mode's redacted JSONL recorder | contract-record/recorder, redact |
 //! | [`swr`] | `SwrCache`: single flight, TTL per entry, LRU, budget | mr-cache core, review/memo |
 //! | [`local_socket`] | Unix sockets at a path on every platform, Windows named pipes | Bun's `unix:` listeners, node:net pipes |
-//! | `unix_socket` | Unix socket listeners at paths past `SUN_LEN` (Linux) | Bun's long socket paths |
+//! | [`unix_socket`] | Unix sockets at paths past `SUN_LEN` | Bun's long socket paths |
 
 pub mod assets;
 pub mod clock;
@@ -49,5 +49,4 @@ pub mod session_secret;
 pub mod settings;
 pub mod sqlite;
 pub mod swr;
-#[cfg(unix)]
 pub mod unix_socket;

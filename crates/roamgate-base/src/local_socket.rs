@@ -4,8 +4,8 @@
 //! since 1803), and Windows named pipes where Bun used node:net's (the core
 //! channel, Herdr's sockets).
 //!
-//! On Unix a [`Listener`] is tokio's, bound at any path length
-//! ([`crate::unix_socket`]). On Windows tokio has no `AF_UNIX`: the socket
+//! Both ends reach a path of any length ([`crate::unix_socket`]). On Unix
+//! a [`Listener`] is tokio's. On Windows tokio has no `AF_UNIX`: the socket
 //! is socket2's, its readiness async-io's.
 
 use std::io;
@@ -57,7 +57,7 @@ impl Listener {
 pub async fn connect(path: &Path) -> io::Result<Stream> {
     #[cfg(unix)]
     {
-        tokio::net::UnixStream::connect(path).await
+        crate::unix_socket::connect(path).await
     }
     #[cfg(windows)]
     {
@@ -186,7 +186,8 @@ mod windows {
     impl UnixListener {
         pub fn bind(path: &Path) -> io::Result<Self> {
             let socket = unix_socket()?;
-            socket.bind(&SockAddr::unix(path)?)?;
+            let short = crate::unix_socket::short_path(path)?;
+            socket.bind(&SockAddr::unix(short.path())?)?;
             socket.listen(1024)?;
             Ok(Self(Async::new(socket)?))
         }
@@ -203,7 +204,8 @@ mod windows {
     impl UnixStream {
         pub async fn connect(path: &Path) -> io::Result<Self> {
             let socket = unix_socket()?;
-            let address = SockAddr::unix(path)?;
+            let short = crate::unix_socket::short_path(path)?;
+            let address = SockAddr::unix(short.path())?;
             socket.set_nonblocking(true)?;
             match socket.connect(&address) {
                 Ok(()) => {}

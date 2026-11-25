@@ -44,7 +44,7 @@ pub async fn connect(address: &str) -> io::Result<BoxStream> {
     }
     #[cfg(unix)]
     {
-        let stream = tokio::net::UnixStream::connect(address).await?;
+        let stream = roamgate_base::unix_socket::connect(std::path::Path::new(address)).await?;
         widen(&stream);
         Ok(Box::new(stream))
     }
@@ -80,7 +80,7 @@ impl Listener {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error),
             }
-            let listener = tokio::net::UnixListener::bind(&path)?;
+            let listener = roamgate_base::unix_socket::bind_tokio_listener(&path)?;
             Ok(Self {
                 unix: Some((listener, path)),
             })

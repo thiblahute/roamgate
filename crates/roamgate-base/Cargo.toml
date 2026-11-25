@@ -44,7 +44,9 @@ rustix = { version = "1", features = ["fs", "process"] }
 async-io = "2"
 futures-io = "0.3"
 socket2 = "0.6"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
+# Junctions, the short aliases of long socket paths (unix_socket), and
+# private files' ACLs.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading"] }
 
 [dev-dependencies]
 # Ages files and directories alike, Windows included.
