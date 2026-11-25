@@ -528,6 +528,8 @@ pub(crate) fn send_review_agents(layer: &Arc<Layer>, cx: &FamilyContext) {
     if roamgate_base::node::active() {
         return;
     }
+    // This machine's agents get comments through the review client, a
+    // Python script: Windows' Python has no AF_UNIX to reach its socket.
     let local = !cfg!(windows);
     let hosts = layer.review_agent_hosts.lock().unwrap().clone();
     let mut channels = serde_json::Map::new();
@@ -546,10 +548,9 @@ pub(crate) fn send_review_agents(layer: &Arc<Layer>, cx: &FamilyContext) {
     let tools = super::super::claude_mod::current()
         .map(|hub| hub.tools_state())
         .unwrap_or_default();
-    let mut keys: Vec<String> = Vec::new();
-    if local {
-        keys.push(roamgate_review::agent_socket::LOCAL_SOCKET_KEY.to_owned());
-    }
+    // The local socket on every platform (AF_UNIX on Windows too): the
+    // Claude mod's tools and the other clients reach it there.
+    let mut keys = vec![roamgate_review::agent_socket::LOCAL_SOCKET_KEY.to_owned()];
     keys.extend(layer.review_agent_sockets.lock().unwrap().iter().cloned());
     let agents = json!({"channels": channels, "tools": tools, "socket_keys": keys});
     let state = agents.to_string();
