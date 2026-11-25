@@ -42,19 +42,26 @@ test("release.yml publishes every target of targets.toml", () => {
   const release = Bun.YAML.parse(read(".github/workflows/release.yml")) as {
     jobs: Record<
       string,
-      { strategy?: { matrix: { target: string } }; steps: { run?: string }[] }
+      {
+        strategy?: { matrix: { target: string } };
+        uses?: string;
+        steps: { run?: string }[];
+      }
     >;
   };
-  for (const name of ["package", "check"]) {
-    expect(release.jobs[name].strategy?.matrix.target).toBe(
-      "${{ fromJSON(needs.targets.outputs.targets) }}",
-    );
-  }
+  // Each target through rust-target.yml, which packages it.
+  expect(release.jobs.target.strategy?.matrix.target).toBe(
+    "${{ fromJSON(needs.targets.outputs.targets) }}",
+  );
+  expect(release.jobs.target.uses).toBe("./.github/workflows/rust-target.yml");
   expect(release.jobs.targets.steps.map((step) => step.run)).toContain(
     'echo "targets=$(cargo xtask targets --json)" >> "$GITHUB_OUTPUT"',
   );
+  const target = Bun.YAML.parse(read(".github/workflows/rust-target.yml")) as {
+    jobs: Record<string, { steps: { run?: string }[] }>;
+  };
   expect(
-    release.jobs.package.steps.some((step) =>
+    target.jobs.package.steps.some((step) =>
       step.run?.startsWith("cargo xtask package "),
     ),
   ).toBe(true);
@@ -98,7 +105,7 @@ test("the installers name targets.toml's platforms", () => {
 });
 
 test("the Rust workflows take their matrix from targets.toml and pin their actions", () => {
-  for (const file of ["rust.yml", "rust-checks.yml"]) {
+  for (const file of ["rust.yml", "rust-checks.yml", "rust-target.yml"]) {
     checkRustWorkflow(file);
   }
 });
@@ -119,14 +126,15 @@ function checkRustWorkflow(file: string) {
       }
     >;
   };
-  const matrixJobs = file === "rust.yml" ? ["package", "check"] : [];
+  const matrixJobs = file === "rust.yml" ? ["target"] : [];
   for (const name of matrixJobs) {
     expect(workflow.jobs[name].strategy?.matrix.target).toBe(
       "${{ fromJSON(needs.targets.outputs.targets) }}",
     );
   }
   for (const job of Object.values(workflow.jobs)) {
-    // A call of a reusable workflow (rust-checks.yml) has its own jobs.
+    // A call of a reusable workflow (rust-checks.yml, rust-target.yml) has
+    // its own jobs, checked here too.
     if (job.uses) {
       expect(job.uses).toStartWith("./.github/workflows/");
       continue;
