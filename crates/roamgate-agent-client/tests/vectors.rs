@@ -44,6 +44,9 @@ impl Transport for Fake {
     }
 }
 
+/// The cases whose arguments are POSIX absolute paths.
+const POSIX_PATH_CASES: &[&str] = &["open a range with repos", "place path"];
+
 #[test]
 fn the_rust_client_does_what_the_python_one_does() {
     let doc = roamgate_protocol::vectors::load_raw("agent-client");
@@ -51,6 +54,12 @@ fn the_rust_client_does_what_the_python_one_does() {
     let mut failures = vec![];
     for case in doc["cases"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
+        // The Python client was recorded on a POSIX host: there /nonexistent/a
+        // is absolute, on Windows realpath puts it on the drive, as Python's
+        // own os.path.realpath does.
+        if cfg!(windows) && POSIX_PATH_CASES.contains(&name) {
+            continue;
+        }
         let mut vars: BTreeMap<String, String> = BTreeMap::from([
             ("ROAMGATE_REVIEW_SOCKET".into(), socket.clone()),
             ("COLUMNS".into(), "80".into()),

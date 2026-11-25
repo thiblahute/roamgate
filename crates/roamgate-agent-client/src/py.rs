@@ -301,7 +301,13 @@ pub fn os_error_text(error: &io::Error) -> String {
             let text = error.to_string();
             let suffix = format!(" (os error {code})");
             let message = text.strip_suffix(&suffix).unwrap_or(&text);
-            format!("[Errno {code}] {message}")
+            // Python names a Windows error WinError, its text without the
+            // final dot.
+            if cfg!(windows) {
+                format!("[WinError {code}] {}", message.trim_end_matches(['.', ' ']))
+            } else {
+                format!("[Errno {code}] {message}")
+            }
         }
         None => error.to_string(),
     }
@@ -357,16 +363,23 @@ mod tests {
     #[test]
     fn realpath_keeps_what_does_not_exist() {
         let dir = tempfile::tempdir().unwrap();
-        let real = std::fs::canonicalize(dir.path()).unwrap();
+        let real = without_verbatim(std::fs::canonicalize(dir.path()).unwrap());
         let text = format!("{}/missing/../x/./y", dir.path().display());
-        assert_eq!(realpath(&text), format!("{}/x/y", real.display()));
+        assert_eq!(
+            realpath(&text),
+            real.join("x").join("y").display().to_string()
+        );
     }
 
     #[test]
     fn errors_read_as_python_s() {
         assert_eq!(
             os_error_text(&io::Error::from_raw_os_error(2)),
-            "[Errno 2] No such file or directory"
+            if cfg!(windows) {
+                "[WinError 2] The system cannot find the file specified"
+            } else {
+                "[Errno 2] No such file or directory"
+            }
         );
         assert_eq!(
             os_error_text(&io::Error::from(io::ErrorKind::TimedOut)),
