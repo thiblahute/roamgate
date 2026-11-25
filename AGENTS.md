@@ -2,22 +2,22 @@
 
 ## Project Structure & Module Organization
 
-This repo contains a Rust server (a Cargo workspace) and a React/Vite
-frontend for Herdr.
+This repo contains Roamgate's Rust server, a React/Vite frontend for Herdr,
+and the TypeScript Pi sidecar. The Cargo workspace lives at the root: the
+server binary in `crates/roamgate`, its libraries in `crates/roamgate-*`, the
+parity suite in `parity/`, release tooling in `xtask/` (driven by
+`targets.toml`), and the voice helper in `voice/helper`.
 Frontend code lives in `web/src`, with reusable UI under `web/src/components`,
 assets under `web/src/assets`, and styling split between `web/src/styles`
 (theme tokens, base primitives, vendor overrides, app-shell layout) and
 co-located `web/src/components/*.css` files (see the style organization
 guidelines in `CONTRIBUTING.md`).
-The server lives in `crates/` (the `roamgate` binary is `crates/roamgate`;
-`docs/ARCHITECTURE.md` maps the crates), its parity suite in `parity/` and
-the build and release tooling in `xtask/`. What stays TypeScript under
-`server/`: the Claude Code mod (`server/claude-mod`) and the Pi sidecar
-(`server/src/assistant/pi-sidecar-main.ts` and what it imports, compiled
-to `roamgate-pi`). Code shared by the web app is in `shared/`; release and
-repository helpers live in `scripts/`. Generated build output belongs in
-`web/dist`, `server/public`, `server/roamgate*`, `target/` and `dist/`;
-these paths are ignored and should not be committed.
+The Pi sidecar (`roamgate-pi`) and remaining TypeScript server modules live in
+`server/src`. Embedded assets shared by both sides live in `contract/assets`.
+Release helpers live in `scripts/` and `xtask/`.
+Generated build output belongs in `web/dist`, `server/public`, `target/`
+(packages in `target/dist`), `server/roamgate-pi*`, and `dist/`; these paths
+are ignored and should not be committed.
 
 ## Build, Test, and Development Commands
 
@@ -28,16 +28,15 @@ lockfile of the TypeScript workspaces and `Cargo.lock` the Cargo
 workspace's; shared TypeScript, Bun types, and lint/format tooling belong in
 the root manifest. Keep runtime dependencies in their owning workspace.
 - `bun run dev:web`: start the Vite frontend on port 5173.
-- `bun run dev:server`: run the server (`cargo run -p roamgate`) on port 8788,
-  the one Vite proxies to.
-- `bun run build`: build the web app, then the release server
-  (`cargo build --release -p roamgate`), which embeds it.
-- `bun run build:pi`: compile the Pi sidecar `server/roamgate-pi`.
-- `cargo xtask package <platform>`: build, package and verify a release
-  target of `targets.toml` (`roamgate`, `roamgate-pi` and `VERSION` in
-  versioned and latest `tar.xz` archives with checksums and the update
-  manifest, in `target/dist/`); `cargo xtask targets` lists the platforms.
-  Build the web app first.
+- `bun run dev:server`: run the Rust server (`cargo run -p roamgate`) in
+  development mode on port 8788.
+- `bun run build`: build the frontend and the release server binary.
+- `cargo xtask targets`: list the release targets of `targets.toml`.
+- `cargo xtask package <platform...|all>`: build, package and verify release
+  targets (versioned and latest `tar.xz`, checksums and update manifests in
+  `target/dist`); run `bun run build:web` first.
+- `cargo xtask update-proof <platform> --from <roamgate>`: install a package
+  through an earlier binary's `roamgate update` in a sandbox.
 - `bun run build:assets`: rebuild `contract/assets/js/rendered-helper.js`,
   the Claude mod's tool table and `contract/assets/index.json` after changing
   an embedded asset, a tool or the rendered helper (see `contract/assets`).
@@ -54,6 +53,9 @@ the root manifest. Keep runtime dependencies in their owning workspace.
 - `bun run typecheck:quick`: the same checks with `tsc` and no dependency
   rebuild. See [local validation](CONTRIBUTING.md#validation).
 - `bun run precommit`: run formatting, lint, full type checks, and `test:quick`.
+- Rust: `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D
+  warnings`, and `cargo nextest run --locked` (the parity suite is
+  `cargo test -p roamgate-parity`; see `CONTRIBUTING.md`).
 - `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings` and
   `cargo test` (or `cargo nextest run`): the Rust checks; `cargo test -p
   roamgate-parity --test scenarios` runs the parity suite against this
@@ -130,8 +132,9 @@ Git history.
 
 Stable releases use separate prepare and publish phases:
 1. Run the **Prepare Release** workflow with `X.Y.Z` or
-   `patch`/`minor`/`major`. It updates the three `package.json` versions plus
-   `herdr-plugin.toml` and opens a normal release PR.
+   `patch`/`minor`/`major`. It updates the three `package.json` versions, the Cargo
+   workspace version (`Cargo.toml` and `Cargo.lock`) and `herdr-plugin.toml`,
+   and opens a normal release PR.
    Review that PR and select **Approve workflows to run** to start CI for the
    bot-created PR. Wait for its checks to pass before merging; the workflow
    never merges or tags on its own.
