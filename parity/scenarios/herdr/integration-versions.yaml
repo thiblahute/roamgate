@@ -777,8 +777,8 @@ steps:
       type: integration_list
       $exact: true
   - sh:
-      rm -f ${ROOT}/fakes/herdr.hits; python3 -c "import json,sys; open(sys.argv[1]+'.mark','w').write(str(sum(1
-      for l in open(sys.argv[1]) if json.loads(l)['program']=='herdr')))" ${ROOT}/fakes/calls.jsonl
+      rm -f fakes/herdr.hits; python3 -c "import json,sys; open(sys.argv[1]+'.mark','w').write(str(sum(1
+      for l in open(sys.argv[1]) if json.loads(l)['program']=='herdr')))" fakes/calls.jsonl
   - set:
       case: complete
   - write:
@@ -942,7 +942,7 @@ steps:
       $exact: true
   - sh:
       python3 -c "import json,sys; n=sum(1 for l in open(sys.argv[1]) if json.loads(l)['program']=='herdr');
-      sys.exit(0 if n==int(open(sys.argv[1]+'.mark').read()) else 1)" ${ROOT}/fakes/calls.jsonl
+      sys.exit(0 if n==int(open(sys.argv[1]+'.mark').read()) else 1)" fakes/calls.jsonl
   - set:
       case: cli failure
   - write:

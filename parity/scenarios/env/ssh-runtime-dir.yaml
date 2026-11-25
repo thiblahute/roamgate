@@ -4,6 +4,9 @@ description: >
   An SSH profile's runtime directory (the master's control socket, the
   forwards) is made under the legacy HERDR_GUI_SSH_RUNTIME_DIR alone, and
   under ROAMGATE_SSH_RUNTIME_DIR when both are set (it wins); never in /tmp.
+# An SSH master's control socket and forwards are Unix sockets of OpenSSH's
+# ControlMaster, which Windows' OpenSSH does not have.
+platforms: [linux, macos]
 server:
   herdr: false
   start: false

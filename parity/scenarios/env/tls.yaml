@@ -4,6 +4,7 @@ tier: T2
 description: >
   A self-signed pair made with openssl. The server listens with TLS (its
   listening line says https), and curl reaches it over TLS only.
+  (MSYS_NO_PATHCONV: Git Bash would read -subj /CN=... as a path.)
 server:
   start: false
   env:
@@ -11,7 +12,7 @@ server:
     ROAMGATE_TLS_KEY: "${ROOT}/tls/key.pem"
 steps:
   - sh: >-
-      mkdir -p tls && openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=127.0.0.1
+      mkdir -p tls && MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=127.0.0.1
       -keyout tls/key.pem -out tls/cert.pem 2>/dev/null && chmod 600 tls/key.pem
   - start: {}
   - expect_log: { matches: "bridge listening url=https://" }
