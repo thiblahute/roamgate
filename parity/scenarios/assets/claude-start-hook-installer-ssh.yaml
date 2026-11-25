@@ -34,7 +34,12 @@ server:
         model: opus
         hooks:
           SessionStart:
-            [{ matcher: "*", hooks: [{ type: command, command: my-hook session }] }]
+            [
+              {
+                matcher: "*",
+                hooks: [{ type: command, command: my-hook session }],
+              },
+            ]
 steps:
   - login: {}
   - connect: {}
