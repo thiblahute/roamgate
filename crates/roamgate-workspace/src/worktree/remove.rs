@@ -116,26 +116,11 @@ fn path_within_checkout(path: &str, checkout: &str) -> bool {
     path == checkout || path.starts_with(&format!("{checkout}/"))
 }
 
-/// Node's `path.resolve` of an absolute POSIX path.
-fn resolve_posix(path: &str) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    for part in path.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop();
-            }
-            part => parts.push(part),
-        }
-    }
-    format!("/{}", parts.join("/"))
-}
-
 fn safe_checkout_path(path: &str) -> Option<String> {
     if !path.starts_with('/') {
         return None;
     }
-    let normalized = resolve_posix(path);
+    let normalized = roamgate_base::paths::resolve_posix(path);
     // Not the root: it has a last component and a parent other than itself.
     (normalized != "/").then_some(normalized)
 }

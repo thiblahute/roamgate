@@ -87,6 +87,35 @@ pub fn resolve(path: &Path) -> PathBuf {
     out
 }
 
+/// Node's `path.posix.resolve` of an absolute POSIX path (a remote host's,
+/// whatever this machine's separators): `.` and `..` folded.
+pub fn resolve_posix(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            part => parts.push(part),
+        }
+    }
+    format!("/{}", parts.join("/"))
+}
+
+/// A temporary directory with a short real path, for Unix socket
+/// addresses (about 100 bytes at most): /tmp's on Unix (macOS' TMPDIR is
+/// long, and /tmp is a link there), the system's temporary directory on
+/// Windows, where /tmp is no directory (its long names, not 8.3 ones).
+pub fn short_temp_root() -> PathBuf {
+    let root = if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        PathBuf::from("/tmp")
+    };
+    realpath(&root).unwrap_or(root)
+}
+
 /// `path.dirname`: the parent, or the path itself at a root.
 pub fn dirname(path: &Path) -> PathBuf {
     match path.parent() {
