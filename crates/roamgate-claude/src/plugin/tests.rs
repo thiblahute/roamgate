@@ -57,6 +57,8 @@ fn the_marketplace_is_written_once_per_version() {
     assert!(write_claude_mod_plugin(home.path()).unwrap());
 }
 
+// An SSH host's POSIX script: Windows' command line cannot carry it.
+#[cfg(unix)]
 #[test]
 fn an_ssh_host_gets_the_same_files() {
     let home = tempfile::tempdir().unwrap();
