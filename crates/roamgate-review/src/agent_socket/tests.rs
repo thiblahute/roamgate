@@ -2582,3 +2582,77 @@ async fn a_staged_socket_moves_over_the_path_another_server_listens_on() {
     let (status, _) = post_json(&path, "skill", json!({})).await;
     assert_eq!(status, 200);
 }
+
+/// What a Windows account without developer mode gets: no symbolic link,
+/// so the skill's folder is a junction and the client a hard link or a
+/// copy, each replaced by a later install and never over the user's own.
+#[cfg(windows)]
+#[test]
+fn without_symbolic_links_the_skill_is_a_junction_and_the_client_a_copy() {
+    use super::server::place_link;
+    let home = tempfile::tempdir().unwrap();
+    let ours = home.path().join(".cache").join("roamgate");
+    let skill = ours.join("skills").join("roamgate-review");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(skill.join("SKILL.md"), "skill").unwrap();
+    let bin = ours.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let client = bin.join("roamgate-review.exe");
+    std::fs::write(&client, "client v1").unwrap();
+    let skills = home.path().join(".claude").join("skills");
+    let local_bin = home.path().join(".local").join("bin");
+    std::fs::create_dir_all(&skills).unwrap();
+    std::fs::create_dir_all(&local_bin).unwrap();
+    let skill_link = skills.join("roamgate-review");
+    let client_link = local_bin.join("roamgate-review.exe");
+
+    place_link(&skill, &skill_link, false).unwrap();
+    place_link(&client, &client_link, false).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(skill_link.join("SKILL.md")).unwrap(),
+        "skill"
+    );
+    assert!(
+        std::fs::symlink_metadata(&skill_link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read_to_string(&client_link).unwrap(), "client v1");
+    // Again: already there.
+    place_link(&skill, &skill_link, false).unwrap();
+    place_link(&client, &client_link, false).unwrap();
+
+    // A new install: the junction to an old one of ours and our copy are
+    // replaced.
+    let newer = ours.join("skills-2").join("roamgate-review");
+    std::fs::create_dir_all(&newer).unwrap();
+    std::fs::write(newer.join("SKILL.md"), "skill 2").unwrap();
+    place_link(&newer, &skill_link, false).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(skill_link.join("SKILL.md")).unwrap(),
+        "skill 2"
+    );
+    std::fs::remove_file(&client).unwrap();
+    std::fs::write(&client, "client v2").unwrap();
+    place_link(&client, &client_link, false).unwrap();
+    assert_eq!(std::fs::read_to_string(&client_link).unwrap(), "client v2");
+    // The old install itself is untouched by the junction's removal.
+    assert!(skill.join("SKILL.md").exists());
+
+    // The user's own are kept.
+    let codex = home.path().join(".codex").join("skills");
+    std::fs::create_dir_all(codex.join("roamgate-review")).unwrap();
+    std::fs::write(codex.join("roamgate-review").join("SKILL.md"), "mine").unwrap();
+    place_link(&newer, &codex.join("roamgate-review"), false).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(codex.join("roamgate-review").join("SKILL.md")).unwrap(),
+        "mine"
+    );
+    let theirs = local_bin.join("other.exe");
+    std::fs::write(&theirs, "theirs").unwrap();
+    let other = bin.join("other.exe");
+    std::fs::write(&other, "ours").unwrap();
+    place_link(&other, &theirs, false).unwrap();
+    assert_eq!(std::fs::read_to_string(&theirs).unwrap(), "theirs");
+}
