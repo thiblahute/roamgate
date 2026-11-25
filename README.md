@@ -14,7 +14,9 @@ diffs from your browser. Work on any computer, then continue from your phone
 while Herdr keeps your sessions running.
 
 **Requires a running Herdr server.** Roamgate itself is one native binary,
-written in Rust, with the web app built in: no runtime to install.
+written in Rust, with the web app built in: no runtime to install. Hosts it
+reaches over SSH need `python3` for agent features
+([what an SSH host needs](docs/DEPLOYMENT.md#multiple-and-remote-herdr-connections)).
 
 ## Step away. Stay in flow.
 

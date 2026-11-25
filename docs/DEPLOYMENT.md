@@ -486,8 +486,20 @@ Herdr.
 `user@host`. Put ports, keys, and jump hosts in `~/.ssh/config`; Roamgate stores
 no SSH secrets. Verify host keys and make sure non-interactive login works. Leave
 socket paths empty to use the remote defaults. SSH profiles need a Linux/macOS
-bridge; a Windows bridge supports local profiles only. File moves need `python3`
-on the remote host.
+bridge; a Windows bridge supports local profiles only.
+
+**What a Linux/macOS SSH host needs:** a POSIX shell, and `python3` (standard
+library only) on the login shell's `PATH`. Roamgate installs no binary on SSH
+hosts; it runs shell scripts and Python 3 programs there: the review client and
+conversation mode's pane holder (`~/.cache/roamgate/bin/roamgate-review` and
+`roamgate-hold`, installed when the connection starts), the Herdr control
+relay, file moves, the Codex transcript lookup, agent tab titles and the
+installer of the claude start hook. A host without `python3` still connects,
+with Herdr's calls through a plain forward (slower), and without those
+features. A node host (`"node": true`, below) needs it as well: its agents run
+the same Python clients. The machine Roamgate runs on needs no Python: there
+`roamgate-review` and `roamgate-hold` are the `roamgate` binary itself, run
+under those names (`roamgate review ...` and `roamgate hold ...` are the same).
 
 **Windows SSH hosts:** choose **Windows** as the remote OS, install Herdr 0.9.1+
 (including its `conpty/` directory), and start the session first. The SSH shell
@@ -550,7 +562,9 @@ reinstall.
 ## Reviews
 
 Agents use `~/.cache/roamgate/bin/roamgate-review`, which Roamgate installs on
-this machine and on each SSH host when the connection starts. It needs
+this machine and on each SSH host when the connection starts. On this machine
+it is a link to the `roamgate` binary (on Windows, `roamgate-review.exe`, a
+hard link or a copy of it); on an SSH host it is the Python client, which needs
 `python3` there, and SSH hosts must allow stream-local forwarding (sshd's
 default); a host without either only loses the review client. Merge request
 reviews use the `glab` login on the checkout host, like the PR/MR status card.

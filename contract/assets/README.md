@@ -1,11 +1,13 @@
 # Embedded assets
 
 The files the server embeds and sends or installs as they are: the
-`roamgate-review` and `roamgate-hold` clients and the SKILL.md installed on
-every host, the scripts it runs on hosts over SSH (POSIX shell, Python,
-PowerShell), the login page, the script of rendered review pages and the
-voice model catalog. Hosts run no Roamgate software, so these bytes are a
-contract: both servers embed these same files (the Bun server imports them
+`roamgate-review` and `roamgate-hold` clients installed on SSH hosts (this
+machine runs the `roamgate` binary under those names,
+`crates/roamgate-agent-client`, which does what they do), the SKILL.md
+installed on every host, the scripts it runs on hosts over SSH (POSIX shell,
+Python, PowerShell), the login page, the script of rendered review pages and
+the voice model catalog. SSH hosts run no Roamgate binary, so these bytes are
+a contract: both servers embed these same files (the Bun server imports them
 as text through `server/src/assets`), and the clients' checksums stay the
 same.
 

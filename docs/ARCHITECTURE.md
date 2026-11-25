@@ -1366,8 +1366,15 @@ most 8 watches at once per review). Local panes find it through the
 when it starts (not on a Windows server) and removes on exit while it still
 points there. A local pane whose `HERDR_SOCKET_PATH` names a Herdr server
 Roamgate is not connected to is refused, so its pane ids never reach another
-server's panes. On an SSH host, each time the connection's command master is
-ready the bridge installs the client and adds
+server's panes. The clients on this machine are the `roamgate` binary itself:
+`~/.cache/roamgate/bin/roamgate-review` and `roamgate-hold` are links to it
+(on Windows `.exe` hard links, or copies), replaced in one step at each start,
+and it runs the client its name says (`crates/roamgate-agent-client`). SSH
+hosts get the Python clients of `contract/assets/python` instead; both read the
+same arguments and environment, send the same requests and print the same
+output and exit codes (`contract/vectors/agent-client.json` and the
+`*-python` parity scenarios prove it). On an SSH host, each time the
+connection's command master is ready the bridge installs the client and adds
 `ssh -O forward -R ~/.cache/roamgate/review.sock:<socket>` on that master, so
 agents there use the existing login and no port listens. On each machine
 the client's skill (`SKILL.md`, the manual agents read when it triggers)
