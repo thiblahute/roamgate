@@ -678,6 +678,9 @@ async fn does_not_mistake_a_directory_inside_another_repository_for_a_worktree()
 }
 
 #[tokio::test]
+// Unix only: processes are found by their working directory (/proc,
+// lsof), which Windows does not list.
+#[cfg(unix)]
 async fn stops_a_stable_process_whose_cwd_is_inside_the_checkout() {
     let root = tempfile::Builder::new()
         .prefix("herdr-gui-process-")
