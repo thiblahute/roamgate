@@ -23,8 +23,12 @@ fn is_token(text: &str) -> bool {
 /// Why a read failed, as Bun's `openSync` and `readFileSync` word it.
 pub(crate) fn open_error(error: &std::io::Error, path: &Path) -> String {
     let path = path.display();
+    // Not found is ENOENT on Windows too, for a missing directory as well
+    // (ERROR_PATH_NOT_FOUND), as libuv maps it.
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return format!("ENOENT: no such file or directory, open '{path}'");
+    }
     match error.raw_os_error() {
-        Some(2) => format!("ENOENT: no such file or directory, open '{path}'"),
         Some(13) => format!("EACCES: permission denied, open '{path}'"),
         Some(40) => format!("ELOOP: too many symbolic links encountered, open '{path}'"),
         Some(21) => "EISDIR: illegal operation on a directory, read".into(),
