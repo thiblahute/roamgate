@@ -77,6 +77,14 @@ jobs:
           test "$(read_version package.json)" = "$VERSION"
           test "$(read_version web/package.json)" = "$VERSION"
           test "$(read_version server/package.json)" = "$VERSION"
+          # The binaries' version is the Cargo workspace's: checked before
+          # the tag exists, not after (release.yml checks it again).
+          cargo_version="$(git show "$release_sha:Cargo.toml" \
+            | bun -e 'console.log(Bun.TOML.parse(await Bun.stdin.text()).workspace.package.version)')"
+          if [ "$cargo_version" != "$VERSION" ]; then
+            echo "error: Cargo.toml's workspace version is $cargo_version, not $VERSION" >&2
+            exit 1
+          fi
 
           tag="v$VERSION"
           if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
