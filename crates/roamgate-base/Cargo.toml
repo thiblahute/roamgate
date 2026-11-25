@@ -43,6 +43,7 @@ rustix = { version = "1", features = ["fs", "process"] }
 async-io = "2"
 futures-io = "0.3"
 socket2 = "0.6"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [dev-dependencies]
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
