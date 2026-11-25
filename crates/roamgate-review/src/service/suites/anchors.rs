@@ -696,9 +696,9 @@ const SUBJECT: &str = "gst-c: Add futures, elements written in C, and the pipeli
 fn rewritten_repository() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::Builder::new()
         .prefix("rg-rw-")
-        .tempdir_in("/tmp")
+        .tempdir_in(roamgate_base::paths::short_temp_root())
         .unwrap();
-    let root = dir.path().canonicalize().unwrap();
+    let root = roamgate_base::paths::realpath(dir.path()).unwrap();
     git(&root, &["init", "-q", "-b", "main"]);
     std::fs::write(root.join("README"), "readme\n").unwrap();
     git(&root, &["add", "."]);

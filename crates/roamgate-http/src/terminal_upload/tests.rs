@@ -36,10 +36,17 @@ fn json(response: &Response) -> serde_json::Value {
 
 fn age(path: &Path, hours: u64) {
     let old = std::time::SystemTime::now() - Duration::from_secs(hours * 3600);
-    std::fs::File::open(path)
-        .unwrap()
-        .set_modified(old)
-        .unwrap();
+    let mut options = std::fs::File::options();
+    options.read(true);
+    // Windows sets times through a handle that may write them (files and
+    // directories alike).
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
+        options.access_mode(FILE_WRITE_ATTRIBUTES);
+    }
+    options.open(path).unwrap().set_modified(old).unwrap();
 }
 
 fn listing(path: &Path) -> Vec<String> {
@@ -111,11 +118,9 @@ async fn streams_a_file_to_a_private_directory_and_retains_an_empty_file() {
     }
     let empty = handler.handle(chunks(&[]), Some("empty.txt")).await;
     assert_eq!(empty.status(), 200);
-    assert!(
-        json(&empty)["path"]
-            .as_str()
-            .unwrap()
-            .ends_with("/empty.txt")
+    assert_eq!(
+        Path::new(json(&empty)["path"].as_str().unwrap()).file_name(),
+        Some("empty.txt".as_ref())
     );
     assert_eq!(handler.handle(chunks(&[]), None).await.status(), 400);
     assert_eq!(handler.handle(None::<Body>, Some("x")).await.status(), 400);
