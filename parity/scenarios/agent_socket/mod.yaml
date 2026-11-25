@@ -24,6 +24,9 @@ steps:
         contains: "connection ready connection=legacy-default",
         within_ms: 10000,
       }
+  # The core runs the Claude mod hub once it owns review and conversation.
+  - expect_log:
+      { contains: "the Claude mod hub runs in the Rust core", within_ms: 10000 }
   - login: {}
   - connect: {}
   - call: claude_mod.status
