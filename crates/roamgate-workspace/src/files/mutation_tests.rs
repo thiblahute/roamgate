@@ -144,6 +144,8 @@ async fn moves_files_into_folders_and_back_to_root_without_changing_their_conten
 }
 
 #[tokio::test]
+// Unix only: a Windows file name cannot hold `\`, its separator.
+#[cfg(unix)]
 async fn literal_backslashes_in_posix_names_do_not_move_a_different_file() {
     for remote in [false, true] {
         let f = plain(remote);
@@ -161,6 +163,8 @@ async fn literal_backslashes_in_posix_names_do_not_move_a_different_file() {
 }
 
 #[tokio::test]
+// Unix only: a Windows file name cannot hold `:` or `\`.
+#[cfg(unix)]
 async fn moves_posix_names_that_resemble_windows_paths() {
     for remote in [false, true] {
         let f = plain(remote);
@@ -213,6 +217,8 @@ async fn never_overwrites_a_destination_file_directory_or_symlink() {
 }
 
 #[tokio::test]
+// Unix only: a Windows file name cannot hold a newline.
+#[cfg(unix)]
 async fn trailing_newlines_in_directory_names_do_not_redirect_a_move() {
     for remote in [false, true] {
         let f = plain(remote);
@@ -254,7 +260,7 @@ async fn keeps_batch_failures_intact_while_independent_files_move() {
 /// A save racing the move, right before and right after it.
 fn racing_save(root: &Path) {
     // The move sees real paths (macOS's temporary directory is a link).
-    let root = root.canonicalize().unwrap();
+    let root = roamgate_base::paths::realpath(root).unwrap();
     let before_root = root.clone();
     let before: Box<dyn Fn(&Path) + Send> = Box::new(move |source: &Path| {
         if source.starts_with(&before_root) {
