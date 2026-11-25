@@ -24,10 +24,10 @@ pub(crate) fn config(extra: Value) -> VoiceConfig {
 
 fn real() -> Value {
     json!({
-        "helper": "/bin/sh",
-        "whisper_model": "/bin/sh",
-        "kokoro_model": "/bin/sh",
-        "kokoro_voices": "/bin/sh",
+        "helper": crate::testdata::a_file(),
+        "whisper_model": crate::testdata::a_file(),
+        "kokoro_model": crate::testdata::a_file(),
+        "kokoro_voices": crate::testdata::a_file(),
     })
 }
 
@@ -113,10 +113,10 @@ fn voice_json_takes_the_speaker_s_reference_recordings_as_a_list_of_files() {
     let dir = Dir::new();
     let listed = with(
         &real(),
-        json!({"speaker_reference": ["/bin/sh", "/bin/ls"]}),
+        json!({"speaker_reference": [crate::testdata::a_file(), crate::testdata::another_file()]}),
     );
     assert_eq!(dir.read(&listed), Ok(listed.clone()));
-    for reference in [json!("/bin/sh"), json!([""]), json!([3])] {
+    for reference in [json!(crate::testdata::a_file()), json!([""]), json!([3])] {
         assert!(
             dir.read(&with(&real(), json!({"speaker_reference": reference})))
                 .is_err()
@@ -151,11 +151,11 @@ fn is_8_s_by_default_what_voice_json_says_and_kept_there() {
     assert_eq!(max_pause_ms(Some(&json!(12_000))), 12_000.0);
     assert_eq!(max_pause_ms(Some(&json!(500))), 8000.0);
     let dir = Dir::new();
-    let path = dir.file(&json!({"helper": "/bin/sh"}));
+    let path = dir.file(&json!({"helper": crate::testdata::a_file()}));
     write_max_pause(10_000.0, &path).unwrap();
     assert_eq!(
         serde_json::from_str::<Value>(&fs::read_to_string(&path).unwrap()).unwrap(),
-        json!({"helper": "/bin/sh", "max_pause_ms": 10_000})
+        json!({"helper": crate::testdata::a_file(), "max_pause_ms": 10_000})
     );
     assert!(write_max_pause(60_000.0, &path).is_err());
 }

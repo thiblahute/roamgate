@@ -49,3 +49,17 @@ pub fn between(a: &[f64], b: &[f64], score: f64) -> Vec<f64> {
     )
     .unwrap()
 }
+
+/// A file that exists on every platform (this test binary), where a
+/// voice.json names a helper or a model the tests do not run.
+pub fn a_file() -> String {
+    std::env::current_exe()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Another one (this crate's manifest).
+pub fn another_file() -> String {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml").to_owned()
+}

@@ -35,9 +35,12 @@ async fn a_long_one_is_its_start_and_the_file_where_it_is_whole() {
     assert!(len16(&text) > 20_000);
     let given = answer_for_front(&text, &dir, now_ms()).await;
     let file = given.file.clone().unwrap();
+    assert_eq!(file.parent(), Some(dir.as_path()));
     assert!(
-        file.to_string_lossy()
-            .starts_with(&format!("{}/answer-", dir.display()))
+        file.file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("answer-")
     );
     assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
     #[cfg(unix)]
