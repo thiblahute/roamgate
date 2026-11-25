@@ -75,6 +75,36 @@ connection-scoped navigation path.
 Workspace and agent context menus retain their source identity. Other servers'
 menus only navigate; workspace and pane mutations use the active scoped client.
 
+## Node pages
+
+A page a Roamgate node served (the Mac's, on its own origin) learns it from
+the node's hello, `node: { home, connection_id, version }`, and then holds two
+sockets (`web/src/routedBridge.ts`, each an ordinary `Bridge`):
+
+- The home's `/ws` serves everything as on the home's own page: the catalog,
+  every connection, Work, reviews, settings, voice and notifications. The
+  home's cookie is sent because both origins are the same site.
+- The node's own `/ws` serves the node's connection's latency-critical
+  families: terminals, Herdr topology and actions, files, the git reads of
+  Changes and Files, and agent session reads, whose pushes are then taken
+  from the node's socket only. `web/src/nodeRouting.ts` is the one list; the
+  rest of that connection (git writes, worktrees, conversations, reviews)
+  stays on the home's path.
+- Each socket keeps its own runtime generations. The page sees one
+  generation for the node's connection, which changes with the socket that
+  serves it: when the node's socket drops (or its hello is incompatible) the
+  connection goes wholly to the home, and back when the node returns, each
+  time re-read and re-attached as after a reconnect.
+- While the home is down the page shows the node's connection alone and fails
+  the home's calls without sending them. When the home refuses the page's
+  socket for lack of a session, the page offers the home's sign-in in a new
+  tab and its socket retries by itself.
+- HTTP routes follow the same split (`web/src/httpRoute.ts`): the node's
+  connection's scoped routes go to the node, every other `/api/` route to the
+  home, which answers the origins in `ROAMGATE_NODE_ORIGINS` with CORS.
+
+Pages without a node advertisement keep one socket and their own origin.
+
 ## Instance naming
 
 `/api/instance-settings` reads and writes `title_suffix` in the GUI settings
