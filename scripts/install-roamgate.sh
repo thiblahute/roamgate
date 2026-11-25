@@ -26,21 +26,53 @@ else
   fail "required command not found: shasum or sha256sum"
 fi
 
-case "$(uname -s):$(uname -m)" in
-Darwin:arm64 | Darwin:aarch64)
+# musl or glibc: what ldd says it is, else whether musl's loader is the
+# only one there.
+linux_libc() {
+  if command -v ldd >/dev/null 2>&1; then
+    case "$(ldd --version 2>&1 || true)" in
+    *musl*)
+      echo musl
+      return
+      ;;
+    *GLIBC* | *GNU* | *glibc*)
+      echo glibc
+      return
+      ;;
+    esac
+  fi
+  for loader in /lib/ld-musl-*.so.1; do
+    if [ -e "$loader" ]; then
+      echo musl
+      return
+    fi
+  done
+  echo glibc
+}
+
+libc=""
+case "$(uname -s)" in
+Linux) libc="$(linux_libc)" ;;
+esac
+
+case "$(uname -s):$(uname -m):$libc" in
+Darwin:arm64:* | Darwin:aarch64:*)
   platform="darwin-arm64"
   ;;
-Darwin:x86_64 | Darwin:amd64)
+Darwin:x86_64:* | Darwin:amd64:*)
   platform="darwin-x64"
   ;;
-Linux:x86_64 | Linux:amd64)
+Linux:x86_64:glibc | Linux:amd64:glibc)
   platform="linux-x64"
   ;;
-Linux:arm64 | Linux:aarch64)
+Linux:x86_64:musl | Linux:amd64:musl)
+  platform="linux-x64-musl"
+  ;;
+Linux:arm64:glibc | Linux:aarch64:glibc)
   platform="linux-arm64"
   ;;
 *)
-  fail "unsupported platform: $(uname -s) $(uname -m)"
+  fail "unsupported platform: $(uname -s) $(uname -m)${libc:+ ($libc)}"
   ;;
 esac
 
@@ -243,6 +275,10 @@ if [ -n "$has_pi" ]; then
 fi
 if [ -n "$backup" ]; then
   printf 'Previous binary saved to %s\n' "$backup"
+fi
+if [ -n "$has_pi" ] && [ "$platform" = linux-x64-musl ]; then
+  # Bun's musl build links the C++ runtime.
+  printf 'roamgate-pi needs libstdc++ and libgcc (Alpine: apk add libstdc++ libgcc).\n'
 fi
 case ":${PATH:-}:" in
 *":$install_dir:"*) ;;
