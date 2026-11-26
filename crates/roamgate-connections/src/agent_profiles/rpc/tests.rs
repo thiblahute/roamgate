@@ -629,6 +629,12 @@ async fn an_account_profile_signs_in_and_out() {
         let host = &host;
         async move { handle_profile_rpc(method, params.as_object().unwrap(), host, &context).await }
     };
+    // Claude Code keeps a macOS sign-in in the Keychain: unknown there.
+    let signed_out = if cfg!(target_os = "macos") {
+        "unknown"
+    } else {
+        "signed_out"
+    };
     let started = call(
         "agent_profile.account.login.start",
         json!({"profile": "work"}),
@@ -657,7 +663,7 @@ async fn an_account_profile_signs_in_and_out() {
         call("agent_profile.account.logout", json!({"profile": "Work"}))
             .await
             .unwrap(),
-        json!({"profile": "Work", "auth": "signed_out"})
+        json!({"profile": "Work", "auth": signed_out})
     );
     let agy = call(
         "agent_profile.account.login.start",
@@ -687,7 +693,7 @@ async fn an_account_profile_signs_in_and_out() {
         .unwrap();
     assert_eq!(
         listed["profiles"][1]["account"],
-        json!({"id": "work", "auth": "signed_out"})
+        json!({"id": "work", "auth": signed_out})
     );
     assert_eq!(
         listed["profiles"][2]["account"],

@@ -188,10 +188,7 @@ pub fn launch_env(agent: AccountAgent, dir: &Path) -> LaunchEnv {
 pub fn auth_state(agent: AccountAgent, dir: &Path) -> AuthState {
     match agent {
         // Claude Code keeps a macOS sign-in in the Keychain, not the file.
-        AccountAgent::Claude if cfg!(target_os = "macos") => match claude_auth::auth_state(dir) {
-            AuthState::SignedIn => AuthState::SignedIn,
-            _ => AuthState::Unknown,
-        },
+        AccountAgent::Claude if cfg!(target_os = "macos") => AuthState::Unknown,
         AccountAgent::Claude => claude_auth::auth_state(dir),
         AccountAgent::Codex => codex_auth::auth_state(dir),
         AccountAgent::Agy => agy_auth::auth_state(dir),

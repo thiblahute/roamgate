@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Gauge, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  Copy,
+  Gauge,
+  LogIn,
+  LogOut,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import {
   MODEL_SLOTS,
   type ProfileAccountView,
@@ -75,6 +84,23 @@ function parseState(value: unknown): ProfilesState {
   };
 }
 
+const AUTH_WORDS: Record<string, string> = {
+  signed_in: "Signed in",
+  signed_out: "Signed out",
+  needs_relogin: "Sign in again",
+  unknown: "Sign-in unknown",
+};
+
+/** What agent_profile.account.login.start answers. */
+export type AccountLoginStart =
+  | {
+      kind: "link";
+      login: string;
+      url: string;
+      paste: "code" | "address";
+    }
+  | { kind: "terminal"; message: string };
+
 function blankProfile(): ProfileRow {
   return { name: "", agent: "claude", builtin: false, env: [], unset: [] };
 }
@@ -90,6 +116,7 @@ export function AgentProfilesSettings() {
     index: number | null;
     draft: ProfileRow;
   } | null>(null);
+  const [signingIn, setSigningIn] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -205,6 +232,49 @@ export function AgentProfilesSettings() {
             >
               <Pencil size={14} aria-hidden="true" />
             </button>
+            {profile.account ? (
+              <span className="agent-profiles-account">
+                <small data-auth={profile.account.auth ?? "unknown"}>
+                  {AUTH_WORDS[profile.account.auth ?? "unknown"]}
+                </small>
+                <button
+                  type="button"
+                  className="ghost"
+                  aria-label={`Sign ${profile.name} in`}
+                  title={
+                    profile.account.auth === "signed_in"
+                      ? "Sign in again"
+                      : "Sign in"
+                  }
+                  disabled={saving || !!signingIn}
+                  onClick={() => setSigningIn(profile.name)}
+                >
+                  <LogIn size={14} aria-hidden="true" />
+                </button>
+                {profile.account.auth === "signed_in" &&
+                profile.agent !== "agy" ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    aria-label={`Sign ${profile.name} out`}
+                    title="Sign out"
+                    disabled={saving || !!signingIn}
+                    onClick={async () => {
+                      try {
+                        await client.call("agent_profile.account.logout", {
+                          profile: profile.name,
+                        });
+                        await load();
+                      } catch (e) {
+                        if (client.isCurrent()) setError((e as Error).message);
+                      }
+                    }}
+                  >
+                    <LogOut size={14} aria-hidden="true" />
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
             {profile.builtin ? null : (
               <button
                 type="button"
@@ -238,6 +308,15 @@ export function AgentProfilesSettings() {
         After a usage limit sent a session to another profile, go back to the
         default once the limit resets
       </label>
+      {signingIn ? (
+        <AccountLogin
+          profile={signingIn}
+          onDone={() => {
+            setSigningIn(null);
+            void load();
+          }}
+        />
+      ) : null}
       {editing ? (
         <ProfileEditor
           draft={editing.draft}
@@ -263,6 +342,127 @@ export function AgentProfilesSettings() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** An account profile's sign-in: the link to open and the code to paste
+ * back, or for agy, a check once it is signed in inside agy. */
+function AccountLogin({
+  profile,
+  onDone,
+}: {
+  profile: string;
+  onDone: () => void;
+}) {
+  const client = useConnectionClient();
+  const [started, setStarted] = useState<AccountLoginStart | null>(null);
+  const [pasted, setPasted] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [auth, setAuth] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    client
+      .call("agent_profile.account.login.start", { profile })
+      .then((result) => {
+        if (live && client.isCurrent()) setStarted(result as AccountLoginStart);
+      })
+      .catch((e: Error) => {
+        if (live && client.isCurrent()) setProblem(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [client, profile]);
+
+  const complete = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = (await client.call(
+        "agent_profile.account.login.complete",
+        {
+          profile,
+          ...(started?.kind === "link"
+            ? { login: started.login, code: pasted.trim() }
+            : {}),
+        },
+      )) as { auth: string };
+      if (!client.isCurrent()) return;
+      setAuth(result.auth);
+      if (result.auth === "signed_in") onDone();
+    } catch (e) {
+      if (client.isCurrent()) setProblem((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="agent-profiles-editor agent-profiles-login"
+      aria-label={`Sign ${profile} in`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void complete();
+      }}
+    >
+      <strong>Sign {profile} in</strong>
+      {started?.kind === "link" ? (
+        <>
+          <span>
+            Open this link in your browser and sign in to the account; the page
+            then gives{" "}
+            {started.paste === "code"
+              ? "a code"
+              : "nothing (it does not load): copy its address from the address bar"}
+            .
+          </span>
+          <span className="agent-profiles-login-link">
+            <a href={started.url} target="_blank" rel="noreferrer noopener">
+              Open the sign-in page
+            </a>
+            <button
+              type="button"
+              className="ghost"
+              aria-label="Copy the sign-in link"
+              onClick={() => void navigator.clipboard?.writeText(started.url)}
+            >
+              <Copy size={14} aria-hidden="true" />
+            </button>
+          </span>
+          <label>
+            {started.paste === "code"
+              ? "The code the page shows"
+              : "The address the page ended on"}
+            <input
+              value={pasted}
+              required
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setPasted(event.target.value)}
+            />
+          </label>
+        </>
+      ) : started?.kind === "terminal" ? (
+        <span>{started.message}</span>
+      ) : problem ? null : (
+        <span role="status">Starting...</span>
+      )}
+      {auth && auth !== "signed_in" ? (
+        <em role="alert">{AUTH_WORDS[auth] ?? auth}</em>
+      ) : null}
+      {problem ? <em role="alert">{problem}</em> : null}
+      <div className="agent-profiles-editor-actions">
+        <button type="button" className="ghost" onClick={onDone}>
+          Close
+        </button>
+        <button type="submit" disabled={busy || !started}>
+          {started?.kind === "terminal" ? "Check the sign-in" : "Sign in"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -365,6 +565,24 @@ function ProfileEditor({
           spellCheck={false}
           onChange={(event) =>
             setDraft({ ...draft, command: event.target.value || undefined })
+          }
+        />
+      </label>
+      <label>
+        Account <small>(an id: its own sign-in; empty: none)</small>
+        <input
+          value={draft.account?.id ?? ""}
+          placeholder="work"
+          pattern="[a-z0-9][a-z0-9_\-]{0,39}"
+          maxLength={40}
+          spellCheck={false}
+          onChange={(event) =>
+            setDraft({
+              ...draft,
+              account: event.target.value
+                ? { id: event.target.value }
+                : undefined,
+            })
           }
         />
       </label>
