@@ -129,11 +129,65 @@ showcaseTabs.forEach((tab, index) => {
   });
 });
 
+const installTabs = [...document.querySelectorAll("[data-install-tab]")];
+
+const activateInstallTab = (tab) => {
+  for (const candidate of installTabs) {
+    const selected = candidate === tab;
+    candidate.setAttribute("aria-selected", String(selected));
+    candidate.setAttribute("tabindex", selected ? "0" : "-1");
+    const panel = document.getElementById(
+      candidate.getAttribute("aria-controls") ?? "",
+    );
+    if (panel) panel.hidden = !selected;
+  }
+};
+
+// Opens on the visitor's system when it can tell.
+const platform = (
+  navigator.userAgentData?.platform ??
+  navigator.platform ??
+  ""
+).toLowerCase();
+const preferredTab = installTabs.find((tab) =>
+  platform.includes("win")
+    ? tab.id === "install-tab-windows"
+    : platform.includes("mac")
+      ? tab.id === "install-tab-macos"
+      : false,
+);
+if (preferredTab) activateInstallTab(preferredTab);
+
+installTabs.forEach((tab, index) => {
+  tab.addEventListener("click", () => activateInstallTab(tab));
+  tab.addEventListener("keydown", (event) => {
+    let nextIndex;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (index + 1) % installTabs.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (index - 1 + installTabs.length) % installTabs.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = installTabs.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    const nextTab = installTabs[nextIndex];
+    activateInstallTab(nextTab);
+    nextTab.focus();
+  });
+});
+
 const copyButton = document.querySelector("[data-copy-command]");
 const copyLabel = copyButton?.querySelector("span");
-const installCommand = document.querySelector("[data-install-command]");
-const commandText =
-  "curl -fsSL https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh | sh";
+
+// The visible panel's command: its line, without the prompt.
+const activeCommand = () =>
+  document.querySelector(
+    "[data-install-panel]:not([hidden]) [data-install-command]",
+  );
 
 const copyText = async (text) => {
   if (!navigator.clipboard || !window.isSecureContext) {
@@ -143,18 +197,22 @@ const copyText = async (text) => {
 };
 
 copyButton?.addEventListener("click", async () => {
+  const command = activeCommand();
+  if (!(command instanceof HTMLElement)) return;
   try {
-    await copyText(commandText);
+    await copyText(command.dataset.installCommand ?? "");
     if (copyLabel) copyLabel.textContent = "Copied";
     copyButton.setAttribute("aria-label", "Install command copied");
   } catch {
-    if (installCommand instanceof HTMLElement) {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(installCommand);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    }
+    // Without the clipboard API: the line selected, for Ctrl+C.
+    const selection = window.getSelection();
+    const range = document.createRange();
+    const prompt = command.querySelector("span");
+    if (prompt) range.setStartAfter(prompt);
+    else range.setStart(command, 0);
+    range.setEnd(command, command.childNodes.length);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
     if (copyLabel) copyLabel.textContent = "Select text";
   }
 

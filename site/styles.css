@@ -1598,7 +1598,7 @@
     font-weight: 600;
   }
 
-  .install-terminal-bar button {
+  .install-terminal-bar > button {
     display: inline-flex;
     min-height: 32px;
     align-items: center;
@@ -1613,7 +1613,7 @@
     cursor: pointer;
   }
 
-  .install-terminal-bar button:hover {
+  .install-terminal-bar > button:hover {
     background: rgba(255, 255, 255, 0.07);
   }
 
@@ -1640,6 +1640,54 @@
 
   .install-terminal pre span {
     color: var(--green);
+  }
+
+  .install-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .install-tabs button {
+    min-height: 30px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--muted);
+    background: transparent;
+    font-size: 0.66rem;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .install-tabs button:hover {
+    color: var(--text-soft);
+  }
+
+  .install-tabs button[aria-selected="true"] {
+    border-color: var(--line-strong);
+    color: var(--text);
+    background: rgba(122, 162, 247, 0.09);
+  }
+
+  .install-tabs button:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+  }
+
+  .install-steps {
+    display: grid;
+    gap: 8px;
+    margin: 0 0 18px;
+    padding-left: 1.2em;
+    color: var(--text-soft);
+    line-height: 1.55;
+  }
+
+  .install-steps code,
+  .install-copy p code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
   }
 
   .install-result {

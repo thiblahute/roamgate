@@ -37,7 +37,7 @@ pub struct Proof<'a> {
 
 /// A loopback HTTP server for the files of one directory; it records the
 /// paths asked for.
-fn mirror(dir: PathBuf) -> Result<(SocketAddr, Arc<Mutex<Vec<String>>>)> {
+pub fn mirror(dir: PathBuf) -> Result<(SocketAddr, Arc<Mutex<Vec<String>>>)> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let address = listener.local_addr()?;
     let asked = Arc::new(Mutex::new(Vec::new()));
