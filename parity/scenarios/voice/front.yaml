@@ -168,7 +168,9 @@ steps:
         status: 200,
         json: { to: web, query: rust editions, job: w1, reply: Looking. },
       }
+  # The search runs on its own: done once its process answered.
   - http: GET /api/voice/research
+    retry: 10000
     expect:
       {
         status: 200,
