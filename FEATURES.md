@@ -1157,7 +1157,14 @@ Inspector state is scoped to each checkout; see
   past the reset time; optionally the session goes back to the default
   after the reset. On a narrow header only the icons stay, their words in
   the titles and the menu. The agent launcher offers **Agent: <profile>**
-  for a new session. See [Agent profiles](docs/DEPLOYMENT.md#agent-profiles).
+  for a new session. **Account profiles** are several sign-ins of one
+  agent side by side (two Claude accounts, Codex accounts, Antigravity
+  accounts): each starts its agent on a configuration directory of its
+  own that keeps the sign-in, while settings, plugins, skills, MCP
+  servers and transcripts stay shared with yours; the settings show each
+  account's directory and whether it is signed in. See [Agent
+  profiles](docs/DEPLOYMENT.md#agent-profiles) and [Account
+  profiles](docs/DEPLOYMENT.md#account-profiles).
   With Roamgate's Claude Code mod the chip's title and menu also show the
   session's context and plan usage ("Context 34% · 5-hour 61% · weekly
   15%").

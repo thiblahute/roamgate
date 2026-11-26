@@ -860,8 +860,9 @@ or under `profiles` in `settings.json`:
 }
 ```
 
-- `agent` is the agent driver (`claude`); `command` names another program
-  (default: the driver's own, `claude`); `unset` lists variables to remove.
+- `agent` is the agent (`claude`, `codex` or `agy`); `command` names
+  another program (default: the agent's own, `claude`, `codex` or `agy`);
+  `unset` lists variables to remove.
   A profile that sets `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` also
   removes the other one, `CLAUDE_CODE_OAUTH_TOKEN` and the Bedrock/Vertex
   switches, so the pane's own key never goes with it; one that sets
@@ -906,6 +907,76 @@ model, else `opus`. Once the session answered there, its own model choice
 (`/model`) holds again. A `/model` in conversation mode is kept the same
 way: the next starts use it until the session has answered with it, and
 a `--model` the pane's Claude was started with gives way to it.
+
+### Account profiles
+
+An account profile is one sign-in of its agent, so that several Claude,
+Codex or Antigravity accounts can be used side by side. It adds
+`"account": {"id": "<id>"}` (1 to 40 lower-case letters, digits, `-` or
+`_`; two profiles cannot share one) to a profile, which may still set
+`command`, `env` and `unset`:
+
+```json
+{
+  "profiles": {
+    "list": [
+      { "name": "Work", "agent": "claude", "account": { "id": "work" } },
+      { "name": "Perso", "agent": "claude", "account": { "id": "perso" } },
+      { "name": "Codex", "agent": "codex", "account": { "id": "codex" } },
+      { "name": "Agy 2", "agent": "agy", "account": { "id": "second" } }
+    ],
+    "default": "Work"
+  }
+}
+```
+
+Each account has a directory of its own in the data directory,
+`accounts/<agent>/<id>/`, made (0700) and prepared each time the agent
+starts there. Sign in once from a session on the profile (`/login` in
+Claude Code, `codex login`, `agy`'s own sign-in): the sign-in stays in that
+directory.
+
+- **Claude Code** starts with `CLAUDE_CONFIG_DIR=<dir>`, without
+  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN`
+  unless the profile sets them. `.credentials.json` and `.claude.json` are
+  the account's own: the first start seeds `.claude.json` from yours
+  (`~/.claude.json`, or in your `$CLAUDE_CONFIG_DIR`) without your
+  account's identity and plan caches, and each start brings in your MCP
+  servers (`mcpServers`, yours winning). Every other entry of your
+  `~/.claude` (settings, plugins, skills, agents, commands, `projects`,
+  `sessions`, `jobs`) is linked, so sessions, transcripts and settings
+  are the same as yours; `projects`, `sessions` and `jobs` are made in
+  `~/.claude` when missing. MCP server logins are kept with the sign-in
+  and are not shared.
+- **Codex** starts with `CODEX_HOME=<dir>`, without `CODEX_API_KEY` or
+  `OPENAI_API_KEY` unless the profile sets them. `auth.json` and
+  `models_cache.json` are the account's own; every other entry of your
+  `~/.codex` (or `$CODEX_HOME`: `config.toml`, `AGENTS.md`, prompts,
+  skills, `sessions`) is linked.
+- **Antigravity** (`agy`) starts with `HOME=<dir>/home` (and the XDG
+  directories under it, `USERPROFILE` on Windows) and, off Windows, with
+  `DBUS_SESSION_BUS_ADDRESS` naming a bus that is not there: `agy` cannot
+  reach the keyring, whose one entry every home shares, and keeps the
+  account's sign-in in its own token file in that home. Nothing of your
+  home is shared with it. Roamgate never reads, writes or sends an `agy`
+  token; your own `agy` (with no account profile) is unchanged.
+
+Links are symbolic links; on Windows without the right to make them,
+directories are junctions and files are copied (the settings files,
+`CLAUDE.md`, `config.toml`, `AGENTS.md`, plugin and skill folders), a
+copied file being refreshed when yours is newer. Where neither works,
+the entry stays the account's own: a Claude account's `projects` or a
+Codex account's `sessions` that could not be linked is then read by
+session discovery, the agent history and the archive beside yours, as
+every `agy` account's conversations are. Your own `~/.claude`, `~/.codex`
+and `~/.gemini` are never changed but for the stores made when missing.
+
+**Configuration > Integrations > Agent profiles** (`settings.profiles.get`)
+shows each account's directory and whether its sign-in is there
+(`signed_in` or `signed_out`, from its credential file being present;
+`unknown` for `agy` and for Claude on macOS, which keeps the sign-in in
+the Keychain). An account directory is on this machine: account
+profiles are for agents running here, not on SSH hosts.
 
 Nothing secret is ever typed into a pane. When the profile is not plain
 `claude`, what Roamgate types is `roamgate-hold --launch <token>`: the
