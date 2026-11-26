@@ -1,0 +1,105 @@
+name: a background task's notification after the stop leaves the session paused and resumed at the reset
+family: limit_resume
+description: >
+  A terminal Claude stopped by a usage limit whose background agents the
+  same limit stopped too: Claude Code writes their task notifications to
+  the transcript after the stop, without a turn going through. The session
+  is still paused: at the reset plus the margin it is resumed once, and the
+  resume is logged when armed and when due.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+  files:
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: keep going },
+          }
+        - type: assistant
+          uuid: a1
+          timestamp: "2025-12-31T23:59:30.000Z"
+          sessionId: 11111111-2222-4333-8444-555555555555
+          cwd: /work
+          isApiErrorMessage: true
+          apiError: usage_limit_reached
+          apiErrorParams:
+            {
+              rate_limit_info:
+                {
+                  status: rejected,
+                  resetsAt: 1767229200,
+                  rateLimitType: five_hour,
+                },
+            }
+          message:
+            {
+              role: assistant,
+              content: [{ type: text, text: "5-hour limit reached" }],
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: settings.limit_resume.get
+    reply: { enabled: true, margin_seconds: 60, message: "{{string}}" }
+    save: { message: /result/message }
+  - advance: 5000
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data: { pauses: [{ pane_id: p1, resets_at: 1767229200000 }] },
+      }
+  - expect_log: { contains: usage limit resume armed, within_ms: 10000 }
+  # A background agent the limit stopped reports it after the stop.
+  - sh: printf '%s\n' '{"type":"queue-operation","operation":"enqueue","timestamp":"2026-01-01T00:03:00.000Z","sessionId":"11111111-2222-4333-8444-555555555555"}' '{"type":"user","uuid":"u2","parentUuid":"a1","isSidechain":false,"timestamp":"2026-01-01T00:03:00.100Z","sessionId":"11111111-2222-4333-8444-555555555555","cwd":"/work","origin":{"kind":"task-notification","producer":"session-task"},"promptSource":"system","queueTranscriptOnly":true,"message":{"role":"user","content":"<task-notification>\n<task-id>t1</task-id>\n<status>failed</status>\n<summary>Agent failed (5-hour limit)</summary>\n</task-notification>"}}' >> home/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl
+  # Past the rereads (every five minutes): still paused.
+  - advance: 360000
+  - call: limit_resume.list
+    reply:
+      {
+        pauses:
+          [
+            {
+              pane_id: p1,
+              session_id: 11111111-2222-4333-8444-555555555555,
+              resets_at: 1767229200000,
+              state: scheduled,
+            },
+          ],
+      }
+  - herdr_calls: { method: agent.prompt, count: 0 }
+  # The reset (an hour after the stop) plus the 60 s margin.
+  - advance: 3295000
+  - herdr_calls:
+      method: agent.prompt
+      count: 1
+      calls: [{ params: { target: p1, text: "${message}" }, valid: true }]
+    retry: 10000
+  - expect_log: { contains: usage limit resume due, within_ms: 10000 }
+  - advance: 2000
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data: { pauses: [{ pane_id: p1, state: resumed }] },
+      }
+  # Once: the minute's looks after it send nothing more.
+  - advance: 180000
+  - herdr_calls: { method: agent.prompt, count: 1 }

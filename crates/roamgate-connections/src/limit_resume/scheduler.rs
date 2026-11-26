@@ -462,7 +462,23 @@ impl LimitResumer {
             this.fire(&connection, &pane).await;
         })
         .abort_handle();
+        let session = state
+            .pauses
+            .get(connection_id)
+            .and_then(|entries| entries.get(pane_id))
+            .map(|entry| entry.pane.session_id.clone());
         state.timers.insert(timer_key, Timer { at, id, handle });
+        drop(state);
+        self.log(
+            LogLevel::Info,
+            "usage limit resume armed",
+            fields(&[
+                ("connection", json!(connection_id)),
+                ("pane", json!(pane_id)),
+                ("session", json!(session)),
+                ("at", json!(iso_millis(at))),
+            ]),
+        );
     }
 
     async fn connection_named(&self, connection_id: &str) -> Option<Arc<dyn LimitConnection>> {
@@ -814,6 +830,14 @@ impl LimitResumer {
         if self.state().stopped {
             return;
         }
+        self.log(
+            LogLevel::Info,
+            "usage limit resume due",
+            fields(&[
+                ("connection", json!(connection_id)),
+                ("pane", json!(pane_id)),
+            ]),
+        );
         let Some(connection) = self.connection_named(connection_id).await else {
             return;
         };
@@ -867,7 +891,24 @@ impl LimitResumer {
                     .await;
             }
             // Resumed by the user, stopped on another reset, or not wanted.
-            _ => self.scan(connection_id).await,
+            stop => {
+                let why = match (&stop, &due) {
+                    (None, _) => "its transcript no longer ends on a usage limit".to_owned(),
+                    (Some(_), Some(due)) => format!("{:?}", due.state).to_lowercase(),
+                    (Some(_), None) => "its state could not be read".to_owned(),
+                };
+                self.log(
+                    LogLevel::Info,
+                    "usage limit resume not sent",
+                    fields(&[
+                        ("connection", json!(connection_id)),
+                        ("pane", json!(pane_id)),
+                        ("session", json!(pane.session_id)),
+                        ("why", json!(why)),
+                    ]),
+                );
+                self.scan(connection_id).await
+            }
         }
     }
 

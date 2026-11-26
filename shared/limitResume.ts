@@ -159,8 +159,10 @@ export function usageLimitStopOf(record: unknown): UsageLimitStop | null {
  * Whether a transcript record is a turn of the conversation (what the
  * user or something on their behalf sent, or what the agent answered),
  * rather than Claude Code's bookkeeping (cost, queue, request blobs,
- * snapshots), a subagent's record, or a local command that never reached
- * the model (/usage, /model).
+ * snapshots), a subagent's record, a local command that never reached
+ * the model (/usage, /model), or a background task's notification: a
+ * task the same limit stopped reports it after the stop without a turn
+ * going through, and one that does go through is answered by a turn.
  */
 function isConversationTurn(record: Record<string, unknown>): boolean {
   if (record.type !== "user" && record.type !== "assistant") return false;
@@ -177,7 +179,10 @@ function isConversationTurn(record: Record<string, unknown>): boolean {
             ? content[0].text
             : ""
           : "";
-    if (/^\s*<(?:local-command-|command-name>)/.test(text)) return false;
+    if (/^\s*<(?:local-command-|command-name>|task-notification>)/.test(text))
+      return false;
+    if (isRecord(record.origin) && record.origin.kind === "task-notification")
+      return false;
   }
   return true;
 }

@@ -204,6 +204,29 @@
       ]
     },
     {
+      "name": "a background task's notification after the stop does not end the pause",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"p0\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"9a1c2e3f-0000-4000-8000-000000000001\",\"timestamp\":\"2026-11-25T23:02:21.391Z\",\"message\":{\"id\":\"m1\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"type\":\"message\",\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 10:10pm (America/Santiago)\"}]},\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1795655400,\"rateLimitType\":\"five_hour\"}},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"sessionId\":\"8a6a809c-0000-4000-8000-000000000000\"}\n{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"timestamp\":\"2026-11-25T23:05:58.010Z\",\"sessionId\":\"8a6a809c-0000-4000-8000-000000000000\"}\n{\"parentUuid\":\"9a1c2e3f-0000-4000-8000-000000000001\",\"isSidechain\":false,\"type\":\"user\",\"uuid\":\"9a1c2e3f-0000-4000-8000-000000000002\",\"timestamp\":\"2026-11-25T23:05:58.939Z\",\"origin\":{\"kind\":\"task-notification\",\"producer\":\"session-task\"},\"promptSource\":\"system\",\"queueTranscriptOnly\":true,\"message\":{\"role\":\"user\",\"content\":\"<task-notification>\\n<task-id>ab2f</task-id>\\n<status>failed</status>\\n<summary>Agent \\\"tests\\\" failed: You've hit your 5-hour limit</summary>\\n</task-notification>\"},\"sessionId\":\"8a6a809c-0000-4000-8000-000000000000\"}\n{\"parentUuid\":\"9a1c2e3f-0000-4000-8000-000000000002\",\"isSidechain\":false,\"type\":\"user\",\"uuid\":\"9a1c2e3f-0000-4000-8000-000000000003\",\"timestamp\":\"2026-11-25T23:11:03.201Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"<task-notification>\\n<task-id>a1fd</task-id>\\n<status>failed</status>\\n</task-notification>\"}]},\"sessionId\":\"8a6a809c-0000-4000-8000-000000000000\"}\n"
+              ]
+            }
+          ],
+          "result": {
+            "resets_at": 1795655400000,
+            "kind": "five_hour",
+            "stopped_at": 1795647741391,
+            "uuid": "9a1c2e3f-0000-4000-8000-000000000001",
+            "message": "You've hit your 5-hour limit · resets 10:10pm (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
       "name": "a tail cut inside a record skips the broken line",
       "group": ["usageLimitStop"],
       "calls": [
@@ -303,32 +326,56 @@
       "calls": [
         {
           "fn": "limitResume.limitResumeSettingsError",
-          "args": [{ "enabled": false }],
+          "args": [
+            {
+              "enabled": false
+            }
+          ],
           "result": null
         },
         {
           "fn": "limitResume.limitResumeSettingsError",
-          "args": [{ "enabled": "no" }],
+          "args": [
+            {
+              "enabled": "no"
+            }
+          ],
           "result": "limit_resume.enabled must be true or false"
         },
         {
           "fn": "limitResume.limitResumeSettingsError",
-          "args": [{ "message": "  " }],
+          "args": [
+            {
+              "message": "  "
+            }
+          ],
           "result": "limit_resume.message must be some text"
         },
         {
           "fn": "limitResume.limitResumeSettingsError",
-          "args": [{ "margin_seconds": -1 }],
+          "args": [
+            {
+              "margin_seconds": -1
+            }
+          ],
           "result": "limit_resume.margin_seconds must be a whole number of seconds from 0 to 3600"
         },
         {
           "fn": "limitResume.limitResumeSettingsError",
-          "args": [{ "margin_seconds": 1.5 }],
+          "args": [
+            {
+              "margin_seconds": 1.5
+            }
+          ],
           "result": "limit_resume.margin_seconds must be a whole number of seconds from 0 to 3600"
         },
         {
           "fn": "limitResume.limitResumeSettingsError",
-          "args": [{ "other": 1 }],
+          "args": [
+            {
+              "other": 1
+            }
+          ],
           "result": "limit_resume takes enabled, message and margin_seconds, not other"
         }
       ]
@@ -346,12 +393,17 @@
               "margin_seconds": "soon"
             }
           ],
-          "result": { "enabled": false, "message": "Go on." }
+          "result": {
+            "enabled": false,
+            "message": "Go on."
+          }
         },
         {
           "fn": "limitResume.normalizeLimitResumeSettings",
           "args": [null],
-          "result": { "$undefined": true }
+          "result": {
+            "$undefined": true
+          }
         }
       ]
     },
@@ -395,7 +447,9 @@
                   "resets_at": 1,
                   "state": "scheduled"
                 },
-                { "pane_id": 3 }
+                {
+                  "pane_id": 3
+                }
               ]
             }
           ],

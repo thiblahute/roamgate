@@ -171,7 +171,10 @@ pub fn usage_limit_stop_of(record: &Value) -> Option<UsageLimitStop> {
 }
 
 /// Whether a transcript record is a turn of the conversation rather than
-/// Claude Code's bookkeeping, a subagent's record, or a local command.
+/// Claude Code's bookkeeping, a subagent's record, a local command, or a
+/// background task's notification (a task the same limit stopped reports
+/// it after the stop without a turn going through; one that goes through
+/// is answered by a turn).
 fn is_conversation_turn(record: &Map<String, Value>) -> bool {
     let kind = record.get("type").and_then(Value::as_str);
     if kind != Some("user") && kind != Some("assistant") {
@@ -197,7 +200,19 @@ fn is_conversation_turn(record: &Map<String, Value>) -> bool {
             _ => "",
         };
         let text = text.trim_start();
-        if text.starts_with("<local-command-") || text.starts_with("<command-name>") {
+        if text.starts_with("<local-command-")
+            || text.starts_with("<command-name>")
+            || text.starts_with("<task-notification>")
+        {
+            return false;
+        }
+        if record
+            .get("origin")
+            .and_then(Value::as_object)
+            .and_then(|origin| origin.get("kind"))
+            .and_then(Value::as_str)
+            == Some("task-notification")
+        {
             return false;
         }
     }

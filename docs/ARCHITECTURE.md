@@ -2917,8 +2917,12 @@ once it resets ([settings](DEPLOYMENT.md#resuming-after-a-usage-limit)).
   `error: "rate_limit"`, and a `rate_limit_info` (in `apiErrorParams`, else
   `quotaLimits`) whose `status` is `rejected` with a `resetsAt` (unix
   seconds). The message's words are never read. Turns are user and
-  assistant records that are not meta, not a subagent's (`isSidechain`) and
-  not a local command (`<command-name>`, `<local-command-...>`); Claude
+  assistant records that are not meta, not a subagent's (`isSidechain`),
+  not a local command (`<command-name>`, `<local-command-...>`) and not a
+  background task's notification (`origin.kind: "task-notification"` or
+  `<task-notification>`: a task the same limit stopped reports it after
+  the stop without a turn going through, and one that does go through is
+  answered by an assistant turn); Claude
   Code's bookkeeping (`last-prompt`, `cost-state`, `tools-used`,
   `queue-operation`, `api-request-blob`, snapshots, system records) is
   skipped, so a user message after the stop means it is not paused. Every
