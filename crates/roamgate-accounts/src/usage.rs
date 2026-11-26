@@ -46,6 +46,18 @@ pub struct UsageWindow {
     pub resets_at: Option<String>,
 }
 
+/// One window's reading at one time, for the burn-aware projection.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UsageSample {
+    pub at: i64,
+    pub label: String,
+    pub utilization: f64,
+}
+
+/// How long readings are kept for the projection (ms), and how many.
+const HISTORY_MS: i64 = 6 * 60 * 60_000;
+const HISTORY_MAX: usize = 64;
+
 /// What an account's last reading said.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
@@ -487,6 +499,7 @@ pub struct UsagePoller {
     agy_program: String,
     board: Mutex<BTreeMap<String, AccountUsage>>,
     timers: Mutex<BTreeMap<String, Timer>>,
+    history: Mutex<BTreeMap<String, Vec<UsageSample>>>,
 }
 
 /// What a poll changed: the accounts read anew, and those gone.
@@ -513,7 +526,13 @@ impl UsagePoller {
     pub fn new(data_root: &Path, endpoints: Endpoints, agy_program: &str) -> Self {
         let file = crate::accounts_root(data_root).join("usage.json");
         let mut board = BTreeMap::new();
-        if let Some(saved) = read_object(&file)
+        let saved = read_object(&file);
+        let history = saved
+            .as_ref()
+            .and_then(|saved| saved.get("history").cloned())
+            .and_then(|history| serde_json::from_value(history).ok())
+            .unwrap_or_default();
+        if let Some(saved) = &saved
             && let Some(Value::Object(accounts)) = saved.get("accounts")
         {
             for (key, value) in accounts {
@@ -532,6 +551,7 @@ impl UsagePoller {
             agy_program: agy_program.to_owned(),
             board: Mutex::new(board),
             timers: Mutex::new(BTreeMap::new()),
+            history: Mutex::new(history),
         }
     }
 
@@ -545,6 +565,29 @@ impl UsagePoller {
             .collect()
     }
 
+    /// An account's recent readings (`agent/id`), oldest first.
+    pub fn history(&self, key: &str) -> Vec<UsageSample> {
+        self.history
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(key)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn remember(&self, key: &str, usage: &Usage, now_ms: i64) {
+        let mut history = self.history.lock().unwrap_or_else(|e| e.into_inner());
+        let samples = history.entry(key.to_owned()).or_default();
+        samples.extend(usage.windows.iter().map(|window| UsageSample {
+            at: now_ms,
+            label: window.label.clone(),
+            utilization: window.utilization,
+        }));
+        samples.retain(|sample| now_ms - sample.at <= HISTORY_MS);
+        let excess = samples.len().saturating_sub(HISTORY_MAX);
+        samples.drain(..excess);
+    }
+
     fn save(&self) {
         let accounts: serde_json::Map<String, Value> = self
             .board
@@ -556,6 +599,11 @@ impl UsagePoller {
         let mut doc = serde_json::Map::new();
         doc.insert("version".into(), Value::from(1));
         doc.insert("accounts".into(), Value::Object(accounts));
+        if let Ok(history) =
+            serde_json::to_value(&*self.history.lock().unwrap_or_else(|e| e.into_inner()))
+        {
+            doc.insert("history".into(), history);
+        }
         if let Some(parent) = self.file.parent()
             && roamgate_base::private::create_private_dir(parent).is_ok()
         {
@@ -580,6 +628,10 @@ impl UsagePoller {
                 .collect();
             for key in gone {
                 board.remove(&key);
+                self.history
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&key);
                 delta.removed.push(key);
             }
             self.timers
@@ -646,6 +698,7 @@ impl UsagePoller {
             let wait = match result {
                 Ok(usage) => {
                     timer.failures = 0;
+                    self.remember(key, &usage, now_ms);
                     next.status = if usage.windows.is_empty() && account.agent == AccountAgent::Agy
                     {
                         UsageStatus::Unknown
@@ -855,6 +908,7 @@ mod tests {
         );
         // A restart shows the last reading, as cached.
         let restarted = UsagePoller::new(data, endpoints, "agy");
+        assert_eq!(restarted.history("claude/work")[0].utilization, 10.0);
         let snapshot = restarted.snapshot();
         assert_eq!(snapshot[0].status, UsageStatus::RateLimited);
         assert_eq!(
