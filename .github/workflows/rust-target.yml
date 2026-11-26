@@ -112,3 +112,17 @@ jobs:
           update: ${{ matrix.target.update }}
           release-updates: ${{ matrix.target.release_updates }}
           token: ${{ github.token }}
+      # The documented install line (site/install.json) run as shown, then
+      # `roamgate` and its `roamgate url` login link, against this package
+      # from a loopback mirror (cargo xtask getting-started).
+      - name: Getting started
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.target.platform }}
+          VERSION: ${{ inputs.version }}
+          CONTAINER: ${{ matrix.target.container }}
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          set -- "$PLATFORM" --version "$VERSION"
+          if [ -n "$CONTAINER" ]; then set -- "$@" --container; fi
+          cargo xtask getting-started "$@"

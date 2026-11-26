@@ -73,12 +73,17 @@ and `~/.local/bin/roamgate-pi`. On Linux x86-64 it installs the musl build when
 (`apk add curl libstdc++ libgcc`):
 
 ```bash
-curl -fsSL \
-  https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh \
-  | sh
+curl -fsSL https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh | sh
 ```
 
-Add `~/.local/bin` to PATH, then run `roamgate` and open the printed URL.
+Add `~/.local/bin` to PATH if the installer says so, then:
+
+1. Run `roamgate` and keep it running. It serves on `http://localhost:8787`.
+2. In another terminal, run `roamgate url`. It prints the login link,
+   `http://localhost:8787/?token=...`; open it in a browser, and the token in
+   it logs you in. The login page also takes that token, which stays in
+   `~/.config/roamgate/auth-token` (`roamgate auth show` tells where).
+
 `roamgate update` updates (or rerun the installer); `roamgate rollback` restores
 the previous binary (`roamgate.previous`) and its sidecar
 (`roamgate-pi.previous`). An update from a release older than the Rust build
@@ -91,6 +96,9 @@ On Windows (10 1803 or later), the PowerShell installer does the same into
 ```powershell
 irm https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.ps1 | iex
 ```
+
+Then start and log in as above, with `roamgate` and `roamgate url` in
+PowerShell.
 
 `roamgate update` and `roamgate rollback` work there too: Windows cannot
 overwrite a running executable, so `roamgate.exe` and `roamgate-pi.exe` are
@@ -106,6 +114,13 @@ or in the environment before `irm ... | iex` on Windows
 | Pin a version     | `ROAMGATE_VERSION=X.Y.Z sh` (no `v`; empty means latest)             |
 | Install directory | `sudo env ROAMGATE_INSTALL_DIR=/usr/local/bin sh`                    |
 | Release mirror    | `ROAMGATE_RELEASE_BASE_URL=<https URL of a flat asset directory> sh` |
+
+The release mirror is how the same lines install another build, a fork's
+prerelease for example: fetch the installer from that directory and point
+`ROAMGATE_RELEASE_BASE_URL` at it (`curl -fsSL <dir>/install-roamgate.sh |
+ROAMGATE_RELEASE_BASE_URL=<dir> sh`, or `$env:ROAMGATE_RELEASE_BASE_URL =
+'<dir>'` before `irm <dir>/install-roamgate.ps1 | iex`). CI runs these lines
+against each run's own packages this way (`cargo xtask getting-started`).
 
 ## Managed Herdr setup
 

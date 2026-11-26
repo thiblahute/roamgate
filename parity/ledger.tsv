@@ -320,6 +320,7 @@ shared/limitResume.test.ts	another API error, or an allowed rate limit, is no st
 shared/limitResume.test.ts	the user typing after the stop resumed it	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
 shared/limitResume.test.ts	a resume the limit stopped again is paused by the newest stop	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
 shared/limitResume.test.ts	meta records, subagents and local commands do not count as turns	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	a background task's notification after the stop does not end the pause	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
 shared/limitResume.test.ts	a tail cut inside a record skips the broken line	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
 shared/limitResume.test.ts	reads conversation mode's stream-json spelling too	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
 shared/limitResume.test.ts	defaults: on, a minute after the reset, the message	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
@@ -505,6 +506,9 @@ scripts/contract/write.test.ts	appended Markdown rows are padded like the table'
 scripts/contract/write.test.ts	JSON is written as the formatter writes it	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/deploy-templates.test.ts	renamed systemd template runs Roamgate and uses the Roamgate environment file	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/deploy-templates.test.ts	launchd template executes the installed Roamgate binary with Roamgate identities and state paths	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/install-lines.test.ts	the README and the deployment guide show the getting-started lines	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/install-lines.test.ts	the site shows them in one tab per system, copying the line itself	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/install-lines.test.ts	the installers download from the variable, else the lines' base	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/install-plugin.test.ts	plugin manifest runs system installers and the native executable	scenario:parity/scenarios/install/plugin-manifest.yaml	
 scripts/install-plugin.test.ts	plugin installer stages a matching native release without Bun: ${failure}	scenario:parity/scenarios/install/plugin-checksum.yaml,scenario:parity/scenarios/install/plugin-download.yaml,scenario:parity/scenarios/install/plugin-metadata.yaml,scenario:parity/scenarios/install/plugin-native-command.yaml,scenario:parity/scenarios/install/plugin-native-exit.yaml,scenario:parity/scenarios/install/plugin-none.yaml,scenario:parity/scenarios/install/plugin-pi-sidecar.yaml	
 scripts/install-plugin.windows.test.ts	Windows plugin installer verifies and stages releases without Bun on PATH	scenario:parity/scenarios/install/plugin-windows.yaml	Windows runner: install-plugin.ps1 under PowerShell (plan 5.10)

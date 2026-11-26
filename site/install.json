@@ -1,0 +1,9 @@
+{
+  "$comment": "The getting-started lines: README.md, docs/DEPLOYMENT.md and site/index.html show them with {base} as base (scripts/install-lines.test.ts holds them equal), and cargo xtask getting-started runs them with {base} a local mirror of the run's packages. The installers download from ROAMGATE_RELEASE_BASE_URL, else base.",
+  "base": "https://github.com/powerfooI/roamgate/releases/latest/download",
+  "variable": "ROAMGATE_RELEASE_BASE_URL",
+  "unix": "curl -fsSL {base}/install-roamgate.sh | sh",
+  "windows": "irm {base}/install-roamgate.ps1 | iex",
+  "start": "roamgate",
+  "url": "roamgate url"
+}

@@ -60,15 +60,20 @@ test("Pages deploys on main pushes or manual dispatch and checks installer avail
   expect(url).toBe(
     "https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh",
   );
+  // The lines' one source (scripts/install-lines.test.ts holds the pages
+  // to it); main.js copies the line the page shows.
   for (const path of [
     "../site/index.html",
-    "../site/main.js",
+    "../site/install.json",
     "../README.md",
     "../docs/DEPLOYMENT.md",
   ]) {
-    expect(await Bun.file(new URL(path, import.meta.url)).text()).toContain(
-      url!,
-    );
+    const text = await Bun.file(new URL(path, import.meta.url)).text();
+    expect(
+      path.endsWith(".json")
+        ? text.includes(url!.replace("/install-roamgate.sh", ""))
+        : text.includes(url!),
+    ).toBe(true);
   }
 });
 

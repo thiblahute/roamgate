@@ -155,11 +155,16 @@ impl Sandbox {
     /// stopped when dropped.
     pub fn serve(&self, bin: &Path, port: u16, extra: &[(&str, &str)]) -> Result<Server> {
         let port_text = port.to_string();
-        let serve = ["--host", "127.0.0.1", "--port", &port_text];
+        self.start(bin, &["--host", "127.0.0.1", "--port", &port_text], extra)
+    }
+
+    /// Starts `bin` with `serve` arguments and `extra` variables; stopped
+    /// when dropped.
+    pub fn start(&self, bin: &Path, serve: &[&str], extra: &[(&str, &str)]) -> Result<Server> {
         // A prefix may not pass signals on (a container started through a
         // toolbox's host-spawn, `docker exec`): there the server ends itself.
         let mut command = if self.prefix.is_empty() {
-            self.command_with(extra, bin, &serve)
+            self.command_with(extra, bin, serve)
         } else {
             let bin_text = bin.to_string_lossy();
             let mut args = vec!["-s", "TERM", "120", &bin_text];
