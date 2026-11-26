@@ -48,7 +48,10 @@
     { $_ -in 'Arm64', 'ARM64' } { $platform = 'windows-arm64' }
     default { Fail "unsupported Windows architecture $architecture" }
   }
-  if (!(Get-Command tar.exe -CommandType Application -ErrorAction SilentlyContinue)) { Fail 'required command not found: tar.exe (Windows 10 1803 or later)' }
+  # Windows' own tar (bsdtar, which reads zip), not a GNU tar earlier on
+  # PATH (Git for Windows'), which does not.
+  $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+  if (!(Test-Path -LiteralPath $tar)) { Fail "required command not found: $tar (Windows 10 1803 or later)" }
 
   if ($requestedVersion) {
     if ($requestedVersion -notmatch '\A[0-9A-Za-z._-]+\z') { Fail "invalid ROAMGATE_VERSION: $requestedVersion" }
@@ -120,12 +123,12 @@
       Fail 'package checksum mismatch'
     }
 
-    $members = @(& tar.exe -tf $archive)
+    $members = @(& $tar -tf $archive)
     if ($LASTEXITCODE -ne 0) { Fail 'could not read the package' }
     $hasPi = $members -contains "$packageDir/roamgate-pi.exe"
     $wanted = @("$packageDir/VERSION", "$packageDir/roamgate.exe")
     if ($hasPi) { $wanted += "$packageDir/roamgate-pi.exe" }
-    & tar.exe -xf $archive -C $staging @wanted
+    & $tar -xf $archive -C $staging @wanted
     if ($LASTEXITCODE -ne 0) { Fail 'could not extract the package' }
     $extracted = Join-Path $staging $packageDir
     $binary = Join-Path $extracted 'roamgate.exe'
