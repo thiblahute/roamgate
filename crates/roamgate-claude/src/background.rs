@@ -190,7 +190,11 @@ pub fn spawn_lines(command: &ClaudeCommand, args: Vec<String>, cwd: PathBuf) -> 
     });
     match spawned {
         Ok(process) => process.into_lines(),
-        Err(_) => LineSession::ended(),
+        Err(error) => {
+            // An ended session answers nothing: say why once here.
+            tracing::warn!(target: "claude", "cannot start {}: {error}", command.program);
+            LineSession::ended()
+        }
     }
 }
 
