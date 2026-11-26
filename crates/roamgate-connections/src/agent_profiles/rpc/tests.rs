@@ -64,6 +64,7 @@ struct Host {
     terminal: Mutex<Restart>,
     calls: Mutex<Vec<String>>,
     launches: Mutex<Vec<(String, LaunchSpec)>>,
+    settings: Mutex<Value>,
 }
 
 impl Host {
@@ -81,6 +82,7 @@ impl Host {
             terminal: Mutex::new(Restart::ok()),
             calls: Mutex::default(),
             launches: Mutex::default(),
+            settings: Mutex::new(settings(true)),
         }
     }
 
@@ -91,7 +93,7 @@ impl Host {
 
 impl ProfileRpcHost for Host {
     fn read_settings(&self) -> HostFuture<'_, Result<Value, String>> {
-        Box::pin(async { Ok(settings(true)) })
+        Box::pin(async { Ok(self.settings.lock().unwrap().clone()) })
     }
     fn agent_get<'a>(&'a self, _: &'a str) -> HostFuture<'a, Option<Value>> {
         Box::pin(async { self.agent.lock().unwrap().clone() })
@@ -176,6 +178,7 @@ fn context(store: Arc<SessionProfiles>) -> ProfileRpcContext {
         store,
         now: Arc::new(system_ms),
         home: PathBuf::from("/nonexistent-home"),
+        logins: Arc::default(),
     }
 }
 
@@ -598,4 +601,97 @@ async fn a_refused_switch_keeps_the_one_time_model_it_had() {
     let choice = store.get(Some("s-1")).unwrap();
     assert_eq!(choice["profile"], Value::Null);
     assert_eq!(choice["model"], json!("claude-opus-5-5"));
+}
+
+#[tokio::test]
+async fn an_account_profile_signs_in_and_out() {
+    if std::env::var_os("ROAMGATE_DATA_ROOT").is_some() {
+        return;
+    }
+    let host = Host::new();
+    *host.settings.lock().unwrap() = json!({
+        "version": 1,
+        "profiles": normalize_profiles_settings(Some(&json!({
+            "list": [
+                {"name": "Work", "agent": "claude", "account": {"id": "work"}},
+                {"name": "Agy", "agent": "agy", "account": {"id": "a"}},
+                {"name": "Plain", "agent": "codex"},
+            ],
+        }))),
+    });
+    let temp = tempfile::tempdir().unwrap();
+    let context = ProfileRpcContext {
+        home: temp.path().to_path_buf(),
+        ..context(store_with(None))
+    };
+    let call = |method: &'static str, params: Value| {
+        let context = context.clone();
+        let host = &host;
+        async move { handle_profile_rpc(method, params.as_object().unwrap(), host, &context).await }
+    };
+    let started = call(
+        "agent_profile.account.login.start",
+        json!({"profile": "work"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(started["kind"], "link");
+    assert_eq!(started["paste"], "code");
+    assert!(
+        started["url"]
+            .as_str()
+            .unwrap()
+            .contains("client_id=9d1c250a")
+    );
+    let dir = crate::agent_profiles::store::data_root_for(temp.path()).join("accounts/claude/work");
+    assert!(dir.is_dir(), "prepared before it signs in");
+    // A code of another sign-in is refused before anything is sent.
+    let refused = call(
+        "agent_profile.account.login.complete",
+        json!({"profile": "Work", "login": started["login"], "code": "c#not-its-state"}),
+    )
+    .await
+    .unwrap_err();
+    assert!(refused.0.contains("another sign-in"), "{}", refused.0);
+    assert_eq!(
+        call("agent_profile.account.logout", json!({"profile": "Work"}))
+            .await
+            .unwrap(),
+        json!({"profile": "Work", "auth": "signed_out"})
+    );
+    let agy = call(
+        "agent_profile.account.login.start",
+        json!({"profile": "Agy"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(agy["kind"], "terminal");
+    assert!(
+        call("agent_profile.account.logout", json!({"profile": "Agy"}))
+            .await
+            .is_err()
+    );
+    assert!(
+        call(
+            "agent_profile.account.login.start",
+            json!({"profile": "Plain"})
+        )
+        .await
+        .unwrap_err()
+        .0
+        .contains("not an account profile")
+    );
+    // The listing says each account's sign-in.
+    let listed = call("agent_profile.get", json!({"pane_id": "p"}))
+        .await
+        .unwrap();
+    assert_eq!(
+        listed["profiles"][1]["account"],
+        json!({"id": "work", "auth": "signed_out"})
+    );
+    assert_eq!(
+        listed["profiles"][2]["account"],
+        json!({"id": "a", "auth": "unknown"})
+    );
+    assert!(listed["profiles"][3].get("account").is_none());
 }

@@ -14,14 +14,15 @@ use std::sync::{Arc, LazyLock};
 use fancy_regex::Regex;
 use serde_json::{Map, Value, json};
 
+use super::shared::profile_account_id;
 use super::shared::{
     ModelChoice, all_profiles, chosen_model_answered, is_plain_profile, latest_session_answer,
     latest_session_model, latest_transcript_model, latest_usage_limit, profile_agent,
     profile_model_label, profile_name, profile_named, switch_model,
 };
 use super::store::{
-    LaunchSpec, NowMs, SessionProfiles, profile_command, profile_for_session, profiles_list,
-    profiles_of,
+    LaunchSpec, NowMs, SessionProfiles, account_dir_of, profile_command, profile_for_session,
+    profiles_list, profiles_of,
 };
 use roamgate_base::log::iso_millis;
 
@@ -114,6 +115,8 @@ pub struct ProfileRpcContext {
     pub store: Arc<SessionProfiles>,
     pub now: NowMs,
     pub home: PathBuf,
+    /// The account sign-ins in progress.
+    pub logins: Arc<roamgate_accounts::Logins>,
 }
 
 /// An RPC refused with a message (`ProfileRpcError`).
@@ -137,6 +140,9 @@ pub const PROFILE_RPC_METHODS: &[&str] = &[
     "agent_profile.switch",
     "agent_profile.launch",
     "agent_profile.retry",
+    "agent_profile.account.login.start",
+    "agent_profile.account.login.complete",
+    "agent_profile.account.logout",
 ];
 
 /// A refusal said of the agent, not of its program; commands stay.
@@ -257,15 +263,25 @@ pub async fn handle_profile_rpc(
     let default_name = profile_named(&list, profiles.get("default").and_then(Value::as_str))
         .map(|profile| profile_name(&profile).to_owned())
         .unwrap_or_else(|| profile_name(&offered[0]).to_owned());
+    if let Some(action) = method.strip_prefix("agent_profile.account.") {
+        return account_rpc(action, params, &list, context).await;
+    }
     let listed: Vec<Value> = offered
         .iter()
         .map(|profile| {
-            json!({
+            let mut entry = json!({
                 "name": profile_name(profile),
                 "agent": profile_agent(profile),
                 "label": profile_model_label(profile),
                 "default": profile_name(profile) == default_name,
-            })
+            });
+            if let Some((agent, dir)) = account_dir_of(profile, &context.home) {
+                entry["account"] = json!({
+                    "id": profile_account_id(profile),
+                    "auth": roamgate_accounts::auth_state(agent, &dir).as_str(),
+                });
+            }
+            entry
         })
         .collect();
     let pane_id = match params.get("pane_id") {
@@ -515,6 +531,63 @@ pub async fn handle_profile_rpc(
         }));
     }
     Err(err(format!("unknown method {method}")))
+}
+
+/// `agent_profile.account.*`: an account profile's sign-in. `login.start`
+/// gives the link to open (`kind: "link"`, with the `login` to complete),
+/// or, for `agy`, says to sign in inside it (`kind: "terminal"`);
+/// `login.complete` takes what the user pasted (`code`), or for `agy`
+/// checks the sign-in; `logout` signs the account out. Each answers the
+/// account's `auth` state.
+async fn account_rpc(
+    action: &str,
+    params: &Map<String, Value>,
+    list: &[Value],
+    context: &ProfileRpcContext,
+) -> Result<Value, ProfileRpcError> {
+    let wanted = params
+        .get("profile")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let profile = profile_named(list, Some(wanted))
+        .ok_or_else(|| err(format!("No profile is named {wanted}")))?;
+    let name = profile_name(&profile).to_owned();
+    let (agent, dir) = account_dir_of(&profile, &context.home)
+        .ok_or_else(|| err(format!("{name} is not an account profile")))?;
+    let answer =
+        |auth: roamgate_accounts::AuthState| json!({"profile": name, "auth": auth.as_str()});
+    match action {
+        "login.start" => {
+            // The account's directory exists and is ready before it signs in.
+            profile_command(&profile, &context.home).map_err(err)?;
+            Ok(match context.logins.start(agent, &dir) {
+                roamgate_accounts::Started::Link { login, url, paste } => json!({
+                    "profile": name, "kind": "link", "login": login, "url": url, "paste": paste,
+                }),
+                roamgate_accounts::Started::Terminal => json!({
+                    "profile": name,
+                    "kind": "terminal",
+                    "message": format!(
+                        "Start a session on {name} and sign in there, then check the sign-in."
+                    ),
+                }),
+            })
+        }
+        "login.complete" => {
+            let code = params.get("code").and_then(Value::as_str).unwrap_or("");
+            let login = params.get("login").and_then(Value::as_str);
+            context
+                .logins
+                .complete(agent, &dir, login, code, (context.now)())
+                .await
+                .map(answer)
+                .map_err(err)
+        }
+        "logout" => context.logins.logout(agent, &dir).map(answer).map_err(err),
+        _ => Err(err(format!(
+            "unknown method agent_profile.account.{action}"
+        ))),
+    }
 }
 
 /// A connection as the return after a reset sees it: the panes and

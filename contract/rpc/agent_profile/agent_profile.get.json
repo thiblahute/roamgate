@@ -46,6 +46,24 @@
             },
             "name": {
               "type": "string"
+            },
+            "account": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "auth": {
+                  "enum": [
+                    "unknown",
+                    "signed_in",
+                    "signed_out",
+                    "needs_relogin"
+                  ]
+                }
+              },
+              "required": ["id", "auth"],
+              "description": "an account profile's id and sign-in"
             }
           },
           "required": ["agent", "default", "label", "name"]

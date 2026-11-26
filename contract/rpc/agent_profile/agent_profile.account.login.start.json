@@ -1,0 +1,50 @@
+{
+  "method": "agent_profile.account.login.start",
+  "family": "agent_profile",
+  "scope": "connection",
+  "handler": "crates/roamgate-connections/src/agent_profiles/rpc.rs",
+  "params": {
+    "type": "object",
+    "properties": {
+      "profile": {
+        "type": "string"
+      }
+    },
+    "required": ["profile"]
+  },
+  "reply": {
+    "type": "object",
+    "properties": {
+      "profile": {
+        "type": "string"
+      },
+      "kind": {
+        "enum": ["link", "terminal"]
+      },
+      "login": {
+        "type": "string"
+      },
+      "url": {
+        "type": "string"
+      },
+      "paste": {
+        "enum": ["code", "address"]
+      },
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["profile", "kind"]
+  },
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "status": "typed",
+  "x-typed-from": "crates/roamgate-connections/src/agent_profiles/rpc.rs"
+}
