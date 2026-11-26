@@ -4,6 +4,9 @@ description:
   "The headless claude a pane holder started does not outlive the holder: killed outright,
   or its pane closing (a hang-up or a terminate), its child ends, and a closing pane takes the holder's
   log with it."
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   env:
     PARITY_FAKE_ENV_KEYS: ROAMGATE_HEADLESS,ROAMGATE_PANE_ID,ROAMGATE_HERDR_SOCKET_PATH,CLAUDE_CONFIG_DIR

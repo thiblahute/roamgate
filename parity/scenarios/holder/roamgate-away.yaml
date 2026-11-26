@@ -6,6 +6,9 @@ description:
   "The server goes away (killed) while conversation mode holds the pane: the headless claude
   runs on with nobody reading; Enter in the pane says the conversation process still runs there, a second
   Enter ends it and resumes claude in the terminal."
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   env:
     PARITY_FAKE_ENV_KEYS: ROAMGATE_HEADLESS,ROAMGATE_PANE_ID,ROAMGATE_HERDR_SOCKET_PATH,CLAUDE_CONFIG_DIR

@@ -128,6 +128,7 @@ impl Normalizers {
                 }
                 Normalizer::Paths { replace } => {
                     // Longest path first, so HOME inside ROOT wins.
+                    // On Windows Git and Git Bash name them with `/` too.
                     let mut pairs: Vec<(String, String)> = replace
                         .iter()
                         .filter_map(|(key, token)| {
@@ -135,6 +136,14 @@ impl Normalizers {
                                 .by_name
                                 .get(key)
                                 .map(|path| (path.clone(), token.clone()))
+                        })
+                        .flat_map(|(path, token)| {
+                            let slashed = path.replace('\\', "/");
+                            let mut both = vec![(path.clone(), token.clone())];
+                            if cfg!(windows) && slashed != path {
+                                both.push((slashed, token));
+                            }
+                            both
                         })
                         .collect();
                     pairs.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));

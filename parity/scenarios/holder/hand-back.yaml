@@ -5,6 +5,9 @@ family: agent_chat
 description:
   "Conversation mode hands the pane back while its headless claude is up: the holder ends that
   child (its process gone, its state directory removed) before the terminal claude resumes on the session."
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 covers:
   [env:ROAMGATE_HEADLESS, env:ROAMGATE_PANE_ID, env:ROAMGATE_HERDR_SOCKET_PATH]
 server:

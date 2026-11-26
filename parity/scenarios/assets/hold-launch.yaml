@@ -5,6 +5,9 @@ description: >
   it sends, the program and environment come back (its removals applied),
   a session with no transcript is started by its id, an expired token runs
   nothing, and a hand-back resumes with the session's profile environment.
+# Its steps play the pane's POSIX shell with Unix tools (env -i, symbolic
+# links, #! scripts), as conversation mode's holder runs there.
+platforms: [linux, macos]
 server:
   herdr: false
   files:

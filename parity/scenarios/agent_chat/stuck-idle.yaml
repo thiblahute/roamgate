@@ -1,5 +1,8 @@
 name: "a turn silent for ten minutes is shown stuck, an idle conversation is put to sleep, and a spoken message wakes it"
 family: agent_chat
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   # After any real file time: the stuck watch takes the transcript's
   # modification time when it is later than the turn's last output.

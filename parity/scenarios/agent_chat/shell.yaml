@@ -1,5 +1,8 @@
 name: "the chat's ! lines run in the pane's directory with the login shell, and go to claude with the next message"
 family: agent_chat
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   env: { SHELL: /bin/sh }
   herdr:

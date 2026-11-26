@@ -1,5 +1,8 @@
 name: "the chat's controls reach the running claude: models, MCP servers, background work"
 family: agent_chat
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

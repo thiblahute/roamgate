@@ -6,6 +6,9 @@ description:
   "The Python roamgate-hold (contract/assets/python, what SSH hosts get) runs as a job of an interactive bash in a terminal (a pty),
   against a scripted agent socket: told to suspend, it stops as a job, keeps the session, and fg asks
   Roamgate to bring it back to conversation mode with a new log, then resumes as told."
+# Its steps play the pane's POSIX shell with Unix tools (env -i, symbolic
+# links, #! scripts), as conversation mode's holder runs there.
+platforms: [linux, macos]
 server:
   herdr: false
   files:

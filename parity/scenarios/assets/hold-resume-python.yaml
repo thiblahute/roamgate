@@ -6,6 +6,9 @@ description: >
   takes a pane back on Enter alone, what it resumes and with which
   arguments and environment. A fake claude prints how it was started; a
   fake ps keeps the host's own processes out of it.
+# Its steps play the pane's POSIX shell with Unix tools (env -i, symbolic
+# links, #! scripts), as conversation mode's holder runs there.
+platforms: [linux, macos]
 server:
   herdr: false
   files:
