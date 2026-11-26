@@ -1212,7 +1212,11 @@ Inspector state is scoped to each checkout; see
   over the pane's terminal; or **Show background tasks** in the command
   menu): background
   commands, monitors, subagents, teammates (by name) and workflows, with
-  how each ended (or **lost**: no end notice a day later). A command shows
+  how each ended (or **lost**: no end notice a day later). The subagents'
+  own subagents show too, down to theirs, each once under the agent that
+  started it (**from cross-tests**), with what the last word on it says:
+  running again after a message resumed it, done on its latest end notice;
+  a subagent's own commands and monitors show while both run. A command shows
   the end of its output, followed while it runs; a subagent or teammate its
   own conversation; a workflow its phases in order with their progress
   (done ones folded, the running one open, failures marked), each agent's

@@ -6,6 +6,21 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.45
+
+inventory: 0cbf4749be847bf8ab63d58c516a6b1588c42ac164ad0f697ad6308f0cefa09a
+
+A session's background tasks include those its subagents started
+themselves, down to their own subagents, each listed once under the agent
+that started it; and the agents the session did not start but resumed with
+a message or heard end.
+
+- rpc: `agent_tasks.get` and `agent_task.get` give `AgentTask`s (the shared
+  type), with `parentAgentId` and `parent` (the agent that started one) and
+  `foreign` (one the session only resumed or heard end). A subagent's own
+  commands and monitors are listed only while both run. Family:
+  agent_sessions.
+
 ## 1.44
 
 inventory: 0cbf4749be847bf8ab63d58c516a6b1588c42ac164ad0f697ad6308f0cefa09a

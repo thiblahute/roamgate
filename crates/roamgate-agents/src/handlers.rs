@@ -27,13 +27,20 @@ use crate::resolver::{HerdrCall, ResolverContext, claude_successor_id, resolve_a
 use crate::session::SessionFile;
 use crate::tail::find_line_from_end;
 use crate::tasks::{
-    command_outputs_to_watch, subagents_to_watch, with_command_activity, with_subagent_activity,
+    NESTED_DEPTH, agent_ids, command_outputs_to_watch, parse_session_tasks, subagents_to_watch,
+    with_command_activity, with_nested_tasks, with_subagent_activity,
 };
 
 const MAX_MESSAGES_PER_AGENT: usize = 200;
 const TASK_OUTPUT_BYTES: u64 = 32 * 1024;
 const TASK_ENTRIES: usize = 200;
 const SUBAGENT_STAT_MS: f64 = 5000.0;
+/// A growing subagent transcript is read again at most this often for the
+/// tasks it started (a remote one less often).
+const NESTED_READ_MS: f64 = 5000.0;
+const NESTED_READ_REMOTE_MS: f64 = 15_000.0;
+/// A subagent transcript nobody asked about for this long is forgotten.
+const NESTED_KEPT_MS: f64 = 10.0 * 60.0 * 1000.0;
 const TASK_ENTRY_CHARS: usize = 4000;
 const FOREGROUND_RUNNING_MS: f64 = 2.0 * 60.0 * 60.0 * 1000.0;
 
@@ -70,10 +77,20 @@ type Result<T> = std::result::Result<T, HandlerError>;
 /// When the held output files were listed, them, and the processes seen.
 type Held = (f64, Vec<String>, Option<std::collections::HashSet<String>>);
 
+/// A subagent transcript's own tasks, as last read.
+struct NestedRead {
+    size: f64,
+    read_at: f64,
+    used_at: f64,
+    tasks: Vec<Value>,
+}
+
 /// What a subagent's file and a command's output say of their tasks.
 pub struct TaskWatcher {
     files: Arc<dyn SessionFiles>,
     seen: Mutex<HashMap<String, (f64, Option<f64>)>>,
+    nested: Mutex<HashMap<String, NestedRead>>,
+    metas: Mutex<HashMap<String, Obj>>,
     held: Mutex<Option<Held>>,
     now: Arc<dyn Fn() -> f64 + Send + Sync>,
 }
@@ -83,6 +100,8 @@ impl TaskWatcher {
         Self {
             files,
             seen: Mutex::new(HashMap::new()),
+            nested: Mutex::new(HashMap::new()),
+            metas: Mutex::new(HashMap::new()),
             held: Mutex::new(None),
             now,
         }
@@ -120,10 +139,140 @@ impl TaskWatcher {
         held.as_ref().unwrap().2.clone()
     }
 
+    /// The tasks a subagent's own transcript lists, read again only once
+    /// it grew and not more often than every few seconds.
+    async fn subagent_tasks(&self, path: &str, now: f64) -> Vec<Value> {
+        let every = if self.files.remote() {
+            NESTED_READ_REMOTE_MS
+        } else {
+            NESTED_READ_MS
+        };
+        {
+            let mut nested = self.nested.lock().unwrap();
+            nested.retain(|_, read| now - read.used_at < NESTED_KEPT_MS);
+            if let Some(read) = nested.get_mut(path)
+                && now - read.read_at < every
+            {
+                read.used_at = now;
+                return read.tasks.clone();
+            }
+        }
+        let Some(size) = self
+            .files
+            .stat_file(path)
+            .await
+            .ok()
+            .flatten()
+            .map(|f| f.size.unwrap_or(f.mtime_ms))
+        else {
+            return Vec::new();
+        };
+        if let Some(read) = self.nested.lock().unwrap().get_mut(path)
+            && read.size == size
+        {
+            read.read_at = now;
+            read.used_at = now;
+            return read.tasks.clone();
+        }
+        let Ok(text) = self.files.read_text(path).await else {
+            return Vec::new();
+        };
+        let tasks: Vec<Value> = parse_session_tasks(&crate::utils::parse_jsonl(&text), None)
+            .into_iter()
+            .filter(|task| !js::is_true(task.get("foreground")))
+            .collect();
+        self.nested.lock().unwrap().insert(
+            path.to_owned(),
+            NestedRead {
+                size,
+                read_at: now,
+                used_at: now,
+                tasks: tasks.clone(),
+            },
+        );
+        tasks
+    }
+
+    /// A subagent's meta file (what started it, its name and parent).
+    async fn subagent_meta(&self, path: &str) -> Option<Obj> {
+        if let Some(meta) = self.metas.lock().unwrap().get(path) {
+            return Some(meta.clone());
+        }
+        let text = self.files.read_text(path).await.ok()?;
+        let Some(Value::Object(meta)) = js::parse(&text) else {
+            return None;
+        };
+        let mut metas = self.metas.lock().unwrap();
+        if metas.len() > 4096 {
+            metas.clear();
+        }
+        metas.insert(path.to_owned(), meta.clone());
+        Some(meta)
+    }
+
+    /// The tasks with those the subagents started themselves, down to
+    /// their own subagents', each under the agent that started it.
+    pub async fn with_nested(&self, session_path: &str, tasks: Vec<Value>) -> Vec<Value> {
+        let now = (self.now)();
+        let dir = format!(
+            "{}/subagents",
+            session_path.strip_suffix(".jsonl").unwrap_or(session_path)
+        );
+        let mut children: HashMap<String, Vec<Value>> = HashMap::new();
+        let mut metas: HashMap<String, Obj> = HashMap::new();
+        let mut seen: std::collections::HashSet<String> = Default::default();
+        let mut level = agent_ids(&tasks);
+        for _ in 0..NESTED_DEPTH {
+            level.retain(|id| seen.insert(id.clone()));
+            if level.is_empty() {
+                break;
+            }
+            let read = futures_util::future::join_all(level.iter().map(|id| {
+                let dir = &dir;
+                async move {
+                    let (list, meta) = futures_util::future::join(
+                        self.subagent_tasks(&format!("{dir}/agent-{id}.jsonl"), now),
+                        self.subagent_meta(&format!("{dir}/agent-{id}.meta.json")),
+                    )
+                    .await;
+                    (id.clone(), list, meta)
+                }
+            }))
+            .await;
+            level = Vec::new();
+            for (id, list, meta) in read {
+                level.extend(agent_ids(&list));
+                if !list.is_empty() {
+                    children.insert(id.clone(), list);
+                }
+                if let Some(meta) = meta {
+                    metas.insert(id, meta);
+                }
+            }
+        }
+        // The parents named by meta files only: their names, for the rows.
+        let parents: Vec<String> = metas
+            .values()
+            .filter_map(|meta| js::truthy(sv(meta.get("parentAgentId"))).map(str::to_owned))
+            .filter(|id| !metas.contains_key(id))
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        for id in parents {
+            if let Some(meta) = self
+                .subagent_meta(&format!("{dir}/agent-{id}.meta.json"))
+                .await
+            {
+                metas.insert(id, meta);
+            }
+        }
+        with_nested_tasks(&tasks, &children, &metas)
+    }
+
     /// The tasks with what their files say.
     pub async fn watch(&self, session_path: &str, tasks: Vec<Value>) -> Vec<Value> {
         let now = (self.now)();
-        let ids = subagents_to_watch(&tasks, now, 8);
+        let ids = subagents_to_watch(&tasks, now, 16);
         let outputs = command_outputs_to_watch(&tasks, now);
         if ids.is_empty() && outputs.is_empty() {
             return tasks;
@@ -515,6 +664,7 @@ impl AgentSessionHandlers {
             .filter(|t| !foreground(t))
             .cloned()
             .collect();
+        let background = self.tasks.with_nested(&file.path, background).await;
         let tasks = self.tasks.watch(&file.path, background).await;
         Ok(Value::Object(obj! {
             "tasks" => tasks,
@@ -563,6 +713,15 @@ impl AgentSessionHandlers {
         if task.is_none() && projection.partial {
             projection = self.cache.get(&resolved, true).await?;
             task = find(&projection.aggregates.tasks);
+        }
+        // One a subagent started: listed from its transcript.
+        if task.is_none() {
+            task = find(
+                &self
+                    .tasks
+                    .with_nested(&file.path, projection.aggregates.tasks.clone())
+                    .await,
+            );
         }
         let Some(task) = task else {
             return Err(HandlerError::new("That task is no longer in the session"));

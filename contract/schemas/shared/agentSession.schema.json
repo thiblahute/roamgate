@@ -72,6 +72,18 @@
           "type": "string",
           "description": "A subagent's conversation: subagents/agent-<id>.jsonl beside the session."
         },
+        "parentAgentId": {
+          "type": "string",
+          "description": "Started by one of the session's subagents: that subagent's agent id."
+        },
+        "parent": {
+          "type": "string",
+          "description": "That subagent's name (or what it was started for)."
+        },
+        "foreign": {
+          "type": "boolean",
+          "description": "Not started by this conversation: listed from a message it sent the agent (resuming it) or from the agent's end notice."
+        },
         "outputFile": {
           "type": "string"
         },

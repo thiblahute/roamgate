@@ -18,43 +18,7 @@
   "reply": {
     "properties": {
       "task": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "detail": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "startedAt": {
-            "type": "string"
-          },
-          "summary": {
-            "type": "string"
-          },
-          "endedAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "detail",
-          "status",
-          "startedAt",
-          "summary",
-          "endedAt"
-        ],
-        "type": "object"
+        "$ref": "../../schemas/shared/agentSession.schema.json#/$defs/AgentTask"
       },
       "output": {
         "type": "string"

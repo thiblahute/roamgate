@@ -1769,6 +1769,375 @@
           }
         }
       ]
+    },
+    {
+      "name": "one a subagent started, resumed from here, runs until its next end notice",
+      "group": ["a subagent's own subagents"],
+      "calls": [
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "user",
+                "timestamp": "2026-11-26T10:00:00.000Z",
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>ab2f2f54c66731332</task-id>\n<output-file>/tmp/x/tasks/ab2f2f54c66731332.output</output-file>\n<status>failed</status>\n<summary>Agent \"Windows unit tests\" failed: Agent terminated early due to an API error</summary>\n</task-notification>"
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-26T11:07:17.000Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "s1",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "ab2f2f54c66731332",
+                        "summary": "Resume",
+                        "message": "go on"
+                      }
+                    },
+                    {
+                      "type": "tool_use",
+                      "id": "s2",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "cross-tests",
+                        "summary": "Resume",
+                        "message": "go on"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-26T11:07:19.000Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Resuming agent ab2f2f5",
+                  "resumedAgentId": "ab2f2f54c66731332"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "s1",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Resuming agent ab2f2f5\",\"resumedAgentId\":\"ab2f2f54c66731332\"}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-26T11:07:20.000Z",
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "s2",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Resuming agent cross-tests\",\"pin\":{\"id\":\"aa77c814d5cd19a09\",\"name\":\"cross-tests\",\"ref\":\"fb7303\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "s2",
+              "kind": "agent",
+              "title": "cross-tests",
+              "status": "running",
+              "startedAt": "2026-11-26T11:07:20.000Z",
+              "resumedAt": "2026-11-26T11:07:20.000Z",
+              "agentId": "aa77c814d5cd19a09",
+              "foreign": true
+            },
+            {
+              "id": "ab2f2f54c66731332",
+              "kind": "agent",
+              "title": "Windows unit tests",
+              "status": "running",
+              "startedAt": "2026-11-26T10:00:00.000Z",
+              "taskId": "ab2f2f54c66731332",
+              "agentId": "ab2f2f54c66731332",
+              "foreign": true,
+              "resumedAt": "2026-11-26T11:07:19.000Z",
+              "summary": "Agent \"Windows unit tests\" failed: Agent terminated early due to an API error",
+              "outputFile": "/tmp/x/tasks/ab2f2f54c66731332.output"
+            }
+          ]
+        },
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "user",
+                "timestamp": "2026-11-26T10:00:00.000Z",
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>ab2f2f54c66731332</task-id>\n<output-file>/tmp/x/tasks/ab2f2f54c66731332.output</output-file>\n<status>failed</status>\n<summary>Agent \"Windows unit tests\" failed: Agent terminated early due to an API error</summary>\n</task-notification>"
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-26T11:07:17.000Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "s1",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "ab2f2f54c66731332",
+                        "summary": "Resume",
+                        "message": "go on"
+                      }
+                    },
+                    {
+                      "type": "tool_use",
+                      "id": "s2",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "cross-tests",
+                        "summary": "Resume",
+                        "message": "go on"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-26T11:07:19.000Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Resuming agent ab2f2f5",
+                  "resumedAgentId": "ab2f2f54c66731332"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "s1",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Resuming agent ab2f2f5\",\"resumedAgentId\":\"ab2f2f54c66731332\"}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-26T11:07:20.000Z",
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "s2",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Resuming agent cross-tests\",\"pin\":{\"id\":\"aa77c814d5cd19a09\",\"name\":\"cross-tests\",\"ref\":\"fb7303\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-26T11:10:48.000Z",
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>aa77c814d5cd19a09</task-id>\n<tool-use-id>s2</tool-use-id>\n<output-file>/tmp/x/tasks/aa77c814d5cd19a09.output</output-file>\n<status>completed</status>\n<summary>Agent \"macOS/Windows tests\" finished</summary>\n</task-notification>"
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "s2",
+              "kind": "agent",
+              "title": "cross-tests",
+              "status": "completed",
+              "startedAt": "2026-11-26T11:07:20.000Z",
+              "resumedAt": "2026-11-26T11:07:20.000Z",
+              "agentId": "aa77c814d5cd19a09",
+              "foreign": true,
+              "summary": "Agent \"macOS/Windows tests\" finished",
+              "endedAt": "2026-11-26T11:10:48.000Z",
+              "outputFile": "/tmp/x/tasks/aa77c814d5cd19a09.output"
+            },
+            {
+              "id": "ab2f2f54c66731332",
+              "kind": "agent",
+              "title": "Windows unit tests",
+              "status": "running",
+              "startedAt": "2026-11-26T10:00:00.000Z",
+              "taskId": "ab2f2f54c66731332",
+              "agentId": "ab2f2f54c66731332",
+              "foreign": true,
+              "resumedAt": "2026-11-26T11:07:19.000Z",
+              "summary": "Agent \"Windows unit tests\" failed: Agent terminated early due to an API error",
+              "outputFile": "/tmp/x/tasks/ab2f2f54c66731332.output"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "listed under the agent that started them, each once, as told last",
+      "group": ["a subagent's own subagents"],
+      "calls": [
+        {
+          "fn": "session-tasks.withNestedTasks",
+          "args": [
+            [
+              {
+                "id": "t1",
+                "kind": "teammate",
+                "title": "Close the release gaps",
+                "detail": "general-purpose",
+                "name": "lead",
+                "status": "completed",
+                "startedAt": "2026-11-25T07:31:23.000Z",
+                "endedAt": "2026-11-26T11:08:00.000Z",
+                "agentId": "a944ab65588066ace"
+              },
+              {
+                "id": "s1",
+                "kind": "agent",
+                "title": "ab2f2f54c66731332",
+                "status": "running",
+                "startedAt": "2026-11-26T11:07:19.000Z",
+                "resumedAt": "2026-11-26T11:07:19.000Z",
+                "agentId": "ab2f2f54c66731332",
+                "foreign": true
+              }
+            ],
+            {
+              "a944ab65588066ace": [
+                {
+                  "id": "t2",
+                  "kind": "teammate",
+                  "title": "macOS/Windows tests",
+                  "detail": "general-purpose",
+                  "name": "cross-tests",
+                  "status": "completed",
+                  "startedAt": "2026-11-25T08:00:00.000Z",
+                  "endedAt": "2026-11-25T20:00:00.000Z",
+                  "agentId": "aa77c814d5cd19a09"
+                },
+                {
+                  "id": "b1",
+                  "kind": "command",
+                  "title": "Watch CI",
+                  "status": "completed",
+                  "startedAt": "2026-11-25T09:00:00.000Z",
+                  "endedAt": "2026-11-25T09:10:00.000Z"
+                }
+              ],
+              "aa77c814d5cd19a09": [
+                {
+                  "id": "t3",
+                  "kind": "teammate",
+                  "title": "Windows unit tests",
+                  "detail": "general-purpose",
+                  "name": "xt-win-a",
+                  "status": "failed",
+                  "startedAt": "2026-11-25T09:00:00.000Z",
+                  "endedAt": "2026-11-25T19:00:00.000Z",
+                  "agentId": "ab2f2f54c66731332"
+                },
+                {
+                  "id": "s9",
+                  "kind": "agent",
+                  "title": "lead",
+                  "status": "running",
+                  "startedAt": "2026-11-25T21:00:00.000Z",
+                  "resumedAt": "2026-11-25T21:00:00.000Z",
+                  "agentId": "a944ab65588066ace",
+                  "foreign": true
+                }
+              ]
+            },
+            {
+              "ab2f2f54c66731332": {
+                "description": "Windows unit tests",
+                "name": "xt-win-a",
+                "agentType": "general-purpose",
+                "parentAgentId": "aa77c814d5cd19a09"
+              }
+            }
+          ],
+          "result": [
+            {
+              "id": "t1",
+              "kind": "teammate",
+              "title": "Close the release gaps",
+              "detail": "general-purpose",
+              "name": "lead",
+              "status": "completed",
+              "startedAt": "2026-11-25T07:31:23.000Z",
+              "endedAt": "2026-11-26T11:08:00.000Z",
+              "agentId": "a944ab65588066ace"
+            },
+            {
+              "id": "t2",
+              "kind": "teammate",
+              "title": "macOS/Windows tests",
+              "detail": "general-purpose",
+              "name": "cross-tests",
+              "status": "completed",
+              "startedAt": "2026-11-25T08:00:00.000Z",
+              "endedAt": "2026-11-25T20:00:00.000Z",
+              "agentId": "aa77c814d5cd19a09",
+              "parentAgentId": "a944ab65588066ace",
+              "parent": "lead"
+            },
+            {
+              "id": "s1",
+              "kind": "agent",
+              "title": "Windows unit tests",
+              "status": "running",
+              "startedAt": "2026-11-26T11:07:19.000Z",
+              "resumedAt": "2026-11-26T11:07:19.000Z",
+              "agentId": "ab2f2f54c66731332",
+              "foreign": true,
+              "parentAgentId": "aa77c814d5cd19a09",
+              "detail": "general-purpose",
+              "name": "xt-win-a",
+              "parent": "cross-tests"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

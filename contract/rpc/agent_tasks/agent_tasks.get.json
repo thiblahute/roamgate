@@ -16,56 +16,25 @@
     "properties": {
       "tasks": {
         "items": {
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "kind": {
-              "type": "string"
-            },
-            "title": {
-              "type": "string"
-            },
-            "detail": {
-              "type": "string"
-            },
-            "status": {
-              "type": "string"
-            },
-            "startedAt": {
-              "type": "string"
-            },
-            "summary": {
-              "type": "string"
-            },
-            "endedAt": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "kind",
-            "title",
-            "detail",
-            "status",
-            "startedAt",
-            "summary",
-            "endedAt"
-          ],
-          "type": "object"
+          "$ref": "../../schemas/shared/agentSession.schema.json#/$defs/AgentTask"
         },
         "type": "array"
       },
       "running_now": {
-        "type": "array"
+        "type": "array",
+        "items": {
+          "$ref": "../../schemas/shared/agentSession.schema.json#/$defs/AgentTask"
+        }
       },
       "session": {
         "type": "string"
+      },
+      "partial": {
+        "type": "boolean"
       }
     },
     "required": ["tasks", "running_now", "session"],
-    "type": "object",
-    "x-inferred": "from the parity suite's recordings (agent_sessions); fields seen in every reply are required"
+    "type": "object"
   },
   "status": "typed"
 }

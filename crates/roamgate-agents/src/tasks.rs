@@ -26,7 +26,18 @@ static BACKGROUND_ID: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 fn tag(text: &str, name: &str) -> Option<String> {
-    let pattern = Regex::new(&format!(r"<{0}>([\s\S]*?)</{0}>", regex::escape(name))).unwrap();
+    // Built once per name: a large session holds thousands of notices.
+    static PATTERNS: LazyLock<std::sync::Mutex<HashMap<String, Regex>>> =
+        LazyLock::new(Default::default);
+    let pattern = {
+        let mut patterns = PATTERNS.lock().unwrap();
+        patterns
+            .entry(name.to_owned())
+            .or_insert_with(|| {
+                Regex::new(&format!(r"<{0}>([\s\S]*?)</{0}>", regex::escape(name))).unwrap()
+            })
+            .clone()
+    };
     pattern
         .captures(text)
         .map(|c| js::trim(&c[1]).to_owned())
@@ -93,7 +104,8 @@ pub fn parse_session_tasks(records: &[Obj], rewound: Option<&HashSet<String>>) -
     let mut idle: HashSet<usize> = HashSet::new();
     let mut teammates: HashMap<String, usize> = HashMap::new();
     let mut stops: HashMap<String, String> = HashMap::new();
-    let mut sends: HashSet<String> = HashSet::new();
+    // SendMessage calls, by tool call id: whom they were sent to.
+    let mut sends: HashMap<String, String> = HashMap::new();
 
     fn lookup(list: &[(String, usize)], key: &str) -> Option<usize> {
         list.iter().find(|(k, _)| k == key).map(|(_, i)| *i)
@@ -149,6 +161,8 @@ pub fn parse_session_tasks(records: &[Obj], rewound: Option<&HashSet<String>>) -
         Regex::new(r#"<teammate-message teammate_id="([^"]+)"[^>]*>([\s\S]*?)</teammate-message>"#)
             .unwrap()
     });
+    static AGENT_NOTICE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"^Agent "(.+?)" "#).unwrap());
     static NOTIFICATION: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"<task-notification>[\s\S]*?</task-notification>").unwrap());
 
@@ -186,6 +200,29 @@ pub fn parse_session_tasks(records: &[Obj], rewound: Option<&HashSet<String>>) -
                     .as_deref()
                     .and_then(|id| lookup(&tasks, id))
                     .or_else(|| task_id.as_deref().and_then(|id| lookup(&by_task_id, id)));
+                // An agent this session did not start (a subagent's own,
+                // resumed from here or ending here): listed from its notice.
+                let task = task.or_else(|| {
+                    let id = task_id.as_deref()?;
+                    let title = AGENT_NOTICE.captures(&tag(notice, "summary")?)?[1].to_owned();
+                    let task = push_task(
+                        &mut arena,
+                        &mut tasks,
+                        id,
+                        obj! {
+                            "id" => id,
+                            "kind" => "agent",
+                            "title" => title,
+                            "status" => "running",
+                            "startedAt" => at,
+                            "taskId" => id,
+                            "agentId" => id,
+                            "foreign" => true,
+                        },
+                    );
+                    upsert(&mut by_task_id, id, task);
+                    Some(task)
+                });
                 if let Some(task) = task {
                     ended(&mut arena, &mut idle, task, notice, at);
                 }
@@ -262,7 +299,7 @@ pub fn parse_session_tasks(records: &[Obj], rewound: Option<&HashSet<String>>) -
                     continue;
                 }
                 if name == "SendMessage" {
-                    sends.insert(id);
+                    sends.insert(id, sv(input.get("to")).to_owned());
                     if let Some(&teammate) = teammates.get(sv(input.get("to")))
                         && idle.contains(&teammate)
                     {
@@ -364,12 +401,16 @@ pub fn parse_session_tasks(records: &[Obj], rewound: Option<&HashSet<String>>) -
                 }
                 let empty = Obj::new();
                 let result = js::rec(record.get("toolUseResult")).unwrap_or(&empty);
-                if sends.contains(&use_id) {
+                if let Some(to) = sends.get(&use_id) {
                     if js::is_true(part.get("is_error")) {
                         continue;
                     }
                     static RESUMED: LazyLock<Regex> = LazyLock::new(|| {
                         Regex::new(r#""resumedAgentId"\s*:\s*"([A-Za-z0-9_-]+)""#).unwrap()
+                    });
+                    // Resumed by its name: the pin holds its id.
+                    static PIN: LazyLock<Regex> = LazyLock::new(|| {
+                        Regex::new(r#""pin"\s*:\s*\{\s*"id"\s*:\s*"([A-Za-z0-9_-]+)""#).unwrap()
                     });
                     static RESUMING: LazyLock<Regex> =
                         LazyLock::new(|| Regex::new(r"Resuming agent ([A-Za-z0-9_-]+)").unwrap());
@@ -378,6 +419,10 @@ pub fn parse_session_tasks(records: &[Obj], rewound: Option<&HashSet<String>>) -
                         .or(js::truthy(sv(result.get("revivedAgentId"))))
                         .map(str::to_owned)
                         .or_else(|| RESUMED.captures(&text).map(|c| c[1].to_owned()))
+                        .or_else(|| {
+                            RESUMING.is_match(&text).then_some(())?;
+                            PIN.captures(&text).map(|c| c[1].to_owned())
+                        })
                         .or_else(|| RESUMING.captures(&text).map(|c| c[1].to_owned()))
                         .filter(|r| !r.is_empty());
                     let task = resumed.as_deref().and_then(|id| {
@@ -395,6 +440,31 @@ pub fn parse_session_tasks(records: &[Obj], rewound: Option<&HashSet<String>>) -
                                     && key.starts_with(id)
                             })
                             .map(|(_, task)| *task)
+                    });
+                    // One this session did not start (a subagent's own):
+                    // listed from here on, as running.
+                    static AGENT_ID: LazyLock<Regex> =
+                        LazyLock::new(|| Regex::new(r"^a[0-9a-f]{12,}$").unwrap());
+                    let task = task.or_else(|| {
+                        let id = resumed.as_deref().filter(|id| AGENT_ID.is_match(id))?;
+                        let title = js::truthy(to).unwrap_or(id).to_owned();
+                        let task = push_task(
+                            &mut arena,
+                            &mut tasks,
+                            &use_id,
+                            obj! {
+                                "id" => use_id.clone(),
+                                "kind" => "agent",
+                                "title" => title,
+                                "status" => "running",
+                                "startedAt" => at,
+                                "resumedAt" => at,
+                                "agentId" => id,
+                                "foreign" => true,
+                            },
+                        );
+                        upsert(&mut by_task_id, id, task);
+                        None
                     });
                     if let Some(task) = task
                         && status(&arena.tasks[task]) != "running"
@@ -688,6 +758,12 @@ pub fn subagents_to_watch(tasks: &[Value], now: f64, limit: usize) -> Vec<String
             }
             continue;
         }
+        // No end notice a day on: its conversation tells whether it still
+        // works (a subagent's own, resumed long after it started).
+        if status(task) == "lost" {
+            ids.push(agent_id.to_owned());
+            continue;
+        }
         let when = task
             .get("endedAt")
             .and_then(Value::as_str)
@@ -748,6 +824,15 @@ pub fn with_subagent_activity(
                 );
                 return Value::Object(copy);
             }
+            if status(task) == "lost" {
+                if !fresh {
+                    return value.clone();
+                }
+                let mut copy = task.clone();
+                copy.insert("status".into(), Value::String("running".into()));
+                copy.shift_remove("summary");
+                return Value::Object(copy);
+            }
             let ended = js::date_parse(sv(task.get("endedAt")));
             let grew = ended.is_finite() && mtime > ended + GREW_AFTER_END_MS;
             if !grew || !fresh {
@@ -764,4 +849,214 @@ pub fn with_subagent_activity(
             Value::Object(copy)
         })
         .collect()
+}
+
+/// How deep the subagents' own subagents are listed.
+pub const NESTED_DEPTH: usize = 4;
+
+/// The subagents of a task list, whose own transcripts may list more tasks.
+pub fn agent_ids(tasks: &[Value]) -> Vec<String> {
+    static ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_-]+$").unwrap());
+    let mut ids: Vec<String> = Vec::new();
+    for task in tasks.iter().filter_map(Value::as_object) {
+        let kind = sv(task.get("kind"));
+        if kind != "agent" && kind != "teammate" {
+            continue;
+        }
+        let id = sv(task.get("agentId"));
+        if ID.is_match(id) && !ids.iter().any(|known| known == id) {
+            ids.push(id.to_owned());
+        }
+    }
+    ids
+}
+
+/// When a task last started, resumed or ended.
+fn last_event(task: &Obj) -> f64 {
+    ["startedAt", "resumedAt", "endedAt"]
+        .iter()
+        .map(|key| js::date_parse(sv(task.get(*key))))
+        .filter(|at| at.is_finite())
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
+/// The session's tasks with those its subagents started, each listed once
+/// right under the agent that started it. `children`: the tasks each
+/// subagent's own transcript lists, by its agent id; `metas`: what each
+/// subagent's meta file says (description, name, agentType,
+/// parentAgentId), by agent id. An agent both the session and a subagent
+/// tell of is taken as the one that told of it last says.
+pub fn with_nested_tasks(
+    top: &[Value],
+    children: &HashMap<String, Vec<Value>>,
+    metas: &HashMap<String, Obj>,
+) -> Vec<Value> {
+    let mut nodes: Vec<Obj> = Vec::new();
+    let mut by_agent: HashMap<String, usize> = HashMap::new();
+    let mut queue: std::collections::VecDeque<String> = Default::default();
+    for task in top {
+        let Some(task) = task.as_object() else {
+            continue;
+        };
+        nodes.push(task.clone());
+        if let Some(id) = js::truthy(sv(task.get("agentId"))) {
+            by_agent.entry(id.to_owned()).or_insert(nodes.len() - 1);
+        }
+    }
+    queue.extend(agent_ids(top));
+    let mut visited: HashSet<String> = HashSet::new();
+    while let Some(parent) = queue.pop_front() {
+        if !visited.insert(parent.clone()) {
+            continue;
+        }
+        for child in children.get(&parent).into_iter().flatten() {
+            let Some(child) = child.as_object() else {
+                continue;
+            };
+            let mut child = child.clone();
+            // One it only sent a message to, or heard end: not its own.
+            let foreign = js::is_true(child.get("foreign"));
+            if !foreign {
+                child.insert("parentAgentId".into(), Value::String(parent.clone()));
+            }
+            let agent = js::truthy(sv(child.get("agentId"))).map(str::to_owned);
+            if let Some(agent) = &agent
+                && let Some(&known) = by_agent.get(agent)
+            {
+                let existing = &mut nodes[known];
+                let newer = last_event(&child) > last_event(existing);
+                if foreign {
+                    if newer {
+                        for key in ["status", "summary", "resumedAt", "endedAt", "exitCode"] {
+                            match child.get(key) {
+                                Some(value) => existing.insert(key.into(), value.clone()),
+                                None => existing.shift_remove(key),
+                            };
+                        }
+                    }
+                } else if newer {
+                    // Under the id it was first listed with: rows keep their place.
+                    let id = existing.get("id").cloned();
+                    *existing = child;
+                    if let Some(id) = id {
+                        existing.insert("id".into(), id);
+                    }
+                } else {
+                    if !existing.contains_key("parentAgentId") {
+                        existing.insert("parentAgentId".into(), Value::String(parent.clone()));
+                    }
+                    if !existing.contains_key("detail") {
+                        for key in ["title", "name", "detail"] {
+                            if let Some(value) = child.get(key) {
+                                existing.insert(key.into(), value.clone());
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            nodes.push(child);
+            if let Some(agent) = agent {
+                by_agent.insert(agent.clone(), nodes.len() - 1);
+                queue.push_back(agent);
+            }
+        }
+    }
+    for node in &mut nodes {
+        let Some(meta) = js::truthy(sv(node.get("agentId"))).and_then(|id| metas.get(id)) else {
+            continue;
+        };
+        if !node.contains_key("parentAgentId")
+            && let Some(parent) = js::truthy(sv(meta.get("parentAgentId")))
+        {
+            node.insert("parentAgentId".into(), Value::String(parent.to_owned()));
+        }
+        // Listed from a message or a notice only: its meta file names it.
+        if !node.contains_key("detail") {
+            if let Some(title) = js::truthy(sv(meta.get("description"))) {
+                node.insert("title".into(), Value::String(title.to_owned()));
+            }
+            if let Some(name) = js::truthy(sv(meta.get("name"))) {
+                node.insert("name".into(), Value::String(name.to_owned()));
+                node.insert("kind".into(), Value::String("teammate".into()));
+            }
+            if let Some(kind) = js::truthy(sv(meta.get("agentType"))) {
+                node.insert("detail".into(), Value::String(kind.to_owned()));
+            }
+        }
+    }
+    let label = |id: &str| -> Option<String> {
+        let named = |task: &Obj| {
+            js::truthy(sv(task.get("name")))
+                .or(js::truthy(sv(task.get("title"))))
+                .map(str::to_owned)
+        };
+        by_agent
+            .get(id)
+            .and_then(|&at| named(&nodes[at]))
+            .or_else(|| {
+                let meta = metas.get(id)?;
+                js::truthy(sv(meta.get("name")))
+                    .or(js::truthy(sv(meta.get("description"))))
+                    .map(str::to_owned)
+            })
+    };
+    let labels: Vec<Option<String>> = nodes
+        .iter()
+        .map(|node| js::truthy(sv(node.get("parentAgentId"))).and_then(label))
+        .collect();
+    for (node, parent) in nodes.iter_mut().zip(labels) {
+        if let Some(parent) = parent {
+            node.insert("parent".into(), Value::String(parent));
+        }
+    }
+    let mut under: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut roots: Vec<usize> = Vec::new();
+    for (index, node) in nodes.iter().enumerate() {
+        let parent = js::truthy(sv(node.get("parentAgentId")))
+            .and_then(|id| by_agent.get(id).copied())
+            .filter(|&parent| parent != index);
+        match parent {
+            Some(parent) => under.entry(parent).or_default().push(index),
+            None => roots.push(index),
+        }
+    }
+    let mut out: Vec<Value> = Vec::new();
+    let mut placed: HashSet<usize> = HashSet::new();
+    fn place(
+        index: usize,
+        nodes: &[Obj],
+        under: &HashMap<usize, Vec<usize>>,
+        placed: &mut HashSet<usize>,
+        out: &mut Vec<Value>,
+    ) {
+        if !placed.insert(index) {
+            return;
+        }
+        out.push(Value::Object(nodes[index].clone()));
+        let running = status(&nodes[index]) == "running";
+        for &child in under.get(&index).into_iter().flatten() {
+            // A subagent's own commands and monitors only while both run:
+            // its finished ones are its business, not the session's.
+            let kind = sv(nodes[child].get("kind"));
+            if kind != "agent"
+                && kind != "teammate"
+                && !(running && status(&nodes[child]) == "running")
+            {
+                continue;
+            }
+            place(child, nodes, under, placed, out);
+        }
+    }
+    for root in roots {
+        place(root, &nodes, &under, &mut placed, &mut out);
+    }
+    // A cycle of parents (none should be): its agents still show.
+    for index in 0..nodes.len() {
+        let kind = sv(nodes[index].get("kind"));
+        if kind == "agent" || kind == "teammate" {
+            place(index, &nodes, &under, &mut placed, &mut out);
+        }
+    }
+    out
 }

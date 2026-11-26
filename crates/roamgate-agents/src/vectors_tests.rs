@@ -276,6 +276,27 @@ impl Runner {
                 &mtimes(&arg(call, 1)),
                 arg(call, 2).as_f64().unwrap_or(0.0),
             )),
+            "session-tasks.withNestedTasks" => {
+                let by_id = |value: Value| -> HashMap<String, Value> {
+                    value
+                        .as_object()
+                        .map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                        .unwrap_or_default()
+                };
+                let children = by_id(arg(call, 1))
+                    .into_iter()
+                    .map(|(k, v)| (k, values(&v)))
+                    .collect();
+                let metas = by_id(arg(call, 2))
+                    .into_iter()
+                    .filter_map(|(k, v)| v.as_object().cloned().map(|o| (k, o)))
+                    .collect();
+                Value::Array(tasks::with_nested_tasks(
+                    &values(&arg(call, 0)),
+                    &children,
+                    &metas,
+                ))
+            }
             "session-tasks.SUBAGENT_STALE_MS" => js::number(tasks::SUBAGENT_STALE_MS),
             "session-rewind.rewoundRecordIds" => {
                 let mut ids: Vec<String> = rewind::rewound_record_ids(&records(&arg(call, 0)))

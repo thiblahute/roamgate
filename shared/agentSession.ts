@@ -41,6 +41,15 @@ export type AgentTask = {
   taskId?: string;
   /** A subagent's conversation: subagents/agent-<id>.jsonl beside the session. */
   agentId?: string;
+  /** Started by one of the session's subagents: that subagent's agent id. */
+  parentAgentId?: string;
+  /** That subagent's name (or what it was started for). */
+  parent?: string;
+  /**
+   * Not started by this conversation: listed from a message it sent the
+   * agent (resuming it) or from the agent's end notice.
+   */
+  foreign?: boolean;
   outputFile?: string;
   /**
    * Started in a part of the conversation a rewind took back. Listed only

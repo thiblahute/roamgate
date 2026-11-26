@@ -621,7 +621,13 @@ function TaskList({
                 {task.title}
               </strong>
               {task.rewound ? <RewoundMark /> : null}
-              {task.detail ? <small>{task.detail}</small> : null}
+              {task.detail || task.parent ? (
+                <small>
+                  {[task.detail, task.parent ? `from ${task.parent}` : null]
+                    .filter(Boolean)
+                    .join(" \u00b7 ")}
+                </small>
+              ) : null}
             </span>
             <span className={`agent-task-status is-${task.status}`}>
               {task.status === "running" ? <StateIcon state="running" /> : null}

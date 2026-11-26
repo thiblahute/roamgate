@@ -1,0 +1,79 @@
+name: the background tasks list the subagents' own subagents and commands, under the agent that started them, as told last
+family: agent_sessions
+description: >
+  A coordinator started a lead, the lead a tester, the tester a helper and a
+  background command; the coordinator then resumed the helper with a
+  message. The list shows every one of them once, each under the agent that
+  started it, the helper running from its resume, named by its meta file. A
+  later end notice and a new subagent show at the next read, and a nested
+  task opens like any other.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: working
+        cwd: /work
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+  files:
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {"type": "assistant", "uuid": "a-00:01", "timestamp": "2026-01-01T00:00:01.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_lead", "name": "Agent", "input": {"description": "Close the release gaps", "name": "release-gaps-lead", "subagent_type": "general-purpose", "run_in_background": true}}], "id": "msg-00:01"}}
+        - {"type": "user", "uuid": "u-00:02", "timestamp": "2026-01-01T00:00:02.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_lead", "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: a944ab65588066ace (internal ID)"}]}]}, "toolUseResult": {"isAsync": true, "status": "async_launched", "agentId": "a944ab65588066ace"}}
+        - {"type": "assistant", "uuid": "a-05:00", "timestamp": "2026-01-01T00:05:00.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_send", "name": "SendMessage", "input": {"to": "ab2f2f54c66731332", "summary": "Resume", "message": "Keep going."}}], "id": "msg-05:00"}}
+        - {"type": "user", "uuid": "u-05:01", "timestamp": "2026-01-01T00:05:01.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_send", "content": [{"type": "text", "text": "{\"success\":true,\"message\":\"Resuming agent ab2f2f5\",\"resumedAgentId\":\"ab2f2f54c66731332\"}"}]}]}, "toolUseResult": {"success": true, "message": "Resuming agent ab2f2f5", "resumedAgentId": "ab2f2f54c66731332"}}
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555/subagents/agent-a944ab65588066ace.jsonl:
+      jsonl:
+        - {"type": "user", "uuid": "u-00:03", "timestamp": "2026-01-01T00:00:03.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": "You lead the release gaps."}, "isSidechain": true}
+        - {"type": "assistant", "uuid": "a-00:04", "timestamp": "2026-01-01T00:00:04.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_cross", "name": "Agent", "input": {"description": "macOS/Windows tests", "name": "cross-tests", "subagent_type": "general-purpose", "run_in_background": true}}], "id": "msg-00:04"}, "isSidechain": true}
+        - {"type": "user", "uuid": "u-00:05", "timestamp": "2026-01-01T00:00:05.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_cross", "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: aa77c814d5cd19a09 (internal ID)"}]}]}, "isSidechain": true, "toolUseResult": {"isAsync": true, "status": "async_launched", "agentId": "aa77c814d5cd19a09"}}
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555/subagents/agent-aa77c814d5cd19a09.jsonl:
+      jsonl:
+        - {"type": "user", "uuid": "u-00:06", "timestamp": "2026-01-01T00:00:06.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": "Run the cross tests."}, "isSidechain": true}
+        - {"type": "assistant", "uuid": "a-00:07", "timestamp": "2026-01-01T00:00:07.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_xt", "name": "Agent", "input": {"description": "Windows unit tests", "name": "xt-win-a", "subagent_type": "general-purpose", "run_in_background": true}}], "id": "msg-00:07"}, "isSidechain": true}
+        - {"type": "user", "uuid": "u-00:08", "timestamp": "2026-01-01T00:00:08.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_xt", "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: ab2f2f54c66731332 (internal ID)"}]}]}, "isSidechain": true, "toolUseResult": {"isAsync": true, "status": "async_launched", "agentId": "ab2f2f54c66731332"}}
+        - {"type": "assistant", "uuid": "a-00:09", "timestamp": "2026-01-01T00:00:09.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_watch", "name": "Bash", "input": {"command": "gh run watch 42", "description": "Watch the CI run", "run_in_background": true}}], "id": "msg-00:09"}, "isSidechain": true}
+        - {"type": "user", "uuid": "u-00:10", "timestamp": "2026-01-01T00:00:10.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_watch", "content": "Command running in background with ID: bwatch42."}]}, "isSidechain": true, "toolUseResult": {"backgroundTaskId": "bwatch42"}}
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555/subagents/agent-ab2f2f54c66731332.meta.json:
+      json: {"agentType": "general-purpose", "description": "Windows unit tests", "name": "xt-win-a", "parentAgentId": "aa77c814d5cd19a09"}
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_tasks.get
+    params: { pane_id: p1 }
+    reply:
+      tasks:
+        - { id: toolu_lead, kind: teammate, name: release-gaps-lead, title: Close the release gaps, status: running, agentId: a944ab65588066ace, parentAgentId: "{{absent}}" }
+        - { id: toolu_cross, name: cross-tests, status: running, agentId: aa77c814d5cd19a09, parentAgentId: a944ab65588066ace, parent: release-gaps-lead }
+        - { id: toolu_send, name: xt-win-a, title: Windows unit tests, detail: general-purpose, status: running, agentId: ab2f2f54c66731332, parentAgentId: aa77c814d5cd19a09, parent: cross-tests, resumedAt: "2026-01-01T00:05:01.000Z" }
+        - { id: toolu_watch, kind: command, title: Watch the CI run, status: running, parentAgentId: aa77c814d5cd19a09, parent: cross-tests }
+  - call: agent_task.get
+    params: { pane_id: p1, task_id: toolu_watch }
+    reply: { task: { id: toolu_watch, kind: command, parent: cross-tests } }
+  - write:
+      path: .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl
+      jsonl:
+        - {"type": "assistant", "uuid": "a-00:01", "timestamp": "2026-01-01T00:00:01.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_lead", "name": "Agent", "input": {"description": "Close the release gaps", "name": "release-gaps-lead", "subagent_type": "general-purpose", "run_in_background": true}}], "id": "msg-00:01"}}
+        - {"type": "user", "uuid": "u-00:02", "timestamp": "2026-01-01T00:00:02.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_lead", "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: a944ab65588066ace (internal ID)"}]}]}, "toolUseResult": {"isAsync": true, "status": "async_launched", "agentId": "a944ab65588066ace"}}
+        - {"type": "assistant", "uuid": "a-05:00", "timestamp": "2026-01-01T00:05:00.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_send", "name": "SendMessage", "input": {"to": "ab2f2f54c66731332", "summary": "Resume", "message": "Keep going."}}], "id": "msg-05:00"}}
+        - {"type": "user", "uuid": "u-05:01", "timestamp": "2026-01-01T00:05:01.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_send", "content": [{"type": "text", "text": "{\"success\":true,\"message\":\"Resuming agent ab2f2f5\",\"resumedAgentId\":\"ab2f2f54c66731332\"}"}]}]}, "toolUseResult": {"success": true, "message": "Resuming agent ab2f2f5", "resumedAgentId": "ab2f2f54c66731332"}}
+        - {"type": "user", "uuid": "u-06:00", "timestamp": "2026-01-01T00:06:00.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": "<task-notification>\n<task-id>ab2f2f54c66731332</task-id>\n<tool-use-id>toolu_send</tool-use-id>\n<status>completed</status>\n<summary>Agent \"Windows unit tests\" finished</summary>\n</task-notification>"}}
+        - {"type": "assistant", "uuid": "a-06:10", "timestamp": "2026-01-01T00:06:10.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_fix", "name": "Agent", "input": {"description": "Fix usage-limit resume", "name": "limit-resume-fix", "subagent_type": "general-purpose", "run_in_background": true}}], "id": "msg-06:10"}}
+        - {"type": "user", "uuid": "u-06:11", "timestamp": "2026-01-01T00:06:11.000Z", "sessionId": "11111111-2222-4333-8444-555555555555", "cwd": "/work", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_fix", "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: a49a1b4a34e36c378 (internal ID)"}]}]}, "toolUseResult": {"isAsync": true, "status": "async_launched", "agentId": "a49a1b4a34e36c378"}}
+  - call: agent_tasks.get
+    params: { pane_id: p1 }
+    reply:
+      tasks:
+        - { id: toolu_fix, name: limit-resume-fix, status: running, parentAgentId: "{{absent}}" }
+        - { id: toolu_lead, status: running }
+        - { id: toolu_cross, status: running }
+        - { id: toolu_send, name: xt-win-a, status: completed, endedAt: "2026-01-01T00:06:00.000Z", parent: cross-tests }
+        - { id: toolu_watch, status: running }
