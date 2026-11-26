@@ -12,7 +12,10 @@ switch ($architecture) {
   'Arm64' { $platform = 'windows-arm64' }
   default { throw "Roamgate plugin: unsupported Windows architecture $architecture" }
 }
-Get-Command tar.exe -CommandType Application -ErrorAction Stop | Out-Null
+# Windows' own tar (bsdtar, which reads zip), not a GNU tar earlier on PATH
+# (Git for Windows'), which does not.
+$tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+if (!(Test-Path -LiteralPath $tar)) { throw "Roamgate plugin: $tar not found (Windows 10 1803 or later)" }
 $packageDir = "roamgate-$platform"
 # Windows packages are zip: tar.exe reads no xz before Windows 11.
 $archiveName = "roamgate-v$version-$platform.zip"
@@ -52,12 +55,12 @@ try {
     throw 'Package checksum mismatch'
   }
   # The Pi sidecar beside the binary; releases before the Rust build have none.
-  $members = @(& tar.exe -tf $archive)
+  $members = @(& $tar -tf $archive)
   if ($LASTEXITCODE -ne 0) { throw 'Could not read the Roamgate package' }
   $hasPi = $members -contains "$packageDir/roamgate-pi.exe"
   $wanted = @("$packageDir/VERSION", "$packageDir/roamgate.exe")
   if ($hasPi) { $wanted += "$packageDir/roamgate-pi.exe" }
-  & tar.exe -xf $archive -C $staging @wanted
+  & $tar -xf $archive -C $staging @wanted
   if ($LASTEXITCODE -ne 0) { throw 'Could not extract the Roamgate package' }
   $extracted = Join-Path $staging $packageDir
   $binary = Join-Path $extracted 'roamgate.exe'
