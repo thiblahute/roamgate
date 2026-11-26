@@ -68,3 +68,22 @@ fn the_background_sessions_answer_at_low_effort_not_thinking_for_seconds() {
         )
     );
 }
+
+#[test]
+fn a_system_prompt_goes_in_a_file_named_by_its_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let args = background_args("opus", "be brief", &BackgroundOptions::default());
+    let moved = system_prompt_in_file(args.clone(), dir.path());
+    let at = moved
+        .iter()
+        .position(|a| a == "--system-prompt-file")
+        .unwrap();
+    assert!(!moved.contains(&"--system-prompt".to_owned()));
+    assert_eq!(std::fs::read_to_string(&moved[at + 1]).unwrap(), "be brief");
+    // The same prompt again: the same file, written once.
+    assert_eq!(system_prompt_in_file(args, dir.path()), moved);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    // Without one, the arguments as they are.
+    let bare = vec!["-p".to_owned()];
+    assert_eq!(system_prompt_in_file(bare.clone(), dir.path()), bare);
+}

@@ -178,7 +178,11 @@ impl LocalClaudeProcess {
 /// whose output ends at once.
 pub fn spawn_lines(command: &ClaudeCommand, args: Vec<String>, cwd: PathBuf) -> LineSession {
     let mut argv = vec![command.program.clone()];
-    argv.extend(args);
+    argv.extend(if cfg!(windows) {
+        system_prompt_in_file(args, &std::env::temp_dir())
+    } else {
+        args
+    });
     let spawned = spawn_claude_process(SpawnOptions {
         argv,
         cwd: Some(cwd),
@@ -196,6 +200,38 @@ pub fn spawn_lines(command: &ClaudeCommand, args: Vec<String>, cwd: PathBuf) -> 
             LineSession::ended()
         }
     }
+}
+
+/// `--system-prompt TEXT` as `--system-prompt-file PATH`: a Windows
+/// command line holds 32767 characters, fewer than the voice front's
+/// prompt. The file is named by its text, written once and kept (the
+/// same few prompts every time). Left as it is if it cannot be written.
+pub fn system_prompt_in_file(mut args: Vec<String>, dir: &std::path::Path) -> Vec<String> {
+    use sha2::{Digest, Sha256};
+    let Some(at) = args.iter().position(|arg| arg == "--system-prompt") else {
+        return args;
+    };
+    let Some(prompt) = args.get(at + 1) else {
+        return args;
+    };
+    let name = hex::encode(&Sha256::digest(prompt.as_bytes())[..8]);
+    let path = dir.join(format!("roamgate-system-prompt-{name}.txt"));
+    if !path.is_file() {
+        // Whole or not at all: another session may read it at once.
+        let partial = dir.join(format!(
+            "roamgate-system-prompt-{name}.{}.tmp",
+            std::process::id()
+        ));
+        if std::fs::write(&partial, prompt).is_err() || std::fs::rename(&partial, &path).is_err() {
+            let _ = std::fs::remove_file(&partial);
+            if !path.is_file() {
+                return args;
+            }
+        }
+    }
+    args[at] = "--system-prompt-file".into();
+    args[at + 1] = path.to_string_lossy().into_owned();
+    args
 }
 
 /// `spawnClaude`: `claude -p` in stream-json, reading what it is sent, in
