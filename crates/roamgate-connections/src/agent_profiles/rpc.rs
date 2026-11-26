@@ -117,6 +117,8 @@ pub struct ProfileRpcContext {
     pub home: PathBuf,
     /// The account sign-ins in progress.
     pub logins: Arc<roamgate_accounts::Logins>,
+    /// The accounts' usage readings.
+    pub usage: Option<Arc<roamgate_accounts::UsagePoller>>,
 }
 
 /// An RPC refused with a message (`ProfileRpcError`).
@@ -143,6 +145,8 @@ pub const PROFILE_RPC_METHODS: &[&str] = &[
     "agent_profile.account.login.start",
     "agent_profile.account.login.complete",
     "agent_profile.account.logout",
+    "agent_profile.account.usage",
+    "agent_profile.account.sessions",
 ];
 
 /// A refusal said of the agent, not of its program; commands stay.
@@ -335,6 +339,7 @@ pub async fn handle_profile_rpc(
             return Ok(Value::Object(result));
         };
         let profile = profile_for_session(Some(&settings), Some(&pane.session_id), Some(store));
+        super::account_usage::record_session(&context.home, &pane.session_id, &profile, now());
         let mut limit = Value::Null;
         if params.get("limit") != Some(&Value::Bool(false)) {
             limit = tail
@@ -545,6 +550,15 @@ async fn account_rpc(
     list: &[Value],
     context: &ProfileRpcContext,
 ) -> Result<Value, ProfileRpcError> {
+    if action == "usage" {
+        // Every account's last reading: the same snapshot for every client.
+        let accounts = context
+            .usage
+            .as_ref()
+            .map(|usage| usage.snapshot())
+            .unwrap_or_default();
+        return Ok(json!({ "accounts": accounts }));
+    }
     let wanted = params
         .get("profile")
         .and_then(Value::as_str)
@@ -584,6 +598,20 @@ async fn account_rpc(
                 .map_err(err)
         }
         "logout" => context.logins.logout(agent, &dir).map(answer).map_err(err),
+        "sessions" => {
+            let now = (context.now)();
+            let at = |key: &str, default: i64| {
+                params.get(key).and_then(Value::as_i64).unwrap_or(default)
+            };
+            let until = at("until", now);
+            let since = at("since", until - 7 * 24 * 60 * 60 * 1000);
+            let mut report =
+                super::account_usage::sessions_report(&context.home, &profile, since, until).await;
+            report["profile"] = json!(name);
+            report["since"] = json!(since);
+            report["until"] = json!(until);
+            Ok(report)
+        }
         _ => Err(err(format!(
             "unknown method agent_profile.account.{action}"
         ))),

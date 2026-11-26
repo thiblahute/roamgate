@@ -581,7 +581,11 @@ pub fn command_for_session(
     store: Option<&SessionProfiles>,
     home: &Path,
 ) -> Result<AgentCommand, String> {
-    let mut command = profile_command(&profile_for_session(settings, session_id, store), home)?;
+    let profile = profile_for_session(settings, session_id, store);
+    let mut command = profile_command(&profile, home)?;
+    if let Some(session_id) = session_id {
+        super::account_usage::record_session(home, session_id, &profile, (system_now())());
+    }
     if let Some(model) = store
         .and_then(|store| store.get(session_id))
         .and_then(|choice| {

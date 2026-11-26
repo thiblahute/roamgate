@@ -179,6 +179,7 @@ fn context(store: Arc<SessionProfiles>) -> ProfileRpcContext {
         now: Arc::new(system_ms),
         home: PathBuf::from("/nonexistent-home"),
         logins: Arc::default(),
+        usage: None,
     }
 }
 
@@ -700,4 +701,21 @@ async fn an_account_profile_signs_in_and_out() {
         json!({"id": "a", "auth": "unknown"})
     );
     assert!(listed["profiles"][3].get("account").is_none());
+    assert_eq!(
+        call("agent_profile.account.usage", json!({}))
+            .await
+            .unwrap(),
+        json!({"accounts": []})
+    );
+    // A session that runs on the account is listed as one that spent it.
+    context.store.set("s-1", Some("Work"), None, None);
+    call("agent_profile.get", json!({"pane_id": "p"}))
+        .await
+        .unwrap();
+    let report = call("agent_profile.account.sessions", json!({"profile": "Work"}))
+        .await
+        .unwrap();
+    assert_eq!(report["profile"], "Work");
+    assert_eq!(report["sessions"][0]["session_id"], "s-1");
+    assert_eq!(report["sessions"][0]["tokens"], Value::Null);
 }

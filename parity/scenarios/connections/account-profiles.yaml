@@ -74,6 +74,49 @@ steps:
           }
         - { name: Agy, account: { $exact: true, id: second, auth: unknown } }
         - { name: Plain, account: "{{absent}}" }
+  - call: agent_profile.account.usage
+    reply: { accounts: "{{array}}" }
+  - call: agent_profile.account.sessions
+    params: { profile: Work }
+    reply:
+      {
+        profile: Work,
+        sessions: "{{array}}",
+        since: "{{integer}}",
+        until: "{{integer}}",
+      }
+  - call: settings.profiles.update
+    params:
+      list:
+        - {
+            name: Work,
+            agent: claude,
+            builtin: false,
+            env: [],
+            unset: [],
+            account: { id: work },
+          }
+        - {
+            name: Agy,
+            agent: agy,
+            builtin: false,
+            env: [],
+            unset: [],
+            account: { id: second },
+          }
+        - {
+            name: Codex,
+            agent: codex,
+            builtin: false,
+            env: [],
+            unset: [],
+            account: { id: third },
+          }
+      default: Claude
+    reply: { profiles: "{{array}}" }
+  - advance: 16000
+  - expect_push: account_usage
+    message: { account_usage: { accounts: "{{array}}", removed: [] } }
 contract_exceptions:
   - {
       surface: rpc.request,

@@ -1,0 +1,77 @@
+{
+  "method": "agent_profile.account.sessions",
+  "family": "agent_profile",
+  "scope": "connection",
+  "handler": "crates/roamgate-connections/src/agent_profiles/rpc.rs",
+  "params": {
+    "type": "object",
+    "properties": {
+      "profile": {
+        "type": "string"
+      },
+      "since": {
+        "type": "integer"
+      },
+      "until": {
+        "type": "integer"
+      }
+    },
+    "required": ["profile"]
+  },
+  "reply": {
+    "type": "object",
+    "properties": {
+      "profile": {
+        "type": "string"
+      },
+      "since": {
+        "type": "integer"
+      },
+      "until": {
+        "type": "integer"
+      },
+      "sessions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            },
+            "started_at": {
+              "type": "integer"
+            },
+            "ended_at": {
+              "type": ["integer", "null"]
+            },
+            "tokens": {
+              "type": ["object", "null"]
+            }
+          },
+          "required": [
+            "session_id",
+            "profile",
+            "started_at",
+            "ended_at",
+            "tokens"
+          ]
+        }
+      }
+    },
+    "required": ["profile", "since", "until", "sessions"]
+  },
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "status": "typed",
+  "x-typed-from": "crates/roamgate-connections/src/agent_profiles/rpc.rs"
+}

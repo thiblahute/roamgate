@@ -43,6 +43,15 @@
             },
             "unset": {
               "type": "array"
+            },
+            "account": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": ["id"]
             }
           },
           "required": ["agent", "builtin", "env", "name", "unset"]
@@ -94,6 +103,26 @@
             },
             "unset": {
               "type": "array"
+            },
+            "account": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "dir": {
+                  "type": "string"
+                },
+                "auth": {
+                  "enum": [
+                    "unknown",
+                    "signed_in",
+                    "signed_out",
+                    "needs_relogin"
+                  ]
+                }
+              },
+              "required": ["id", "dir", "auth"]
             }
           },
           "required": ["agent", "builtin", "env", "label", "name", "unset"]

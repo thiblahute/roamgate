@@ -25,7 +25,7 @@ use roamgate_base::log::{LogFields, Logger};
 use roamgate_base::paths::DataContext;
 use roamgate_channel::family::{CoreFamily, FamilyContext};
 use roamgate_channel::peer::{BoxFuture as PeerFuture, IncomingCall};
-use roamgate_channel::protocol::RpcError;
+use roamgate_channel::protocol::{Push, RpcError};
 use roamgate_connections::agent_profiles::rpc::{
     HostFuture, ProfileRpcContext, ProfileRpcHost, ResetConnection, Restart, handle_profile_rpc,
     return_after_reset,
@@ -122,10 +122,20 @@ fn running_store(cx: &FamilyContext) -> Running {
             }
         })
     };
+    let usage = {
+        let cx = cx.clone();
+        tokio::spawn(async move {
+            let mut ticks = cx.clock.interval(USAGE_CHECK);
+            loop {
+                ticks.tick().await;
+                usage_due(&cx).await;
+            }
+        })
+    };
     Running {
         store,
         notifier,
-        tasks: Arc::new(vec![teller, returns]),
+        tasks: Arc::new(vec![teller, returns, usage]),
         logger,
     }
 }
@@ -155,6 +165,47 @@ async fn return_due(cx: &FamilyContext, store: &Arc<SessionProfiles>, logger: &L
         logger.info(message, Some(&fields));
     };
     return_after_reset(&settings, store, &connections, &log).await;
+}
+
+/// How often the usage scheduler looks for accounts due a reading (each
+/// account is read about every 90 s, see roamgate_accounts::usage).
+const USAGE_CHECK: Duration = Duration::from_secs(15);
+
+/// Reads the accounts due a reading, and tells every browser what changed
+/// once (`account_usage`, a keyed push): never computed per client.
+async fn usage_due(cx: &FamilyContext) {
+    use roamgate_connections::agent_profiles::shared::profile_account_id;
+    use roamgate_connections::agent_profiles::store::{account_dir_of, profiles_list, profiles_of};
+    let Ok(settings) = cx.reverse("profiles.host", json!({"op": "settings"})).await else {
+        return;
+    };
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let accounts: Vec<roamgate_accounts::PolledAccount> =
+        profiles_list(&profiles_of(Some(&settings)))
+            .iter()
+            .filter_map(|profile| {
+                let (agent, dir) = account_dir_of(profile, &home)?;
+                Some(roamgate_accounts::PolledAccount {
+                    agent,
+                    id: profile_account_id(profile)?.to_owned(),
+                    dir,
+                })
+            })
+            .collect();
+    let delta = USAGE.poll(&accounts, cx.clock.now()).await;
+    if delta.is_empty() {
+        return;
+    }
+    cx.push(Push {
+        message: json!({"account_usage": {
+            "accounts": delta.accounts,
+            "removed": delta.removed,
+        }}),
+        key: Some("account_usage".into()),
+        ..Push::default()
+    });
 }
 
 /// The account profiles' upkeep (roamgate_accounts::maintain): tokens
@@ -239,8 +290,22 @@ fn rpc_context(cx: &FamilyContext, store: Arc<SessionProfiles>) -> ProfileRpcCon
             .map(std::path::PathBuf::from)
             .unwrap_or_default(),
         logins: LOGINS.clone(),
+        usage: Some(USAGE.clone()),
     }
 }
+
+/// The accounts' usage readings, one scheduler for the process.
+static USAGE: std::sync::LazyLock<Arc<roamgate_accounts::UsagePoller>> =
+    std::sync::LazyLock::new(|| {
+        let home = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        Arc::new(roamgate_accounts::UsagePoller::new(
+            &roamgate_connections::agent_profiles::store::data_root_for(&home),
+            roamgate_accounts::Endpoints::default(),
+            "agy",
+        ))
+    });
 
 /// The account sign-ins in progress, one set for the process.
 static LOGINS: std::sync::LazyLock<Arc<roamgate_accounts::Logins>> =

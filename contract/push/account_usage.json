@@ -1,0 +1,97 @@
+{
+  "x-inventory": "account_usage",
+  "x-kind": "keyed",
+  "x-sent-by": ["crates/roamgate/src/families/agent_profiles.rs"],
+  "x-status": "typed",
+  "description": "The accounts whose usage reading changed, and those gone: sent once to every browser when a poll changes something.",
+  "type": "object",
+  "required": ["account_usage"],
+  "properties": {
+    "account_usage": {
+      "type": "object",
+      "required": ["accounts", "removed"],
+      "properties": {
+        "accounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "agent": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "fresh",
+                  "cached",
+                  "failed",
+                  "rate_limited",
+                  "auth_expired",
+                  "unknown"
+                ]
+              },
+              "usage": {
+                "type": "object",
+                "properties": {
+                  "windows": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "utilization": {
+                          "type": "number"
+                        },
+                        "resets_at": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["label", "utilization"]
+                    }
+                  },
+                  "extra_usage": {},
+                  "plan": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "limit_reached": {
+                    "type": "string"
+                  },
+                  "records": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "required": ["windows"]
+              },
+              "read_at": {
+                "type": "integer"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": ["agent", "id", "status"]
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

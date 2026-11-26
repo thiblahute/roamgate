@@ -336,6 +336,15 @@ pub async fn refresh_if_due(
     }
 }
 
+/// The account's access token and ChatGPT account id, when signed in.
+pub fn access_token(dir: &Path) -> Option<(String, Option<String>)> {
+    let auth = read_object(&auth_path(dir))?;
+    Some((
+        token(&auth, "access_token")?.to_owned(),
+        token(&auth, "account_id").map(str::to_owned),
+    ))
+}
+
 /// Signs the account out: its `auth.json` goes.
 pub fn logout(dir: &Path) -> std::io::Result<()> {
     match std::fs::remove_file(auth_path(dir)) {

@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 #[derive(Clone, Debug)]
 pub(crate) struct Request {
     pub path: String,
+    pub authorization: String,
     pub content_type: String,
     pub body: String,
 }
@@ -74,12 +75,19 @@ impl FakeServer {
                     .to_owned();
                 recorded.lock().await.push(Request {
                     path,
+                    authorization: header("authorization"),
                     content_type: header("content-type"),
                     body: String::from_utf8_lossy(&bytes[end + 4..]).into_owned(),
                 });
                 let (status, body) = answers.next().unwrap_or((500, "{}".into()));
+                // A 429's body is its Retry-After, in seconds.
+                let retry = if status == 429 {
+                    format!("Retry-After: {body}\r\n")
+                } else {
+                    String::new()
+                };
                 let response = format!(
-                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 {status} X\r\n{retry}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
                 );
                 let _ = socket.write_all(response.as_bytes()).await;
