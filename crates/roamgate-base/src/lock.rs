@@ -174,6 +174,11 @@ pub fn try_lock(file: &Path, options: LockOptions) -> Result<LockGuard, LockErro
                 }
                 check_stale = false;
             }
+            // Windows refuses a directory whose last holder's removal is
+            // still pending (Access is denied): held, for a moment more.
+            Err(error) if cfg!(windows) && error.kind() == io::ErrorKind::PermissionDenied => {
+                return Err(LockError::Locked(path));
+            }
             Err(error) => return Err(error.into()),
         }
     }
