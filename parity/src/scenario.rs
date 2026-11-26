@@ -1930,7 +1930,15 @@ impl Runner {
             })
             .map(|call| serde_json::to_value(call).expect("serialises"))
             .collect();
+        // A `where` that matched nothing says what the calls were.
         self.counts("Herdr calls", step, spec, &selected)
+            .map_err(|error| match spec.get("where") {
+                Some(_) => error.context(format!(
+                    "the calls of that method: {}",
+                    serde_json::to_string_pretty(&selected).unwrap_or_default()
+                )),
+                None => error,
+            })
     }
 
     fn counts(
