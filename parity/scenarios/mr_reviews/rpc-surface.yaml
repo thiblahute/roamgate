@@ -7,6 +7,9 @@ description: >
   proposed yet refused, the checkout, clone, open and home refusals before
   a clone is known, and the reviews agent: a turn through fake-claude
   (ROAMGATE_REVIEWS_AGENT_COMMAND), unqueue, stop and reset.
+# Merge request clones and their worktrees are found by POSIX paths (as the
+# Bun server did); a Windows machine's are not yet.
+platforms: [linux, macos]
 server:
   env:
     ROAMGATE_REVIEWS_AGENT_COMMAND: "${BIN}/claude"
