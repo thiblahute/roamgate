@@ -160,12 +160,22 @@ pub async fn maintain(
         if !dir.is_dir() {
             continue;
         }
+        // Claude Code reads its credentials file again before it uses
+        // or refreshes them (clauth relies on the same), so a rotation
+        // reaches a running Claude, but for the macOS Keychain. Codex keeps
+        // its chain in memory: an account a Codex runs on is left to it.
         let refreshed = match agent {
             AccountAgent::Claude => {
                 claude_dirs.push(dir.clone());
+                if cfg!(target_os = "macos") && crate::live::in_use(*agent, dir, now_ms) {
+                    continue;
+                }
                 claude_auth::refresh_if_due(logins.http(), logins.endpoints(), dir, now_ms).await
             }
             AccountAgent::Codex => {
+                if crate::live::in_use(*agent, dir, now_ms) {
+                    continue;
+                }
                 codex_auth::refresh_if_due(logins.http(), logins.endpoints(), dir, now_ms).await
             }
             AccountAgent::Agy => continue,
@@ -308,5 +318,53 @@ mod tests {
                 .unwrap();
         assert_eq!(stored["claudeAiOauth"]["refreshToken"], "r2");
         assert_eq!(stored["mcpOAuth"]["gh"]["refreshToken"], "g");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_codex_account_in_use_is_left_to_codex() {
+        let server = FakeServer::start(vec![(
+            200,
+            r#"{"access_token":"a2","refresh_token":"r2"}"#.into(),
+        )])
+        .await;
+        let logins = Logins::new(
+            Endpoints {
+                codex_token: server.url("/token"),
+                ..Endpoints::default()
+            },
+            "agy",
+        );
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        let dir = crate::account_dir(&data, AccountAgent::Codex, "perso");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("auth.json"),
+            json!({"tokens": {"refresh_token": "r0"}, "last_refresh": "1970-01-01T00:00:00.000Z"})
+                .to_string(),
+        )
+        .unwrap();
+        let user = UserDirs::of(&temp.path().join("home"), &|_| None);
+        let accounts = [(AccountAgent::Codex, dir.clone())];
+        let mut codex = std::process::Command::new("sleep")
+            .arg("30")
+            .env("CODEX_HOME", &dir)
+            .spawn()
+            .unwrap();
+        let now = codex_auth::CODEX_REFRESH_AFTER_MS + 1;
+        assert!(
+            maintain(&logins, &accounts, &user, &data, now)
+                .await
+                .is_empty()
+        );
+        assert!(server.requests().await.is_empty());
+        codex.kill().unwrap();
+        codex.wait().unwrap();
+        assert_eq!(
+            maintain(&logins, &accounts, &user, &data, now).await.len(),
+            1
+        );
+        assert_eq!(server.requests().await.len(), 1);
     }
 }

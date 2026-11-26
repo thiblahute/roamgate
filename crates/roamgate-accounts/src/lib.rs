@@ -27,6 +27,7 @@ pub mod claude_auth;
 pub mod codex_auth;
 mod files;
 pub mod json_sync;
+pub mod live;
 mod logins;
 pub mod mcp_sync;
 mod oauth;

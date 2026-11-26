@@ -174,6 +174,7 @@ fn account_launch(profile: &Value, home: &Path) -> Result<Option<LaunchEnv>, Str
         return Ok(None);
     };
     let user = UserDirs::of(home, &|name| std::env::var(name).ok());
+    roamgate_accounts::live::mark_launched(&dir, (system_now())());
     roamgate_accounts::prepare(agent, &dir, &user).map_err(|error| {
         format!(
             "The account directory {} cannot be prepared: {error}",
