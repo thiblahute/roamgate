@@ -32,13 +32,16 @@ mod logins;
 pub mod mcp_sync;
 mod oauth;
 mod prepare;
+pub mod sessions;
 #[cfg(test)]
 mod test_server;
+pub mod usage;
 
 pub use files::fingerprint;
 pub use logins::{Logins, Started, maintain};
 pub use oauth::{Endpoints, Http};
 pub use prepare::{Prepared, UserDirs, prepare};
+pub use usage::{AccountUsage, PolledAccount, UsageDelta, UsagePoller, UsageStatus};
 
 /// An agent an account profile can sign in to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

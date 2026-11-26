@@ -336,6 +336,15 @@ pub async fn refresh_if_due(
     }
 }
 
+/// The account's access token, when it has one.
+pub fn access_token(dir: &Path) -> Option<String> {
+    oauth_of(dir)?
+        .get("accessToken")?
+        .as_str()
+        .filter(|token| !token.is_empty())
+        .map(str::to_owned)
+}
+
 /// Signs the account out: its tokens go, its MCP logins stay.
 pub fn logout(dir: &Path) -> std::io::Result<()> {
     let path = credentials_path(dir);

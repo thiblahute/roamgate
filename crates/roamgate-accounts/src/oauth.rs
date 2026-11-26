@@ -18,8 +18,11 @@ use sha2::{Digest, Sha256};
 pub struct Endpoints {
     pub claude_authorize: String,
     pub claude_token: String,
+    pub claude_usage: String,
+    pub claude_profile: String,
     pub codex_authorize: String,
     pub codex_token: String,
+    pub codex_usage: String,
 }
 
 impl Default for Endpoints {
@@ -27,8 +30,11 @@ impl Default for Endpoints {
         Self {
             claude_authorize: "https://claude.com/cai/oauth/authorize".into(),
             claude_token: "https://platform.claude.com/v1/oauth/token".into(),
+            claude_usage: "https://api.anthropic.com/api/oauth/usage".into(),
+            claude_profile: "https://api.anthropic.com/api/oauth/profile".into(),
             codex_authorize: "https://auth.openai.com/oauth/authorize".into(),
             codex_token: "https://auth.openai.com/oauth/token".into(),
+            codex_usage: "https://chatgpt.com/backend-api/wham/usage".into(),
         }
     }
 }
@@ -146,6 +152,42 @@ impl Http {
             .await
             .map_err(|_| "The sign-in server's answer could not be read".to_owned())?;
         Ok((status, text))
+    }
+}
+
+/// A GET's answer: status, `Retry-After` (seconds), text.
+pub(crate) struct Got {
+    pub status: u16,
+    pub retry_after: Option<u64>,
+    pub text: String,
+}
+
+impl Http {
+    /// GETs `url` with `headers`.
+    pub(crate) async fn get(&self, url: &str, headers: &[(&str, String)]) -> Result<Got, String> {
+        let mut request = self.0.get(url);
+        for (name, value) in headers {
+            request = request.header(*name, value);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|_| "The usage server could not be reached".to_owned())?;
+        let status = response.status().as_u16();
+        let retry_after = response
+            .headers()
+            .get("retry-after")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<u64>().ok());
+        let text = response
+            .text()
+            .await
+            .map_err(|_| "The usage server's answer could not be read".to_owned())?;
+        Ok(Got {
+            status,
+            retry_after,
+            text,
+        })
     }
 }
 

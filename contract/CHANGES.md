@@ -6,6 +6,22 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.52
+
+inventory: b81d7ccb7746834f8fa021ba0cfb5b92d910a2052547ce4353736c0bd3429fee
+
+Each signed-in account's usage is read by one scheduler (about every
+90 s, `agy` every 10 minutes by asking `agy` itself) and kept in
+`accounts/usage.json`; every browser is told what changed, once.
+
+- rpc: `agent_profile.account.usage` (every account's last reading:
+  `agent`, `id`, `status`, `usage` with its `windows`, plan, email,
+  `read_at`) and `agent_profile.account.sessions` (`profile`, `since`,
+  `until`: the sessions that ran on the account then, with the tokens
+  their transcripts record there). Family: agent_profile.
+- push: `account_usage` (keyed): `accounts` whose reading changed and
+  `removed` keys. Family: agent_profile.
+
 ## 1.51
 
 inventory: df089a2e7d64be8b4073b59a2dcd2461cce2eb45f85b4bf9dea7b97daa2d5aeb
