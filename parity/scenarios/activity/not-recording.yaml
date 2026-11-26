@@ -46,7 +46,10 @@ steps:
     expect:
       {
         exit: 1,
-        stderr_contains: "no activity log at ~/.config/roamgate/activity.sqlite; set activity.enabled in settings.json",
+        # The CLI spells the data root as it is on each system (`~/.config`
+        # or the roaming one): the head and the advice are what is checked.
+        stderr_contains:
+          ["no activity log at ", "activity.sqlite; set activity.enabled in settings.json"],
       }
   - cli: [activity, day, not-a-date]
     expect:

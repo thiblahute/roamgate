@@ -18,7 +18,7 @@ steps:
           holders: [],
           pending: false,
           models: { $len: 7 },
-          path: "${HOME}/.local/share/roamgate/voice/low-gpu.json",
+          path: "${VOICE_DATA}/low-gpu.json",
         }
   - http: PUT /api/voice/low-gpu
     body: {}

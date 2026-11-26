@@ -6,6 +6,9 @@ description: >
   SessionStart hook once next to the user's hooks and settings, creates
   the settings file when Claude has none, leaves a file it cannot read as
   it is, and does nothing on a host without Claude.
+# The claude start hook is skipped on a local Windows host (the hook's
+# command is a POSIX shell's).
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1 }]

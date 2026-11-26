@@ -2751,10 +2751,13 @@ impl WorkService {
         else {
             return none;
         };
-        let path = if decision_path.starts_with('/') {
+        // Absolute on the host (a POSIX path, or a Windows drive's):
+        // relative to the rule's root, whatever separator it names.
+        let path = if roamgate_base::paths::is_host_path(decision_path) {
             decision_path
-                .get(root.path.len() + 1..)
+                .get(root.path.len()..)
                 .unwrap_or("")
+                .trim_start_matches(['/', '\\'])
                 .to_owned()
         } else {
             decision_path.clone()

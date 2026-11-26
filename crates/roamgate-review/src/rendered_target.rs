@@ -93,6 +93,24 @@ pub fn posix_relative(from: &str, to: &str) -> String {
     parts.join("/")
 }
 
+/// A Windows drive path's separators unified (`C:\a` as `C:/a`): a
+/// POSIX path's `\` is a real backslash, so only a drive's is replaced.
+fn drive_slashes(text: &str) -> String {
+    let bytes = text.as_bytes();
+    if bytes.first().is_some_and(|b| b.is_ascii_alphabetic()) && bytes.get(1) == Some(&b':') {
+        text.replace('\\', "/")
+    } else {
+        text.to_owned()
+    }
+}
+
+/// An absolute POSIX path, or a Windows drive's.
+fn is_absolute_path(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    text.starts_with('/')
+        || (bytes.len() >= 3 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/'))
+}
+
 /// The root and target of a file shown rendered (renderedFileTarget).
 pub async fn rendered_file_target<F, Fut>(
     read_root: F,
@@ -103,17 +121,19 @@ where
     F: FnOnce(String) -> Fut,
     Fut: Future<Output = Result<String, String>>,
 {
-    let joined = if file.starts_with('/') || !cwd.starts_with('/') {
-        file.to_owned()
+    let file = drive_slashes(file);
+    let cwd = drive_slashes(cwd);
+    let joined = if is_absolute_path(&file) || !is_absolute_path(&cwd) {
+        file
     } else {
         format!("{cwd}/{file}")
     };
     let path = posix_normalize(&joined);
-    if !path.starts_with('/') || path.contains('\0') {
+    if !is_absolute_path(&path) || path.contains('\0') {
         return Err(ReviewError::new("the file must be absolute"));
     }
     let mut root = match read_root(posix_dirname(&path)).await {
-        Ok(root) => root,
+        Ok(root) => drive_slashes(&root),
         Err(_) => posix_dirname(&path),
     };
     let mut relative = posix_relative(&root, &path);

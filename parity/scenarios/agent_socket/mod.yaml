@@ -4,6 +4,9 @@ description: >
   What the mod's client sends (server/claude-mod/hooks/client.ts): its
   tools, a poll for the pane's messages (a long poll on the server's clock),
   events and acks, each refused without a pane.
+# The Claude mod's socket client needs a Unix host (the mod hub refuses
+# a Windows one).
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1 }]

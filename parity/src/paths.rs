@@ -23,6 +23,37 @@ pub fn posix_shell() -> String {
         .clone()
 }
 
+/// The path spelled as the POSIX shell spells it: through `cygpath` on
+/// Windows (msys' mounts map the drive and the user's temp directory, so
+/// `$HOME` in a pane command reads `/tmp/...` there), the path itself
+/// elsewhere.
+pub fn shell_path(path: &Path) -> String {
+    let native = path.to_string_lossy().into_owned();
+    if !cfg!(windows) {
+        return native;
+    }
+    let binding = posix_shell();
+    let dir = Path::new(&binding).parent();
+    let cygpath = dir
+        .map(|dir| dir.join("cygpath.exe"))
+        .filter(|candidate| candidate.is_file())
+        .or_else(|| {
+            dir.map(|dir| dir.join("../usr/bin/cygpath.exe"))
+                .filter(|candidate| candidate.is_file())
+        });
+    match cygpath {
+        Some(cygpath) => std::process::Command::new(cygpath)
+            .arg("-u")
+            .arg(&native)
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+            .unwrap_or_else(|| native.replace('\\', "/")),
+        None => native.replace('\\', "/"),
+    }
+}
+
 /// The repository's root, found at run time, never the one this binary was
 /// built in: worktrees sharing a `CARGO_TARGET_DIR` run the same binaries,
 /// and a run must read and write its own checkout (its ledger, contract and

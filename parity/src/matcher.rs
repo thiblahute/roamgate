@@ -81,7 +81,14 @@ fn placeholder(pattern: &str, actual: Option<&Value>) -> Option<Result<(), Strin
             } else {
                 let text = other.strip_prefix("contains:")?;
                 ok(
-                    value.as_str().is_some_and(|actual| actual.contains(text)),
+                    value.as_str().is_some_and(|actual| {
+                        actual.contains(text)
+                            // On Windows a path answered with `\` too.
+                            || (cfg!(windows)
+                                && actual
+                                    .replace('\\', "/")
+                                    .contains(&text.replace('\\', "/")))
+                    }),
                     &format!("a string containing {text:?}"),
                 )
             }

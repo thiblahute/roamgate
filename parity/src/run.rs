@@ -27,6 +27,15 @@ use crate::fakes::{self, script};
 use crate::normalize::RunPaths;
 use crate::paths::repo_root;
 
+/// The stop signal to a server on Windows: CTRL_BREAK, the one console
+/// event a process group can be given alone (the server listens for it
+/// where POSIX has SIGTERM).
+#[cfg(windows)]
+const STOP_EVENT: u32 = windows_sys::Win32::System::Console::CTRL_BREAK_EVENT;
+
+#[cfg(windows)]
+use windows_sys::Win32::System::Console::{CREATE_NEW_PROCESS_GROUP, GenerateConsoleCtrlEvent};
+
 /// 2026-01-01T00:00:00Z: where the test clock starts unless told.
 pub const DEFAULT_EPOCH_MS: i64 = 1_767_225_600_000;
 
@@ -322,18 +331,27 @@ pub fn home_path(home: &Path, relative: &Path) -> PathBuf {
     if cfg!(windows) && relative.parent() == Some(bin.as_path()) && relative.extension().is_none() {
         return home.join(relative.with_extension("exe"));
     }
-    let data = Path::new(".config").join("roamgate");
-    match relative.strip_prefix(&data) {
-        Ok(rest) if cfg!(windows) => {
-            let root = data_root(home);
-            if rest.as_os_str().is_empty() {
-                root
-            } else {
-                root.join(rest)
+    // The data root on each side's naming: `.config/roamgate` (the Linux
+    // data root) and `.local/share/roamgate` (the voice data's) both land
+    // in `%APPDATA%\roamgate` on Windows.
+    let data = [
+        Path::new(".config").join("roamgate"),
+        Path::new(".local").join("share").join("roamgate"),
+    ];
+    for data in data.iter() {
+        if let Ok(rest) = relative.strip_prefix(data) {
+            if cfg!(windows) {
+                let root = data_root(home);
+                return if rest.as_os_str().is_empty() {
+                    root
+                } else {
+                    root.join(rest)
+                };
             }
+            break;
         }
-        _ => home.join(relative),
     }
+    home.join(relative)
 }
 
 fn write_seed(home: &Path, file: &SeedFile) -> Result<()> {
@@ -403,6 +421,13 @@ impl Run {
             let mut text = text
                 .replace("${ROOT}", &root.to_string_lossy())
                 .replace("${HOME}", &home.to_string_lossy())
+                // A voice helper the scenario names without `.exe`, before
+                // the generic replace: on Windows the fake is `...exe`.
+                .replace(
+                    "${BIN}/roamgate-voice",
+                    &bin.join(crate::fakes::exe("roamgate-voice"))
+                        .to_string_lossy(),
+                )
                 .replace("${BIN}", &bin.to_string_lossy())
                 .replace("${FAKE_HTTP}", &http.base);
             for id in options.herdrs.keys() {
@@ -652,7 +677,8 @@ impl Run {
             bail!("the server is already running");
         }
         let (program, args) = self.command.split_first().context("empty server command")?;
-        let mut child = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(args)
             .env_clear()
             .envs(&self.env)
@@ -660,7 +686,11 @@ impl Run {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        // Its own process group: the stop's CTRL_BREAK reaches it alone.
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+        let mut child = command
             .spawn()
             .with_context(|| format!("start {}", self.command.join(" ")))?;
         let (ready, listening) = oneshot::channel::<u16>();
@@ -731,8 +761,15 @@ impl Run {
                 .args([format!("-{signal}"), pid.to_string()])
                 .status();
         }
-        #[cfg(not(unix))]
-        let _ = signal;
+        #[cfg(windows)]
+        if signal != "KILL"
+            && let Some(pid) = server.child.id()
+        {
+            // The server exits like on a SIGTERM, flushing what it holds.
+            unsafe {
+                let _ = GenerateConsoleCtrlEvent(STOP_EVENT, pid);
+            };
+        }
         let status = match tokio::time::timeout(Duration::from_secs(15), server.child.wait()).await
         {
             Ok(status) => status?,

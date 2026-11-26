@@ -6,6 +6,9 @@ description: >
   task is taken as given. A comment on an owned item, and an item nobody
   owns (the project's coordinator's), are typed into that pane through
   Herdr's agent.prompt, naming the item and the client's work command.
+# On Windows the server leaves comments to the review client (typed in
+# the pane there), never its agent socket.
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: Roamgate work }]

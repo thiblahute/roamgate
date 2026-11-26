@@ -174,9 +174,15 @@ async fn shutdown(exit: Arc<tokio::sync::Notify>) {
         }
     }
     #[cfg(not(unix))]
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {}
-        () = exit.notified() => {}
+    {
+        // Windows has no SIGTERM: a supervisor's stop is CTRL_BREAK, the
+        // one console event a process group can be given alone.
+        let mut brk = tokio::signal::windows::ctrl_break().expect("CTRL_BREAK handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = brk.recv() => {}
+            () = exit.notified() => {}
+        }
     }
 }
 

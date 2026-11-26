@@ -111,9 +111,10 @@ fn ssh_runs_remote_commands_locally_and_tracks_masters() {
         b"",
     );
     assert_eq!(ran.status.code(), Some(0));
+    // The shell spells the path its own way (msys' mounts on Windows).
     assert_eq!(
         String::from_utf8_lossy(&ran.stdout),
-        dir.path().join("remote").to_string_lossy()
+        roamgate_parity::paths::shell_path(&dir.path().join("remote"))
     );
     let control = dir.path().join("control");
     let control_text = control.to_string_lossy().into_owned();

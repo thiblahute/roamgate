@@ -55,3 +55,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.28"
 walkdir = "2"
 zstd = "0.13"
+
+# The server's stop signal on Windows: CTRL_BREAK to its process group.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }

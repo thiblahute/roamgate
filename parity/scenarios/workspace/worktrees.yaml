@@ -1,5 +1,7 @@
 name: worktrees are created, opened and removed through Herdr on a real repository, with their repository settings
 family: worktree
+# Worktree creation is refused on a Windows host (unix_only_message).
+platforms: [linux, macos]
 tier: T2
 description: >
   The fake Herdr's worktree methods run real git (git worktree add, list,

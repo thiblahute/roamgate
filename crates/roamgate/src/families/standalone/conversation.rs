@@ -95,7 +95,9 @@ pub(super) fn discovery(cx: &FamilyContext) -> &'static ModelDiscovery {
 }
 
 fn home() -> PathBuf {
+    // Windows hosts have no HOME: USERPROFILE is theirs.
     std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_default()
 }
@@ -103,9 +105,19 @@ fn home() -> PathBuf {
 /// This Roamgate's own holder and socket, for a local connection.
 pub(super) fn local_holder() -> Value {
     let dir = home().join(roamgate_review::agent_socket::REVIEW_HOME_DIR);
+    // The holder's command is typed into the pane's POSIX shell, which
+    // refuses a path holding `\`: a Windows path is spelled with `/`.
+    let spell = |path: PathBuf| {
+        let text = path.display().to_string();
+        if cfg!(windows) {
+            text.replace('\\', "/")
+        } else {
+            text
+        }
+    };
     json!({
-        "bin": dir.join("bin").join("roamgate-hold").display().to_string(),
-        "socket": dir.join("review.sock").display().to_string(),
+        "bin": spell(dir.join("bin").join("roamgate-hold")),
+        "socket": spell(dir.join("review.sock")),
     })
 }
 

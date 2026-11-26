@@ -6,6 +6,9 @@ description: >
   agent's pane after the delivery delay (the server's clock) through
   Herdr's agent.prompt; handoff and retry deliver at once. A watch with
   nothing to say times out on the clock.
+# On Windows the server leaves comments to the review client (typed in
+# the pane there), never its agent socket.
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]

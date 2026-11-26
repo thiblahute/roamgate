@@ -152,6 +152,11 @@ impl Normalizers {
                         for (path, token) in &pairs {
                             text = text.replace(path.as_str(), token);
                         }
+                        // A path the server joined with `\`: the goldens
+                        // were recorded with `/`.
+                        if cfg!(windows) {
+                            text = text.replace('\\', "/");
+                        }
                         text
                     });
                 }

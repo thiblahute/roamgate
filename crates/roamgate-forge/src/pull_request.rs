@@ -100,6 +100,12 @@ pub fn parse_review_remote(name: &str, value: &str) -> Option<ReviewRemote> {
     // JS's `\w` is ASCII only.
     static REPOSITORY: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+$").unwrap());
+    // A Windows drive path is a local checkout, never scp's `host:path`
+    // (`C:\repo` would read as the host `c`).
+    static DRIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z]:[\\/]").unwrap());
+    if DRIVE.is_match(value) {
+        return None;
+    }
     let text = if value.contains("://") {
         value.to_owned()
     } else {

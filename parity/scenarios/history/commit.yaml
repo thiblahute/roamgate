@@ -47,7 +47,7 @@ steps:
   - assert_file:
       path: "${DATA}/history/work/items/${item}.md"
       text_contains: '"title":"Keep history"'
-  - sh: git -C ${DATA}/history log --format='%an <%ae>|%s%n%b' --reverse
+  - sh: git -C "${DATA}/history" log --format='%an <%ae>|%s%n%b' --reverse
     expect:
       exit: 0
       stdout_contains:

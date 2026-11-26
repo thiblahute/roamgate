@@ -7,6 +7,9 @@ description: >
   mod acks it, its events move the pane's status and usage, its goodbye
   detaches it. claude_mod.status, install and uninstall run Claude Code's
   plugin commands (fake-claude).
+# The Claude mod's socket client needs a Unix host (the mod hub refuses
+# a Windows one).
+platforms: [linux, macos]
 ledger:
   - "server/src/agent/claude-mod-client.test.ts > messages are submitted one at a time, in order, each once"
   - "server/src/agent/claude-mod-client.test.ts > events and the goodbye carry the session"

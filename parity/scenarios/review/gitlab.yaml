@@ -6,6 +6,9 @@ description: >
   its merge request and opens its review; the user's review comment is sent
   as a GitLab draft note (the only forge write, asked for), an agent's
   review comment is made the user's, the review is refreshed.
+# On Windows the server leaves comments to the review client (typed in
+# the pane there), never its agent socket.
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]

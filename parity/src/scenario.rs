@@ -390,6 +390,19 @@ impl Runner {
         self.vars.insert("ROOT".into(), text(&self.run.root));
         self.vars.insert("HOME".into(), text(&self.run.home));
         self.vars.insert("DATA".into(), text(&self.run.data_root()));
+        // The voice data's directory: the data root's `voice` on Windows,
+        // `.local/share/roamgate/voice` elsewhere.
+        let voice_data = if cfg!(windows) {
+            self.run.data_root().join("voice")
+        } else {
+            self.run
+                .home
+                .join(".local")
+                .join("share")
+                .join("roamgate")
+                .join("voice")
+        };
+        self.vars.insert("VOICE_DATA".into(), text(&voice_data));
         self.vars.insert("REPO".into(), text(&repo_root()));
         // The program the server reveals files with on this platform.
         let file_manager = if cfg!(target_os = "macos") {

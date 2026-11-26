@@ -6,6 +6,9 @@ description: >
   variables: it opens a review, comments, lists,
   reads the skill, lists sessions, notifies, and fails with exit 1
   on a refusal.
+# The Python client speaks Unix sockets (socket.AF_UNIX), which a
+# Windows Python does not have.
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: repo }]
