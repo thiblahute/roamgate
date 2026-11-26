@@ -3,6 +3,9 @@ family: agent_chat
 description:
   "A turn whose answer is one stream-json line of 1.3 MB (past the agent socket's 1 MiB body
   limit): the holder sends it in pieces under the limit, and the browser gets the whole text once."
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   env:
     PARITY_FAKE_ENV_KEYS: ROAMGATE_HEADLESS,ROAMGATE_PANE_ID,ROAMGATE_HERDR_SOCKET_PATH,CLAUDE_CONFIG_DIR

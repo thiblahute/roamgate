@@ -5,6 +5,9 @@ description: >
   shows: the user's line replayed, thinking and text blocks with deltas, a
   retry that abandons a block, an API retry notice, a tool call and its
   result, a compaction notice, a suggested next prompt, the result.
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

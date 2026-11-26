@@ -1,5 +1,8 @@
 name: conversation mode hands the session back to the terminal, and refuses what the pane cannot do
 family: agent_chat
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

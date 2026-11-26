@@ -6,6 +6,9 @@ description: >
   and polls the agent socket), and conversation mode owns the session; a
   message starts the headless claude (fake-claude) through the holder and
   its turn streams to the subscribed browser.
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work }]

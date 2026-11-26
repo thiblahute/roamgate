@@ -1,6 +1,9 @@
 name: "an answer Claude Code filed while the question waited stands: nothing is written"
 family: agent_chat
 description: "an answer Claude Code filed while the question waited stands: nothing is written"
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   env:
     PARITY_FAKE_ENV_KEYS: ROAMGATE_HEADLESS,ROAMGATE_PANE_ID,ROAMGATE_HERDR_SOCKET_PATH,CLAUDE_CONFIG_DIR

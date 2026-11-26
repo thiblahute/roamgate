@@ -4,6 +4,9 @@ description:
   "After a handover, the holder Roamgate types in the pane starts the headless claude: marked
   headless, the pane given under Roamgate's names (not Herdr's, so Herdr's hook does not claim the
   pane), Herdr's socket passed on, in the session's directory; a message's turn comes back whole."
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   env:
     PARITY_FAKE_ENV_KEYS: ROAMGATE_HEADLESS,ROAMGATE_PANE_ID,ROAMGATE_HERDR_SOCKET_PATH,CLAUDE_CONFIG_DIR

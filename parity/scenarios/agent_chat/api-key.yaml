@@ -1,5 +1,8 @@
 name: "a pane with an API key Claude Code would use unasked: the chat asks which to use, and the answer starts it"
 family: agent_chat
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   env: { ANTHROPIC_API_KEY: sk-ant-api03-parity-0123456789abcdefghij }
   herdr:

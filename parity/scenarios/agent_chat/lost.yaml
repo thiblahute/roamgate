@@ -4,6 +4,9 @@ description:
   "The pane holder stops answering (stopped) while its headless claude still runs on the host
   (fake ps): recover cannot end that process, and one still runs on the session, so the chat is told the
   conversation process is lost, and why; once the holder answers again, a recover clears it."
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
 server:
   env: {}
   herdr:

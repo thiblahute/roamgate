@@ -7,6 +7,9 @@ description:
   agent sockets: a permission or a question answered or dismissed, stepping aside in a headless run, and
   the SessionStart hook that tells Roamgate of a claude started in a pane (a fake ps stands for the process
   tree)."
+# Its steps play the pane's POSIX shell with Unix tools (env -i, symbolic
+# links, #! scripts), as conversation mode's holder runs there.
+platforms: [linux, macos]
 server:
   herdr: false
   files:

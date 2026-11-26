@@ -3,6 +3,9 @@ family: conversation
 description:
   "A suspended roamgate-hold job brought back with fg while claude runs the session elsewhere:
   the refusal is said and the job stops again; the next fg brings it back."
+# Its steps play the pane's POSIX shell with Unix tools (env -i, symbolic
+# links, #! scripts), as conversation mode's holder runs there.
+platforms: [linux, macos]
 server:
   herdr: false
   files:
