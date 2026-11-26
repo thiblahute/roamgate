@@ -534,14 +534,17 @@ pub(crate) fn send_review_agents(layer: &Arc<Layer>, cx: &FamilyContext) {
     let hosts = layer.review_agent_hosts.lock().unwrap().clone();
     let mut channels = serde_json::Map::new();
     if let Some(manager) = layer.host.manager_now() {
+        // A connection that is not ready yet is left out (unknown), not
+        // said unable: the review would refuse its agents meanwhile.
         for status in manager.list() {
-            let channel = manager.ready_runtime(&status.id).is_some_and(|runtime| {
-                runtime.remote_platform().is_none()
-                    && match runtime.ssh_host() {
-                        Some(_) => hosts.contains(&status.id),
-                        None => local,
-                    }
-            });
+            let Some(runtime) = manager.ready_runtime(&status.id) else {
+                continue;
+            };
+            let channel = runtime.remote_platform().is_none()
+                && match runtime.ssh_host() {
+                    Some(_) => hosts.contains(&status.id),
+                    None => local,
+                };
             channels.insert(status.id, json!(channel));
         }
     }
