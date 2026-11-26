@@ -10,8 +10,14 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+base64 = "0.22"
+rand = "0.9"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 roamgate-base = { path = "../roamgate-base" }
 serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["process", "time"] }
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["full"] }

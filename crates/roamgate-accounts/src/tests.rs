@@ -67,9 +67,22 @@ fn the_sign_in_state_comes_from_the_credential_file() {
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path();
     assert_eq!(auth_state(AccountAgent::Codex, dir), AuthState::SignedOut);
-    std::fs::write(dir.join("auth.json"), "{}").unwrap();
+    std::fs::write(dir.join("auth.json"), r#"{"tokens":{"refresh_token":"r"}}"#).unwrap();
     assert_eq!(auth_state(AccountAgent::Codex, dir), AuthState::SignedIn);
     std::fs::write(dir.join(".credentials.json"), "{}").unwrap();
+    assert_eq!(
+        auth_state(AccountAgent::Claude, dir),
+        if cfg!(target_os = "macos") {
+            AuthState::Unknown
+        } else {
+            AuthState::SignedOut
+        }
+    );
+    std::fs::write(
+        dir.join(".credentials.json"),
+        r#"{"claudeAiOauth":{"refreshToken":"r"}}"#,
+    )
+    .unwrap();
     let claude = if cfg!(target_os = "macos") {
         AuthState::Unknown
     } else {
@@ -166,8 +179,8 @@ fn a_claude_account_shares_all_but_its_sign_in() {
         assert!(session_roots(&data, AccountAgent::Claude).is_empty());
     }
 
-    // An MCP server the user adds reaches the account on its next start;
-    // the account's sign-in stays.
+    // What the user changes since reaches the account on its next start
+    // (the newest write wins); the account's own identity stays.
     let mut with_account = own.clone();
     with_account["oauthAccount"] = json!({"emailAddress": "me@work"});
     with_account["mcpServers"]["mine"] = json!({"command": "m"});
@@ -182,7 +195,7 @@ fn a_claude_account_shares_all_but_its_sign_in() {
     assert_eq!(own["oauthAccount"]["emailAddress"], "me@work");
     assert_eq!(
         own["mcpServers"],
-        json!({"a": {"command": "a2"}, "mine": {"command": "m"}, "b": {"command": "b"}})
+        json!({"a": {"command": "a2"}, "b": {"command": "b"}})
     );
 }
 
@@ -244,15 +257,30 @@ fn nothing_of_the_user_is_needed() {
 }
 
 #[test]
-fn an_agy_account_gets_a_home_of_its_own_and_nothing_else() {
+fn an_agy_account_gets_a_home_of_its_own_with_the_user_s_git_and_ssh() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");
     std::fs::create_dir_all(home.join(".gemini")).unwrap();
+    std::fs::create_dir_all(home.join(".ssh")).unwrap();
+    std::fs::create_dir_all(home.join(".config/git")).unwrap();
+    std::fs::write(home.join(".gitconfig"), "[user]").unwrap();
     let dir = temp.path().join("acct");
     let prepared = prepare(AccountAgent::Agy, &dir, &user_dirs(&home)).unwrap();
-    assert_eq!(prepared, Prepared::default());
     assert!(agy_home(&dir).is_dir());
-    assert_eq!(std::fs::read_dir(agy_home(&dir)).unwrap().count(), 0);
+    // Never the user's agy configuration.
+    assert!(std::fs::symlink_metadata(agy_home(&dir).join(".gemini")).is_err());
+    if cfg!(unix) {
+        assert_eq!(prepared.linked, vec![".gitconfig", ".config/git", ".ssh"]);
+        assert_eq!(
+            std::fs::read_link(agy_home(&dir).join(".config/git")).unwrap(),
+            home.join(".config/git")
+        );
+    }
+    // Prepared again: the same.
+    assert_eq!(
+        prepare(AccountAgent::Agy, &dir, &user_dirs(&home)).unwrap(),
+        prepared
+    );
 }
 
 #[test]
