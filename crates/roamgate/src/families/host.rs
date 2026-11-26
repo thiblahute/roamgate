@@ -112,10 +112,11 @@ impl HostHandle {
     /// (a while at most): read early, the list would be empty, and Ranger
     /// would take every saved connection for one removed.
     pub async fn profiles_once_started(&self) -> Vec<Value> {
-        match self.0.running_or_wait().await {
-            Ok(running) => running.service.list().unwrap_or_default(),
-            Err(_) => Vec::new(),
-        }
+        self.0
+            .running_within(START_WAIT)
+            .await
+            .and_then(|running| running.service.list().ok())
+            .unwrap_or_default()
     }
 
     /// A connection's profile.
@@ -348,6 +349,17 @@ impl Inner {
 
     fn running(&self) -> Option<Running> {
         self.state.lock().unwrap().running.clone()
+    }
+
+    /// The running connections, waiting for them a while even before the
+    /// core was given the family (its families start in any order).
+    async fn running_within(&self, wait: Duration) -> Option<Running> {
+        if let Some(running) = self.running() {
+            return Some(running);
+        }
+        let mut watch = self.running_now.subscribe();
+        let _ = tokio::time::timeout(wait, watch.wait_for(|running| *running)).await;
+        self.running()
     }
 
     /// The running connections; while the core owns the family but the
