@@ -90,7 +90,8 @@ steps:
   - advance: 1000
     repeat: 5
   # Each owned item the user added is told to its pane, with its comments,
-  # in either order: both are due in the same advance.
+  # in either order: both are due in the same advance. The second one to go
+  # out may give the short guide (the pane was told the long one).
   - herdr_calls: { method: agent.prompt, count: 2 }
     retry: 10000
   - herdr_calls:
@@ -109,7 +110,7 @@ steps:
           params:
             {
               target: p1,
-              text: "{{re:^\\[Roamgate work item [0-9a-f]{8} \"Deliver me\" \\(yours\\)\\](?s).*Please look.*roamgate-review work work_list}}",
+              text: "{{re:^\\[Roamgate work item [0-9a-f]{8} \"Deliver me\" \\(yours\\)\\](?s).*Please look.*roamgate-review}}",
             },
         }
       count: 1
