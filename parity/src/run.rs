@@ -34,7 +34,9 @@ use crate::paths::repo_root;
 const STOP_EVENT: u32 = windows_sys::Win32::System::Console::CTRL_BREAK_EVENT;
 
 #[cfg(windows)]
-use windows_sys::Win32::System::Console::{CREATE_NEW_PROCESS_GROUP, GenerateConsoleCtrlEvent};
+use windows_sys::Win32::System::Console::GenerateConsoleCtrlEvent;
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP;
 
 /// 2026-01-01T00:00:00Z: where the test clock starts unless told.
 pub const DEFAULT_EPOCH_MS: i64 = 1_767_225_600_000;
@@ -766,6 +768,8 @@ impl Run {
             && let Some(pid) = server.child.id()
         {
             // The server exits like on a SIGTERM, flushing what it holds.
+            // SAFETY: a plain Win32 call on the server's own process group.
+            #[allow(unsafe_code)]
             unsafe {
                 let _ = GenerateConsoleCtrlEvent(STOP_EVENT, pid);
             };
