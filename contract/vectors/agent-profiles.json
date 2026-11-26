@@ -119,7 +119,7 @@
         {
           "fn": "agentProfiles.profileError",
           "args": [{ "name": "X", "agent": "gpt" }],
-          "result": "X: the agent must be one of claude"
+          "result": "X: the agent must be one of claude, codex, agy"
         },
         {
           "fn": "agentProfiles.profileError",
@@ -862,6 +862,209 @@
             "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}"
           ],
           "result": null
+        }
+      ]
+    },
+    {
+      "name": "an account profile names its agent's sign-in, and is never plain",
+      "group": ["profiles", "accounts"],
+      "calls": [
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [
+            { "name": "Work", "agent": "claude", "account": { "id": "work" } }
+          ],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [
+            {
+              "name": "Codex perso",
+              "agent": "codex",
+              "account": { "id": "perso" }
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [
+            { "name": "Agy", "agent": "agy", "account": { "id": "agy-2" } }
+          ],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [
+            { "name": "Work", "agent": "claude", "account": { "id": "Work" } }
+          ],
+          "result": "Work: account must be {\"id\": \"<1 to 40 lower-case letters, digits, - or _>\"}"
+        },
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [
+            {
+              "name": "Work",
+              "agent": "claude",
+              "account": { "id": "work", "dir": "/x" }
+            }
+          ],
+          "result": "Work: account must be {\"id\": \"<1 to 40 lower-case letters, digits, - or _>\"}"
+        },
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [{ "name": "Work", "agent": "claude", "account": "work" }],
+          "result": "Work: account must be {\"id\": \"<1 to 40 lower-case letters, digits, - or _>\"}"
+        },
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [{ "name": "Gemini", "agent": "gemini" }],
+          "result": "Gemini: the agent must be one of claude, codex, agy"
+        },
+        {
+          "fn": "agentProfiles.isPlainProfile",
+          "args": [
+            { "name": "Work", "agent": "claude", "account": { "id": "work" } }
+          ],
+          "result": false
+        },
+        {
+          "fn": "agentProfiles.isPlainProfile",
+          "args": [{ "name": "Codex", "agent": "codex" }],
+          "result": false
+        },
+        {
+          "fn": "agentProfiles.profileView",
+          "args": [
+            { "name": "Work", "agent": "claude", "account": { "id": "work" } },
+            false
+          ],
+          "result": {
+            "name": "Work",
+            "agent": "claude",
+            "builtin": false,
+            "env": [],
+            "unset": [],
+            "account": { "id": "work" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "the settings keep an account once, and older settings unchanged",
+      "group": ["profiles", "accounts"],
+      "calls": [
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Work 2",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                }
+              ]
+            }
+          ],
+          "result": "Two profiles use the account claude/work"
+        },
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Codex work",
+                  "agent": "codex",
+                  "account": { "id": "work" }
+                }
+              ],
+              "default": "Work"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.normalizeProfilesSettings",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": " Work ",
+                  "agent": "claude",
+                  "account": { "id": "work" },
+                  "env": { "FOO": "1" }
+                },
+                {
+                  "name": "Work 2",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Codex perso",
+                  "agent": "codex",
+                  "account": { "id": "perso" }
+                }
+              ],
+              "default": "Codex perso"
+            }
+          ],
+          "result": {
+            "list": [
+              {
+                "name": "Work",
+                "agent": "claude",
+                "env": { "FOO": "1" },
+                "account": { "id": "work" }
+              },
+              {
+                "name": "Codex perso",
+                "agent": "codex",
+                "account": { "id": "perso" }
+              }
+            ],
+            "default": "Codex perso",
+            "return_after_reset": false
+          }
+        },
+        {
+          "fn": "agentProfiles.normalizeProfilesSettings",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Igalia GLM",
+                  "agent": "claude",
+                  "env": { "ANTHROPIC_BASE_URL": "https://ai.example" }
+                }
+              ],
+              "default": "Igalia GLM",
+              "return_after_reset": true
+            }
+          ],
+          "result": {
+            "list": [
+              {
+                "name": "Igalia GLM",
+                "agent": "claude",
+                "env": { "ANTHROPIC_BASE_URL": "https://ai.example" }
+              }
+            ],
+            "default": "Igalia GLM",
+            "return_after_reset": true
+          }
         }
       ]
     }

@@ -18,6 +18,26 @@
         "items": {
           "type": "object",
           "properties": {
+            "account": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "dir": {
+                  "type": "string"
+                },
+                "auth": {
+                  "enum": [
+                    "unknown",
+                    "signed_in",
+                    "signed_out",
+                    "needs_relogin"
+                  ]
+                }
+              },
+              "required": ["id", "dir", "auth"]
+            },
             "agent": {
               "type": "string"
             },

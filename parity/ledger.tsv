@@ -269,6 +269,8 @@ shared/agentProfiles.test.ts	an answer from before the choice, on another model,
 shared/agentProfiles.test.ts	answered with it: by its name, or the model the agent said it is	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
 shared/agentProfiles.test.ts	a later answer on another model the profile serves: the session moved on	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
 shared/agentProfiles.test.ts	Claude, Pi and Codex transcripts, the newest record first	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	an account profile names its agent's sign-in, and is never plain	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	the settings keep an account once, and older settings unchanged	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
 shared/assistant.test.ts	tool activities accept bounded details and retain legacy summaries	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
 shared/assistant.test.ts	assistant messages accept bounded reasoning steps	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
 shared/assistant.test.ts	Ranger notification envelopes require a string status and bounded task targets	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate

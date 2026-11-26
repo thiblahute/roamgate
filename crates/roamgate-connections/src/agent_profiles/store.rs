@@ -15,9 +15,11 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
+use roamgate_accounts::{AccountAgent, LaunchEnv, UserDirs};
+
 use super::shared::{
     BUILTIN_PROFILE_NAME, all_profiles, is_plain_profile, normalize_profiles_settings,
-    profile_agent, profile_name, profile_named, profile_program, profile_unset,
+    profile_account_id, profile_agent, profile_name, profile_named, profile_program, profile_unset,
 };
 
 /// A profile ready to start an agent with: its program, the environment
@@ -149,7 +151,40 @@ pub fn read_secret_file(path: &str, home: &Path) -> Result<String, String> {
     Ok(text.to_owned())
 }
 
+/// Roamgate's data root for the user of `home`, as this process sees it.
+pub fn data_root_for(home: &Path) -> PathBuf {
+    roamgate_accounts::data_root_of(home, &|name| std::env::var(name).ok())
+}
+
+/// An account profile's directory: `<data>/accounts/<agent>/<id>`; None
+/// for any other profile.
+pub fn account_dir_of(profile: &Value, home: &Path) -> Option<(AccountAgent, PathBuf)> {
+    let id = profile_account_id(profile)?;
+    let agent = AccountAgent::from_id(profile_agent(profile))?;
+    Some((
+        agent,
+        roamgate_accounts::account_dir(&data_root_for(home), agent, id),
+    ))
+}
+
+/// An account profile's directory made ready and the environment it
+/// starts with; None for any other profile.
+fn account_launch(profile: &Value, home: &Path) -> Result<Option<LaunchEnv>, String> {
+    let Some((agent, dir)) = account_dir_of(profile, home) else {
+        return Ok(None);
+    };
+    let user = UserDirs::of(home, &|name| std::env::var(name).ok());
+    roamgate_accounts::prepare(agent, &dir, &user).map_err(|error| {
+        format!(
+            "The account directory {} cannot be prepared: {error}",
+            dir.display()
+        )
+    })?;
+    Ok(Some(roamgate_accounts::launch_env(agent, &dir)))
+}
+
 /// The command a profile starts; an error when a secret cannot be read.
+/// An account profile's directory is made ready first.
 pub fn profile_command(profile: &Value, home: &Path) -> Result<AgentCommand, String> {
     if is_plain_profile(profile) {
         return Ok(AgentCommand {
@@ -159,6 +194,8 @@ pub fn profile_command(profile: &Value, home: &Path) -> Result<AgentCommand, Str
         });
     }
     let mut env = IndexMap::new();
+    let mut unset = profile_unset(profile);
+    let account = account_launch(profile, home)?;
     if let Some(entries) = profile.get("env").and_then(Value::as_object) {
         for (name, value) in entries {
             let value = match value {
@@ -171,12 +208,25 @@ pub fn profile_command(profile: &Value, home: &Path) -> Result<AgentCommand, Str
             env.insert(name.clone(), value);
         }
     }
+    if let Some(account) = account {
+        // The account's directory wins over the profile's own variables.
+        for (name, value) in account.set {
+            env.insert(name, value);
+        }
+        for name in account.unset {
+            if !unset.contains(&name) {
+                unset.push(name);
+            }
+        }
+        unset.retain(|name| !env.contains_key(name));
+        unset.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
+    }
     Ok(AgentCommand {
         profile: profile_name(profile).into(),
         agent: profile_agent(profile).into(),
         program: profile_program(profile),
         env,
-        unset: profile_unset(profile),
+        unset,
         plain: false,
         model: None,
     })

@@ -9,21 +9,28 @@
  * (`{"file": "~/.config/roamgate/secrets/token"}`) that the server reads
  * when it starts the agent. Secret values never reach a browser: they see
  * the reference only.
+ *
+ * An account profile (`account: {id}`) is one sign-in of its agent: the
+ * agent starts with a configuration directory of its own under the data
+ * root (`accounts/<agent>/<id>/`), which holds that sign-in.
  */
 
 import { usageLimitStopOf } from "./limitResume";
 import { sameModel, shortModelName } from "./agentModels";
 
-export const PROFILE_AGENTS = ["claude"] as const;
+export const PROFILE_AGENTS = ["claude", "codex", "agy"] as const;
 export type ProfileAgent = (typeof PROFILE_AGENTS)[number];
 
 export const BUILTIN_PROFILE_NAME = "Claude";
 
 export type ProfileEnvValue = string | { file: string };
 
+/** An account profile's sign-in: the directory `accounts/<agent>/<id>/`. */
+export type ProfileAccount = { id: string };
+
 export type AgentProfile = {
   name: string;
-  /** The agent driver (claude; more once their drivers exist). */
+  /** The agent driver. */
   agent: ProfileAgent;
   /** The program; absent: the driver's own (`claude`). */
   command?: string;
@@ -31,6 +38,8 @@ export type AgentProfile = {
   env?: Record<string, ProfileEnvValue>;
   /** Removed from the agent's environment (besides the implied ones). */
   unset?: string[];
+  /** Set: an account profile, its own sign-in of the agent. */
+  account?: ProfileAccount;
 };
 
 export type ProfilesSettings = {
@@ -50,9 +59,12 @@ export const MAX_PROFILE_ENV = 48;
 
 const NAME_RE = /^[^\x00-\x1f\x7f]{1,40}$/;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+const ACCOUNT_ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 
 export const PROGRAM_BY_AGENT: Record<ProfileAgent, string> = {
   claude: "claude",
+  codex: "codex",
+  agy: "agy",
 };
 
 export function builtinProfile(): AgentProfile {
@@ -119,6 +131,15 @@ export function profileError(raw: unknown): string | null {
     )
       return `${name}: unset must be a list of variable names`;
   }
+  if (raw.account !== undefined) {
+    if (
+      !isRecord(raw.account) ||
+      Object.keys(raw.account).length !== 1 ||
+      typeof raw.account.id !== "string" ||
+      !ACCOUNT_ID_RE.test(raw.account.id)
+    )
+      return `${name}: account must be {"id": "<1 to 40 lower-case letters, digits, - or _>"}`;
+  }
   return null;
 }
 
@@ -147,7 +168,20 @@ export function normalizeProfile(raw: unknown): AgentProfile | null {
       : {}),
     ...(env && Object.keys(env).length ? { env } : {}),
     ...(unset?.length ? { unset } : {}),
+    ...(isRecord(value.account)
+      ? { account: { id: value.account.id as string } }
+      : {}),
   };
+}
+
+/** An account profile's agent and id (`claude/work`), or null. */
+function accountKey(profile: {
+  agent?: unknown;
+  account?: unknown;
+}): string | null {
+  return isRecord(profile.account) && typeof profile.account.id === "string"
+    ? `${profile.agent}/${profile.account.id}`
+    : null;
 }
 
 /** Why a whole settings value is not valid, or null. */
@@ -156,6 +190,7 @@ export function profilesSettingsError(raw: unknown): string | null {
   if (!Array.isArray(raw.list)) return "profiles.list must be a list";
   if (raw.list.length > MAX_PROFILES) return `At most ${MAX_PROFILES} profiles`;
   const names = new Set<string>();
+  const accounts = new Set<string>();
   for (const each of raw.list) {
     const error = profileError(each);
     if (error) return error;
@@ -163,6 +198,12 @@ export function profilesSettingsError(raw: unknown): string | null {
     if (names.has(name))
       return `Two profiles are named ${(each as { name: string }).name.trim()}`;
     names.add(name);
+    const account = accountKey(each as AgentProfile);
+    if (account !== null) {
+      if (accounts.has(account))
+        return `Two profiles use the account ${account}`;
+      accounts.add(account);
+    }
   }
   if (raw.default !== undefined && typeof raw.default !== "string")
     return "profiles.default must be a profile name";
@@ -187,10 +228,17 @@ export function normalizeProfilesSettings(raw: unknown): ProfilesSettings {
   const fallback = defaultProfilesSettings();
   if (!isRecord(raw)) return fallback;
   const seen = new Set<string>();
+  const accounts = new Set<string>();
   const list: AgentProfile[] = [];
   for (const each of Array.isArray(raw.list) ? raw.list : []) {
     const profile = normalizeProfile(each);
     if (!profile || seen.has(profile.name.toLowerCase())) continue;
+    // Two profiles never share an account's directory: the first keeps it.
+    const account = accountKey(profile);
+    if (account !== null) {
+      if (accounts.has(account)) continue;
+      accounts.add(account);
+    }
     seen.add(profile.name.toLowerCase());
     list.push(profile);
     if (list.length >= MAX_PROFILES) break;
@@ -230,11 +278,14 @@ export function profileProgram(profile: AgentProfile): string {
 }
 
 /**
- * A profile that changes nothing: the driver's own program, no
- * environment. Roamgate starts it exactly as it did before profiles.
+ * A profile that changes nothing: plain `claude`, no environment, no
+ * account. Roamgate starts it exactly as it did before profiles; another
+ * agent's profile is never plain.
  */
 export function isPlainProfile(profile: AgentProfile): boolean {
   return (
+    profile.agent === "claude" &&
+    !profile.account &&
     profileProgram(profile) === PROGRAM_BY_AGENT[profile.agent] &&
     !Object.keys(profile.env ?? {}).length &&
     !(profile.unset ?? []).length
@@ -280,6 +331,23 @@ export type ProfileView = {
   builtin: boolean;
   env: { name: string; value?: string; file?: string }[];
   unset: string[];
+  /** An account profile's id; the server adds its `dir` and `auth`. */
+  account?: ProfileAccountView;
+};
+
+/** Whether an account's sign-in is there, as far as the server can tell. */
+export type AccountAuthState =
+  | "unknown"
+  | "signed_in"
+  | "signed_out"
+  | "needs_relogin";
+
+export type ProfileAccountView = {
+  id: string;
+  /** The account's directory (`settings.profiles.get` only). */
+  dir?: string;
+  /** Its sign-in (`settings.profiles.get` only). */
+  auth?: AccountAuthState;
 };
 
 export function profileView(
@@ -295,6 +363,7 @@ export function profileView(
       typeof value === "string" ? { name, value } : { name, file: value.file },
     ),
     unset: profile.unset ?? [],
+    ...(profile.account ? { account: { id: profile.account.id } } : {}),
   };
 }
 

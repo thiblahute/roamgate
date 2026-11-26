@@ -22,6 +22,7 @@ http-body = "1"
 lol_html = "2"
 rand = "0.9"
 regex = "1"
+roamgate-accounts = { path = "../roamgate-accounts" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-channel = { path = "../roamgate-channel" }

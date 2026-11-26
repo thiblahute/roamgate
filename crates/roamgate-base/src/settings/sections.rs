@@ -481,7 +481,25 @@ pub fn limit_resume_section(raw: Option<&Value>) -> Option<Value> {
 pub const BUILTIN_PROFILE_NAME: &str = "Claude";
 pub const MAX_PROFILES: usize = 16;
 pub const MAX_PROFILE_ENV: usize = 48;
-const PROFILE_AGENTS: [&str; 1] = ["claude"];
+/// The agents a profile may name (shared/agentProfiles.ts PROFILE_AGENTS).
+pub const PROFILE_AGENTS: [&str; 3] = ["claude", "codex", "agy"];
+
+/// `/^[a-z0-9][a-z0-9_-]{0,39}$/`: an account profile's id, the name of
+/// its directory under `<data>/accounts/<agent>/` (lower case, so two ids
+/// never share a directory on a case-insensitive file system).
+pub fn account_id_valid(id: &str) -> bool {
+    let bytes = id.as_bytes();
+    (1..=40).contains(&bytes.len())
+        && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
+        && bytes.iter().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
+        })
+}
+
+/// An account profile's id (`account.id`), when it is one.
+pub fn profile_account_id(profile: &Value) -> Option<&str> {
+    profile.get("account")?.get("id")?.as_str()
+}
 
 fn control(character: char) -> bool {
     matches!(character, '\u{0}'..='\u{1f}' | '\u{7f}')
@@ -587,6 +605,20 @@ pub fn profile_error(raw: &Value) -> Option<String> {
             return Some(format!("{name}: unset must be a list of variable names"));
         }
     }
+    if let Some(account) = raw.get("account") {
+        let valid = account.as_object().is_some_and(|account| {
+            account.len() == 1
+                && account
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(account_id_valid)
+        });
+        if !valid {
+            return Some(format!(
+                "{name}: account must be {{\"id\": \"<1 to 40 lower-case letters, digits, - or _>\"}}"
+            ));
+        }
+    }
     None
 }
 
@@ -628,6 +660,9 @@ pub fn normalize_profile(raw: &Value) -> Option<Value> {
             out.insert("unset".into(), Value::Array(kept));
         }
     }
+    if let Some(id) = profile_account_id(&Value::Object(raw.clone())) {
+        out.insert("account".into(), json!({ "id": id }));
+    }
     Some(Value::Object(out))
 }
 
@@ -637,6 +672,7 @@ pub fn normalize_profiles_settings(raw: Option<&Value>) -> Value {
         return json!({ "list": [], "default": BUILTIN_PROFILE_NAME, "return_after_reset": false });
     };
     let mut seen = HashSet::new();
+    let mut accounts = HashSet::new();
     let mut list = Vec::new();
     for each in raw
         .get("list")
@@ -648,9 +684,17 @@ pub fn normalize_profiles_settings(raw: Option<&Value>) -> Value {
             continue;
         };
         let name = profile["name"].as_str().unwrap_or_default().to_lowercase();
-        if !seen.insert(name) {
+        if seen.contains(&name) {
             continue;
         }
+        // Two profiles never share an account's directory: the first keeps it.
+        if let Some(id) = profile_account_id(&profile) {
+            let account = format!("{}/{id}", profile["agent"].as_str().unwrap_or_default());
+            if !accounts.insert(account) {
+                continue;
+            }
+        }
+        seen.insert(name);
         list.push(profile);
         if list.len() >= MAX_PROFILES {
             break;

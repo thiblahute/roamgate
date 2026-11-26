@@ -6,6 +6,25 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.50
+
+inventory: 1ea6e625d343fe9210dc6b762ec9ec0b594918bbce0a3ef4b201ca4b6d1cfdcb
+
+A profile may be an account profile: `account: {"id"}` names one sign-in
+of its agent, whose configuration directory is
+`<data>/accounts/<agent>/<id>/`. Profiles may name the agents `claude`,
+`codex` and `agy`; settings without accounts read as before.
+
+- types: `AgentProfile.account` (`ProfileAccount`), `ProfileView.account`
+  (`ProfileAccountView`), `AccountAuthState`; `ProfileAgent` is
+  `claude | codex | agy`. Family: settings.
+- rpc: `settings.profiles.get` gives an account profile's `account` with
+  its `dir` and `auth` (`unknown`, `signed_in`, `signed_out` or
+  `needs_relogin`); `settings.profiles.update` keeps `account.id` and
+  refuses two profiles on one account. Family: settings.
+- storage: `data:accounts`, the account profiles' directories
+  (`accounts/<agent>/<id>/`). Family: agent_profiles.
+
 ## 1.49
 
 inventory: 70d4b01c5087708a8b0d7a51e7a2eb30bc9dfbafdaae7c453fe4d35ee964af91

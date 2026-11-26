@@ -2940,6 +2940,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "roamgate-accounts"
+version = "0.0.0"
+dependencies = [
+ "roamgate-base",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "roamgate-activity"
 version = "0.0.0"
 dependencies = [
@@ -3190,6 +3199,7 @@ dependencies = [
  "rand 0.9.5",
  "regex",
  "reqwest",
+ "roamgate-accounts",
  "roamgate-agents",
  "roamgate-base",
  "roamgate-channel",
@@ -3349,6 +3359,7 @@ dependencies = [
  "lol_html",
  "rand 0.9.5",
  "regex",
+ "roamgate-accounts",
  "roamgate-base",
  "roamgate-channel",
  "roamgate-connections",

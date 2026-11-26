@@ -537,3 +537,51 @@ async fn agent_profiles_listed_with_the_built_in_secrets_by_path_validated_on_up
         Some(1)
     );
 }
+
+#[tokio::test]
+async fn account_profiles_keep_their_account_and_show_its_directory_and_sign_in() {
+    if std::env::var_os("ROAMGATE_DATA_ROOT").is_some() {
+        return;
+    }
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join("settings.json");
+    let settings = service(&path);
+    let profiles = profiles_update(&json!({
+        "list": [
+            {"name": "Work", "agent": "claude", "env": [], "unset": [],
+             "account": {"id": "work", "dir": "/ignored", "auth": "signed_in"}},
+            {"name": "Codex", "agent": "codex", "env": [], "account": {"id": "perso"}},
+        ],
+        "default": "Work",
+    }))
+    .unwrap();
+    let written = settings
+        .update(|current| current.with("profiles", Some(profiles)))
+        .await
+        .unwrap();
+    assert_eq!(
+        file(&path)["profiles"]["list"][0]["account"],
+        json!({"id": "work"})
+    );
+    let dir = roamgate_connections::agent_profiles::store::data_root_for(home.path())
+        .join("accounts")
+        .join("codex")
+        .join("perso");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("auth.json"), "{}").unwrap();
+    let result = profiles_reply(&written.settings, home.path());
+    let work = &result["profiles"][1]["account"];
+    assert_eq!(work["id"], "work");
+    assert!(work["dir"].as_str().unwrap().ends_with("work"));
+    let codex = &result["profiles"][2]["account"];
+    assert_eq!(codex["dir"], json!(dir.to_string_lossy()));
+    assert_eq!(codex["auth"], "signed_in");
+    // Two profiles never share one account.
+    assert!(
+        profiles_update(&json!({"list": [
+            {"name": "A", "agent": "claude", "env": [], "account": {"id": "x"}},
+            {"name": "B", "agent": "claude", "env": [], "account": {"id": "x"}},
+        ]}))
+        .is_err()
+    );
+}
