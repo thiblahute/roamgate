@@ -123,6 +123,7 @@ export class RoutedBridge {
   private popupHandlers = new Set<(popup: PopupStatePush) => void>();
   private uiSettingsHandlers = new Set<(push: UiSettingPush) => void>();
   private workspaceTreeHandlers = new Set<(tree: unknown) => void>();
+  private accountUsageHandlers = new Set<(push: unknown) => void>();
   private mrReviewsHandlers = new Set<(push: MrReviewsPush) => void>();
   private forgeCacheHandlers = new Set<(push: MrCachePush) => void>();
   private workHandlers = new Set<(push: WorkPush) => void>();
@@ -501,6 +502,11 @@ export class RoutedBridge {
     return () => this.workspaceTreeHandlers.delete(cb);
   }
 
+  onAccountUsage(cb: (push: unknown) => void): () => void {
+    this.accountUsageHandlers.add(cb);
+    return () => this.accountUsageHandlers.delete(cb);
+  }
+
   onUiSetting(cb: (push: UiSettingPush) => void): () => void {
     this.uiSettingsHandlers.add(cb);
     return () => this.uiSettingsHandlers.delete(cb);
@@ -768,6 +774,7 @@ export class RoutedBridge {
     socket.onMrReviews(shared(this.mrReviewsHandlers));
     socket.onWork(shared(this.workHandlers));
     socket.onWorkspaceTree(shared(this.workspaceTreeHandlers));
+    socket.onAccountUsage(shared(this.accountUsageHandlers));
     socket.onUiSetting(shared(this.uiSettingsHandlers));
     socket.onControl(shared(this.controlHandlers));
   }

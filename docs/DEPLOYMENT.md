@@ -1019,6 +1019,40 @@ server's freshest login reaches every Claude account, and a sign-out
 from one server in any of them removes that login from all. Your own
 `.credentials.json` is only read, never written.
 
+#### Usage
+
+Each signed-in account's usage is read by one scheduler in Roamgate,
+whatever the number of browsers: about every 90 seconds (with jitter;
+after a failure it waits longer, up to 15 minutes, and it keeps a
+server's `Retry-After`).
+
+- **Claude**: Anthropic's `api/oauth/usage` (the 5-hour and 7-day
+  windows, each per-model week, extra usage) and, hourly,
+  `api/oauth/profile` (plan, email), with the account's own token.
+- **Codex**: ChatGPT's `backend-api/wham/usage` (its two windows, placed
+  as 5-hour and 7-day by their length; a reached limit reads 100 %).
+- **agy**: Roamgate never asks Google. Every 10 minutes it runs
+  `agy -p /usage` in the account's environment, which prints agy's own
+  usage records (one tab-separated record per line); a record with a
+  percentage shows as a window, and the rest are kept as they are. An
+  agy that prints nothing it can read shows `unknown`.
+
+Each reading has a status: `fresh`, `cached` (the last reading, from
+before a restart), `failed`, `rate_limited`, `auth_expired` (signed out,
+or the token refused) or `unknown`. The readings are kept in
+`accounts/usage.json` in the data directory, so a restart shows the last
+ones. Browsers read them with `agent_profile.account.usage` and are then
+told what changed, once for all of them (the `account_usage` push); the
+agent profiles settings show each account's windows as bars with their
+reset times.
+
+Roamgate records which account each session runs on, from when it
+starts or finds the session there until it moves to another profile
+(`accounts/sessions.json`). **Sessions this week** on an account
+(`agent_profile.account.sessions`, any window) lists those sessions with
+the tokens their transcripts record while they ran there. The quota
+itself is the account's: sessions on one account share its windows.
+
 On macOS Claude Code keeps its sign-in in the Keychain, not in the file:
 a Claude account signed in from Roamgate is not seen by Claude Code
 there yet (sign in with `/login` in a session on the profile instead),
