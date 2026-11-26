@@ -379,8 +379,12 @@ pub(crate) mod testing {
                 let Invocation::Local(argv) = &request.invocation else {
                     return Err(RunError("not local".into()));
                 };
+                // These tests are about order, not deadlines: a loaded
+                // runner (Windows' Git Bash snapshots) may pass the
+                // production one, so the real process gets a minute at least.
+                let timeout = request.timeout.max(std::time::Duration::from_secs(60));
                 LocalRunner::system()
-                    .run_local(argv, request.input.as_deref(), request.timeout)
+                    .run_local(argv, request.input.as_deref(), timeout)
                     .await
             })
         }
