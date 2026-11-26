@@ -122,8 +122,11 @@ fn same_windows_path(expected: &str, actual: Option<&Value>) -> bool {
     };
     let path = Regex::new(r"(^|[^A-Za-z])[A-Za-z]:[\\/]|\$[A-Z]+([\\/]|$)").expect("regex");
     let (expected, actual) = (expected.replace('\\', "/"), actual.replace('\\', "/"));
-    // A program named without `.exe`, as the server finds it there.
-    path.is_match(&expected) && (expected == actual || format!("{expected}.exe") == actual)
+    // A program the scenario names without `.exe`, as the server finds it.
+    let exe = Regex::new(r"(\w)\.exe\b").expect("regex");
+    let without_exe = |text: &str| exe.replace_all(text, "$1").into_owned();
+    path.is_match(&expected)
+        && (expected == actual || (!expected.contains(".exe") && expected == without_exe(&actual)))
 }
 
 /// Ok, or the first difference with its JSON path.

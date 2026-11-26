@@ -2674,7 +2674,9 @@ impl Inner {
         }
         .await;
         self.lock().changing = false;
-        result.map_err(|_: AssistantError| {
+        result.map_err(|error: AssistantError| {
+            // The user gets the plain sentence; the log keeps the cause.
+            tracing::warn!(error = ?error, "Ranger configuration not saved");
             err("The Ranger configuration could not be saved. Check the provider, model and workspace scope.")
         })
     }

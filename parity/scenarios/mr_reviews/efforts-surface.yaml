@@ -8,6 +8,9 @@ description: >
   refused with not_found, and each one's own checks refuse bad parameters
   before git or a forge is asked. A declaration needs a group headed
   upstream.
+# Merge request clones and their worktrees are found by POSIX paths (as the
+# Bun server did); a Windows machine's are not yet.
+platforms: [linux, macos]
 server:
   env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
   files:
