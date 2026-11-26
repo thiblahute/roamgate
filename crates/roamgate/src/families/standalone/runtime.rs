@@ -817,7 +817,9 @@ pub(super) async fn ensure_claude_start_hook(layer: &Layer, cx: &FamilyContext, 
     if roamgate_base::node::active() {
         return;
     }
-    let Ok(Some(lease)) = layer.ready(id) else {
+    // A ready status the host family pushed while it was starting comes
+    // before its manager is set: wait for that rather than miss the hook.
+    let Ok(Some(lease)) = layer.ready_once_running(id).await else {
         return;
     };
     if lease.runtime.remote_platform().is_some() {

@@ -220,6 +220,15 @@ impl Layer {
         manager.ready_runtime_lease(id).map_err(RpcError::new)
     }
 
+    /// [`Layer::ready`] once the connections run: a status the host family
+    /// pushes while it starts comes before its manager is set.
+    pub(crate) async fn ready_once_running(&self, id: &str) -> Result<Option<Lease>, RpcError> {
+        let Some(manager) = self.host.manager(Duration::from_secs(30)).await else {
+            return Ok(None);
+        };
+        manager.ready_runtime_lease(id).map_err(RpcError::new)
+    }
+
     /// The connection a reverse call names, or the default one, ready
     /// (index.ts `coreRuntime`).
     fn lease(&self, args: &Value) -> Result<Lease, RpcError> {
