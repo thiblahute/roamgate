@@ -138,6 +138,18 @@ impl AgentEnv {
         self.dir("CODEX_HOME", |home| home.join(".codex"))
     }
 
+    /// Roamgate's data root for this environment, where account profiles
+    /// keep their directories.
+    pub fn data_root(&self) -> PathBuf {
+        roamgate_accounts::data_root_of(&self.home, &|name| self.var(name).map(str::to_owned))
+    }
+
+    /// The session roots the account profiles of `agent` keep apart from
+    /// the user's own (see [`roamgate_accounts::session_roots`]).
+    pub fn account_session_roots(&self, agent: roamgate_accounts::AccountAgent) -> Vec<PathBuf> {
+        roamgate_accounts::session_roots(&self.data_root(), agent)
+    }
+
     pub fn pi_agent_dir(&self) -> PathBuf {
         self.dir("PI_CODING_AGENT_DIR", |home| home.join(".pi").join("agent"))
     }
@@ -333,12 +345,17 @@ impl SessionFiles for LocalSessionFiles {
     ) -> BoxFut<'a, io::Result<Option<SessionFile>>> {
         let id = id.to_owned();
         let home = self.env.codex_home();
+        let accounts = self.env.data_root();
         blocking(move || {
             validate_codex_session_id(&id)?;
             let suffix = format!("-{id}.jsonl");
             let mut found: Option<PathBuf> = None;
-            for directory in ["sessions", "archived_sessions"] {
-                let root = home.join(directory);
+            // The user's own, then those of the accounts that keep theirs.
+            let roots = ["sessions", "archived_sessions"]
+                .into_iter()
+                .map(|directory| home.join(directory))
+                .chain(roamgate_accounts::codex_session_dirs(&accounts));
+            for root in roots {
                 let mut stack = vec![root];
                 while let Some(dir) = stack.pop() {
                     let Ok(entries) = std::fs::read_dir(&dir) else {

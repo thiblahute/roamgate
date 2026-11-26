@@ -226,6 +226,33 @@ pub fn local_root(agent: Agent, host: &ResolvedHost, runtime: &ArchiveRuntime) -
     }
 }
 
+/// Every session root of an agent on this machine: [`local_root`], then
+/// the roots account profiles keep apart from it (none when the settings
+/// name the agent's root).
+pub fn local_roots(agent: Agent, host: &ResolvedHost, runtime: &ArchiveRuntime) -> Vec<PathBuf> {
+    let mut roots = vec![local_root(agent, host, runtime)];
+    if !host.roots.contains_key(agent.id()) {
+        roots.extend(agent.account_roots(&runtime.data_dir));
+    }
+    roots
+}
+
+/// Where a session file of this machine is live: under the first of
+/// [`local_roots`] that has it, else under [`local_root`].
+pub fn local_live(
+    agent: Agent,
+    host: &ResolvedHost,
+    runtime: &ArchiveRuntime,
+    relpath: &str,
+) -> PathBuf {
+    let roots = local_roots(agent, host, runtime);
+    roots
+        .iter()
+        .map(|root| root.join(relpath))
+        .find(|path| path.exists())
+        .unwrap_or_else(|| roots[0].join(relpath))
+}
+
 /// Where a remote host's agent files are mirrored: tree/ and extra/.
 pub fn mirror_dir(archive_dir: &Path, host: &str, agent: &str) -> PathBuf {
     archive_dir.join("mirror").join(host).join(agent)
@@ -697,5 +724,52 @@ pub(crate) mod tests {
         assert_eq!(hosts[1].home.as_deref(), Some("/Users/me"));
         assert!(hosts[1].enabled);
         assert!(!hosts[2].enabled);
+    }
+
+    #[test]
+    fn account_roots_are_read_beside_the_agent_s_own() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let data = temp.path().join("data");
+        let runtime = runtime(&home, &data);
+        let me = ResolvedHost {
+            id: "desk".into(),
+            self_host: true,
+            ssh: None,
+            home: None,
+            path_style: PathStyle::Posix,
+            roots: IndexMap::new(),
+            enabled: true,
+        };
+        let own = local_root(Agent::Claude, &me, &runtime);
+        assert_eq!(local_roots(Agent::Claude, &me, &runtime), vec![own.clone()]);
+        let projects =
+            roamgate_accounts::account_dir(&data, roamgate_accounts::AccountAgent::Claude, "work")
+                .join("projects");
+        std::fs::create_dir_all(projects.join("-repo")).unwrap();
+        std::fs::write(projects.join("-repo").join("s.jsonl"), "{}").unwrap();
+        assert_eq!(
+            local_roots(Agent::Claude, &me, &runtime),
+            vec![own.clone(), projects.clone()]
+        );
+        assert_eq!(
+            local_live(Agent::Claude, &me, &runtime, "-repo/s.jsonl"),
+            projects.join("-repo").join("s.jsonl")
+        );
+        assert_eq!(
+            local_live(Agent::Claude, &me, &runtime, "-repo/gone.jsonl"),
+            own.join("-repo").join("gone.jsonl")
+        );
+        // A root the settings name is the only one.
+        let named = ResolvedHost {
+            roots: [("claude".to_owned(), "/x".to_owned())]
+                .into_iter()
+                .collect(),
+            ..me
+        };
+        assert_eq!(
+            local_roots(Agent::Claude, &named, &runtime),
+            vec![PathBuf::from("/x")]
+        );
     }
 }

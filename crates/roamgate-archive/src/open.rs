@@ -12,7 +12,7 @@ use roamgate_agents::js::{parse_line, utf16_len, utf16_prefix};
 use roamgate_agents::{Agent, ParseState};
 use serde::{Deserialize, Serialize};
 
-use crate::hosts::{ArchiveRuntime, local_root, resolve_hosts};
+use crate::hosts::{ArchiveRuntime, local_live, resolve_hosts};
 use crate::lines::{CompleteLines, file_range};
 use crate::settings::{ArchiveSettings, RuleSubject};
 use crate::store::Result;
@@ -98,7 +98,7 @@ fn transcript(
         && let Some(me) = resolve_hosts(settings, runtime).into_iter().next()
         && me.id == host
     {
-        let live = local_root(agent, &me, runtime).join(relpath);
+        let live = local_live(agent, &me, runtime, relpath);
         if let Ok(metadata) = std::fs::metadata(&live)
             && metadata.len() > 0
             && let Ok(range) = file_range(&live, 0, metadata.len())

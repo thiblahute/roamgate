@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::hosts::{
     ArchiveRuntime, Exec, ResolvedHost, SAFE_HOST, UnreachableHost, enabled_adapters, local_root,
-    mirror_dir, pull_agent, push_agent, remote_home, remote_ingest, resolve_hosts,
+    local_roots, mirror_dir, pull_agent, push_agent, remote_home, remote_ingest, resolve_hosts,
 };
 use crate::lock::acquire_host_lock;
 use crate::settings::{ArchiveSettings, PathStyle, RuleSubject, index_level_for};
@@ -101,26 +101,36 @@ fn agent_sources(
     enabled_adapters(settings)
         .into_iter()
         .filter(|agent| only.is_none_or(|only| only.iter().any(|id| id == agent.id())))
-        .map(|agent| {
+        .flat_map(|agent| {
             if host.self_host {
-                SyncSource {
-                    host: host.id.clone(),
-                    agent,
-                    root: local_root(agent, host, runtime),
-                    extra: agent
-                        .extra_files()
-                        .iter()
-                        .map(|extra| {
-                            (
-                                runtime.home_dir.join(extra.home_path),
-                                extra.relpath.to_owned(),
-                            )
-                        })
-                        .collect(),
-                }
+                // The agent's root with its extra files, then each root an
+                // account profile keeps apart.
+                local_roots(agent, host, runtime)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, root)| SyncSource {
+                        host: host.id.clone(),
+                        agent,
+                        root,
+                        extra: if index > 0 {
+                            Vec::new()
+                        } else {
+                            agent
+                                .extra_files()
+                                .iter()
+                                .map(|extra| {
+                                    (
+                                        runtime.home_dir.join(extra.home_path),
+                                        extra.relpath.to_owned(),
+                                    )
+                                })
+                                .collect()
+                        },
+                    })
+                    .collect::<Vec<_>>()
             } else {
                 let mirror = mirror_dir(archive_dir, &host.id, agent.id());
-                SyncSource {
+                vec![SyncSource {
                     host: host.id.clone(),
                     agent,
                     root: mirror.join("tree"),
@@ -134,7 +144,7 @@ fn agent_sources(
                             )
                         })
                         .collect(),
-                }
+                }]
             }
         })
         .collect()
@@ -207,15 +217,24 @@ fn sync_host(
             }
         }
     }
+    // An agent's sources (its root, the roots its accounts keep apart)
+    // add up to one run of the agent.
+    let mut runs: IndexMap<&'static str, SyncStats> = IndexMap::new();
     for source in agent_sources(run.settings, host, run.runtime, ctx.archive_dir, run.agents) {
         if !source.root.exists() && source.extra.iter().all(|(path, _)| !path.exists()) {
             continue;
         }
-        let mut stats = SyncStats::default();
         let mut unknown = UnknownTypes::new();
-        sync_source(ctx, &source, &mut stats, &mut unknown);
-        record_sync(ctx.db, &host.id, source.agent.id(), &stats, &iso_now())?;
-        report.agents.insert(source.agent.id().to_owned(), stats);
+        sync_source(
+            ctx,
+            &source,
+            runs.entry(source.agent.id()).or_default(),
+            &mut unknown,
+        );
+    }
+    for (agent, stats) in runs {
+        record_sync(ctx.db, &host.id, agent, &stats, &iso_now())?;
+        report.agents.insert(agent.to_owned(), stats);
     }
     Ok(report)
 }

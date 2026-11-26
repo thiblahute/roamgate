@@ -152,31 +152,46 @@ async fn find_claude_session(id: &str, context: &ResolverContext) -> Option<Stri
         .unwrap()
         .get(&key)
         .is_none_or(|at| now - at >= CLAUDE_WALK_MISS_MS);
-    let root = context.env.home.join(".claude").join("projects");
+    // The user's own projects, then those of the account profiles that
+    // keep theirs apart.
+    let mut roots = vec![context.env.home.join(".claude").join("projects")];
+    roots.extend(
+        context
+            .env
+            .account_session_roots(roamgate_accounts::AccountAgent::Claude),
+    );
     let name = format!("{id}.jsonl");
     // Off the async workers: a walk is long, and blocking work.
     let found = tokio::task::spawn_blocking(move || {
         // Where Claude Code keeps it: straight under its project's folder.
         // Only when it is not there is the whole tree walked.
-        let direct: Vec<PathBuf> = std::fs::read_dir(&root)
-            .map(|entries| {
+        let direct: Vec<PathBuf> = roots
+            .iter()
+            .filter_map(|root| std::fs::read_dir(root).ok())
+            .flat_map(|entries| {
                 entries
                     .filter_map(Result::ok)
                     .map(|e| e.path().join(&name))
                     .filter(|p| std::fs::metadata(p).is_ok_and(|m| m.is_file()))
-                    .collect()
             })
-            .unwrap_or_default();
+            .collect();
         if !direct.is_empty() {
             return newest_file(direct);
         }
         if !walk {
             return None;
         }
-        newest_file(walk_files(&root, &|path| {
-            path.file_name()
-                .is_some_and(|n| n.to_string_lossy() == name)
-        }))
+        newest_file(
+            roots
+                .iter()
+                .flat_map(|root| {
+                    walk_files(root, &|path| {
+                        path.file_name()
+                            .is_some_and(|n| n.to_string_lossy() == name)
+                    })
+                })
+                .collect(),
+        )
     })
     .await
     .ok()
@@ -625,10 +640,10 @@ async fn session_file_for(
         let found = if session.kind == "path" {
             antigravity::describe_antigravity_session_path(&resolve(&session.value))
         } else {
-            antigravity::find_antigravity_session_by_id(
+            antigravity::find_antigravity_session_by_id_in(
                 &session.value,
                 cwd,
-                &antigravity::antigravity_conversations_root(&context.env),
+                &antigravity::antigravity_conversation_roots(&context.env),
             )
         };
         return Ok(found.map(|d| d.file));
@@ -746,8 +761,8 @@ pub async fn resolve_agent_session_info(
         }
     }
     if agent == "agy" && resolved_session.is_none() {
-        let root = antigravity::antigravity_conversations_root(&context.env);
-        if let Some(found) = antigravity::find_antigravity_session_for_cwd(&cwd, &root) {
+        let roots = antigravity::antigravity_conversation_roots(&context.env);
+        if let Some(found) = antigravity::find_antigravity_session_for_cwd_in(&cwd, &roots) {
             resolved_session = Some(make("agy-local", found.session.session_id.clone()));
             file = Some(found.file);
         }

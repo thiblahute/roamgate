@@ -705,3 +705,51 @@ async fn returns_missing_session_with_integration_command_when_session_cannot_be
         json!("herdr integration install antigravity-cli")
     );
 }
+
+#[tokio::test]
+async fn finds_a_transcript_an_account_keeps_apart() {
+    let home = tempfile::tempdir().unwrap();
+    let data = home.path().join("data");
+    let id = "4b9e7c1e-2f0a-4d43-9a57-0c1f00a1b0a1";
+    let projects =
+        roamgate_accounts::account_dir(&data, roamgate_accounts::AccountAgent::Claude, "work")
+            .join("projects");
+    let kept = projects.join("-repo").join(format!("{id}.jsonl"));
+    write(&kept, "{}\n");
+    let agent_env = env(
+        home.path(),
+        &[("ROAMGATE_DATA_ROOT", data.to_string_lossy().into_owned())],
+    );
+    let files = LocalSessionFiles {
+        env: agent_env.clone(),
+    };
+    let found = resolve(
+        &agent("claude", "id", id, None),
+        &files,
+        &ResolverContext::new(agent_env),
+    )
+    .await;
+    assert_eq!(found["path"], json!(text(&kept)));
+}
+
+#[tokio::test]
+async fn finds_a_codex_session_in_an_account_home() {
+    let home = tempfile::tempdir().unwrap();
+    let data = home.path().join("data");
+    let id = "019a0000-0000-7000-8000-000000000001";
+    let sessions =
+        roamgate_accounts::account_dir(&data, roamgate_accounts::AccountAgent::Codex, "perso")
+            .join("sessions");
+    let kept = sessions
+        .join("2026/11/26")
+        .join(format!("rollout-2026-11-26T10-00-00-{id}.jsonl"));
+    write(&kept, "{}\n");
+    let files = LocalSessionFiles {
+        env: env(
+            home.path(),
+            &[("ROAMGATE_DATA_ROOT", data.to_string_lossy().into_owned())],
+        ),
+    };
+    let found = files.find_codex_session_by_id(id).await.unwrap().unwrap();
+    assert_eq!(found.path, text(&kept));
+}
