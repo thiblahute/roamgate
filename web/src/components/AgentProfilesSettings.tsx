@@ -17,6 +17,7 @@ import {
   useConnectionClient,
   useConnectionReady,
 } from "../useConnectionClient";
+import { type AccountUsage, useAccountUsage } from "../accountUsage";
 import "./AgentProfilesSettings.css";
 
 /** A profile as settings.profiles.get shows it: secret files by path. */
@@ -117,6 +118,7 @@ export function AgentProfilesSettings() {
     draft: ProfileRow;
   } | null>(null);
   const [signingIn, setSigningIn] = useState<string | null>(null);
+  const usage = useAccountUsage();
 
   const load = useCallback(async () => {
     try {
@@ -293,6 +295,12 @@ export function AgentProfilesSettings() {
                 <Trash2 size={14} aria-hidden="true" />
               </button>
             )}
+            {profile.account ? (
+              <AccountUsageRow
+                profile={profile.name}
+                usage={usage.get(`${profile.agent}/${profile.account.id}`)}
+              />
+            ) : null}
           </li>
         ))}
       </ul>
@@ -342,6 +350,116 @@ export function AgentProfilesSettings() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+const USAGE_STATUS: Record<AccountUsage["status"], string> = {
+  fresh: "",
+  cached: "last reading",
+  failed: "reading failed",
+  rate_limited: "rate limited",
+  auth_expired: "not signed in",
+  unknown: "no usage to read",
+};
+
+function resetWords(at: string | undefined) {
+  if (!at) return "";
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return "";
+  const sameDay = when.toDateString() === new Date().toDateString();
+  return `resets ${when.toLocaleString(undefined, sameDay ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
+}
+
+type SessionRun = {
+  session_id: string;
+  profile: string;
+  started_at: number;
+  ended_at: number | null;
+  tokens: { input_tokens?: number; output_tokens?: number } | null;
+};
+
+/** An account's usage bars (5h, 7d, per-model weeks) and the sessions
+ * that spent it this week. */
+function AccountUsageRow({
+  profile,
+  usage,
+}: {
+  profile: string;
+  usage: AccountUsage | undefined;
+}) {
+  const client = useConnectionClient();
+  const [runs, setRuns] = useState<SessionRun[] | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const status = usage ? USAGE_STATUS[usage.status] : "";
+  const loadRuns = async () => {
+    if (runs) {
+      setRuns(null);
+      return;
+    }
+    try {
+      const result = (await client.call("agent_profile.account.sessions", {
+        profile,
+      })) as { sessions: SessionRun[] };
+      if (client.isCurrent()) setRuns(result.sessions);
+    } catch (e) {
+      if (client.isCurrent()) setProblem((e as Error).message);
+    }
+  };
+  return (
+    <div className="agent-profiles-usage">
+      {usage?.usage?.windows.map((window) => (
+        <span key={window.label} className="agent-profiles-usage-window">
+          <small>{window.label}</small>
+          <span
+            className="agent-profiles-usage-bar"
+            role="meter"
+            aria-label={`${profile} ${window.label}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(window.utilization)}
+          >
+            <span
+              style={{
+                width: `${Math.min(100, Math.max(0, window.utilization))}%`,
+              }}
+              data-high={window.utilization >= 80 ? "" : undefined}
+            />
+          </span>
+          <small>
+            {Math.round(window.utilization)}% {resetWords(window.resets_at)}
+          </small>
+        </span>
+      ))}
+      {usage?.usage?.plan || usage?.usage?.email ? (
+        <small>
+          {[usage.usage.plan, usage.usage.email].filter(Boolean).join(", ")}
+        </small>
+      ) : null}
+      {status ? <small>{status}</small> : null}
+      <button type="button" className="ghost" onClick={() => void loadRuns()}>
+        {runs ? "Hide sessions" : "Sessions this week"}
+      </button>
+      {runs ? (
+        runs.length ? (
+          <ul className="agent-profiles-usage-sessions">
+            {runs.map((run) => (
+              <li key={`${run.session_id}-${run.started_at}`}>
+                <code>{run.session_id.slice(0, 8)}</code>{" "}
+                <small>
+                  {new Date(run.started_at).toLocaleString()}
+                  {run.tokens
+                    ? `, ${run.tokens.input_tokens ?? 0} in, ${run.tokens.output_tokens ?? 0} out`
+                    : ""}
+                </small>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <small>No session ran on it this week.</small>
+        )
+      ) : null}
+      {problem ? <em role="alert">{problem}</em> : null}
+    </div>
   );
 }
 

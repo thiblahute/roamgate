@@ -623,6 +623,7 @@ export class Bridge {
   private popupHandlers = new Set<(popup: PopupStatePush) => void>();
   private uiSettingsHandlers = new Set<(push: UiSettingPush) => void>();
   private workspaceTreeHandlers = new Set<(tree: unknown) => void>();
+  private accountUsageHandlers = new Set<(push: unknown) => void>();
   private mrReviewsHandlers = new Set<(push: MrReviewsPush) => void>();
   private forgeCacheHandlers = new Set<(push: MrCachePush) => void>();
   private workHandlers = new Set<(push: WorkPush) => void>();
@@ -1313,6 +1314,7 @@ export class Bridge {
     const hasPopup = owns("popup");
     const hasUiSettings = owns("ui_settings");
     const hasWorkspaceTree = owns("workspace_tree");
+    const hasAccountUsage = owns("account_usage");
     const hasMrReviews = owns("mr_reviews");
     const hasWork = owns("work");
     const hasForgeCache = owns("forge_cache");
@@ -1331,6 +1333,7 @@ export class Bridge {
       hasPopup,
       hasUiSettings,
       hasWorkspaceTree,
+      hasAccountUsage,
       hasMrReviews,
       hasWork,
       hasForgeCache,
@@ -1641,6 +1644,14 @@ export class Bridge {
       return;
     }
 
+    if (hasAccountUsage) {
+      // Server-wide: every account's usage, whichever connection shows.
+      this.accountUsageHandlers.forEach((handler) =>
+        handler(msg.account_usage),
+      );
+      return;
+    }
+
     if (hasWorkspaceTree) {
       // Server-wide, like interface preferences: whichever connection shows.
       this.workspaceTreeHandlers.forEach((handler) =>
@@ -1944,6 +1955,12 @@ export class Bridge {
   onWorkspaceTree(cb: (tree: unknown) => void): () => void {
     this.workspaceTreeHandlers.add(cb);
     return () => this.workspaceTreeHandlers.delete(cb);
+  }
+
+  /** What changed of the accounts' usage (`account_usage` pushes). */
+  onAccountUsage(cb: (push: unknown) => void): () => void {
+    this.accountUsageHandlers.add(cb);
+    return () => this.accountUsageHandlers.delete(cb);
   }
 
   onUiSetting(cb: (push: UiSettingPush) => void): () => void {

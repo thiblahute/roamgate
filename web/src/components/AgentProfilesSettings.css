@@ -119,3 +119,46 @@
   align-items: center;
   gap: 6px;
 }
+
+.agent-profiles-usage {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding-left: 22px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agent-profiles-usage-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-profiles-usage-bar {
+  display: inline-block;
+  width: 80px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--border);
+}
+
+.agent-profiles-usage-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.agent-profiles-usage-bar > span[data-high] {
+  background: var(--warning-text);
+}
+
+.agent-profiles-usage-sessions {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

@@ -1170,7 +1170,10 @@ Inspector state is scoped to each checkout; see
   in from the settings (**Sign in**: open the link in any browser, paste
   back the code or address it ends on; agy signs in inside itself), see
   whether it is signed in, sign it out; Roamgate refreshes the sign-ins
-  before they expire. See [Agent
+  before they expire. Each account's usage (5-hour and 7-day windows,
+  per-model weeks, reset times) shows as bars, read once for every
+  browser, and **Sessions this week** lists the sessions that spent it,
+  with their tokens. See [Agent
   profiles](docs/DEPLOYMENT.md#agent-profiles) and [Account
   profiles](docs/DEPLOYMENT.md#account-profiles).
   With Roamgate's Claude Code mod the chip's title and menu also show the
