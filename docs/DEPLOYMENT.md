@@ -1024,10 +1024,16 @@ field makes a profile an account profile.
 Roamgate keeps the Claude and Codex sign-ins alive, each minute, under a
 lock per account and after reading the file again (an agent may have
 refreshed it meanwhile): a Claude account's tokens are refreshed when
-they expire within 20 minutes, well before Claude Code would, so Claude
-Code finds fresh ones in the file; a Codex account's after seven days, a
-day before Codex itself would, the previous `auth.json` kept as
-`.roamgate/auth.last-good.json`. A refresh token the server refuses as
+they expire within 20 minutes, well before Claude Code would; Claude
+Code reads the file again before it uses its tokens, so a running Claude
+follows (on macOS, whose Claude keeps them in the Keychain, an account a
+Claude runs on is not refreshed). A Codex account's are refreshed after
+seven days, a day before Codex itself would, but only while no Codex
+runs on it: a refresh token is good once and a running Codex keeps its
+own in memory, so it refreshes them itself. Roamgate tells an account in
+use by the processes whose environment names its directory (Linux), or
+elsewhere by an agent started there within the last 12 hours. The
+previous `auth.json` is kept as `.roamgate/auth.last-good.json`. A refresh token the server refuses as
 dead is quarantined (`needs_relogin`): it is never sent again, and the
 account needs a new sign-in. Roamgate's own records of an account
 (locks, quarantine, last checks) are in its `.roamgate/` and hold

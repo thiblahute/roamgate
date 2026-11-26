@@ -15,9 +15,10 @@
 //! that page's address (it carries the code and the state) back.
 //!
 //! Refresh rules: Codex refreshes its own tokens once they are
-//! [`CODEX_REFRESH_AFTER_MS`] plus a day old; Roamgate refreshes an
-//! account a day earlier, under the account's lock, after reading the file
-//! again, so an idle account's chain never lapses. A refusal that says the
+//! [`CODEX_REFRESH_AFTER_MS`] plus a day old; Roamgate refreshes an idle
+//! account a day earlier (never one a Codex runs on: [`crate::live`]),
+//! under the account's lock, after reading the file again, so an idle
+//! account's chain never lapses. A refusal that says the
 //! chain is dead (reused, expired, invalidated) quarantines it, unless the
 //! file changed meanwhile (Codex refreshed it itself).
 
