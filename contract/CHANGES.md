@@ -6,6 +6,16 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.46
+
+inventory: 0cbf4749be847bf8ab63d58c516a6b1588c42ac164ad0f697ad6308f0cefa09a
+
+A web search the voice companion runs is `searching` until it ends, as the
+server and the page have always said; the schema named it `running`.
+
+- http: `GET /api/voice/research` (and `?job=`): a job's `status` is
+  `searching`, `done`, `failed` or `cancelled`. Family: voice.
+
 ## 1.45
 
 inventory: 0cbf4749be847bf8ab63d58c516a6b1588c42ac164ad0f697ad6308f0cefa09a

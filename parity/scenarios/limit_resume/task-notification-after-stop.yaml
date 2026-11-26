@@ -93,6 +93,10 @@ steps:
       calls: [{ params: { target: p1, text: "${message}" }, valid: true }]
     retry: 10000
   - expect_log: { contains: usage limit resume due, within_ms: 10000 }
+  # The look is armed once the resume is recorded (after the prompt, and
+  # its store's write): moving the clock before would leave it waiting.
+  - expect_log:
+      { contains: session resumed after its usage limit, within_ms: 10000 }
   - advance: 2000
   - expect_push: "event:roamgate.limit_pauses"
     message:
