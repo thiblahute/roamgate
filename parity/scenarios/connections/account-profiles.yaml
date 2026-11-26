@@ -53,7 +53,7 @@ steps:
     error: { message: "This sign-in is over; start again" }
   - call: agent_profile.account.logout
     params: { profile: Work }
-    reply: { $exact: true, profile: Work, auth: signed_out }
+    reply: { $exact: true, profile: Work, auth: "{{string}}" }
   - call: agent_profile.account.login.start
     params: { profile: Agy }
     reply: { profile: Agy, kind: terminal, message: "{{string}}" }
@@ -68,7 +68,10 @@ steps:
     reply:
       profiles:
         - { name: Claude }
-        - { name: Work, account: { $exact: true, id: work, auth: signed_out } }
+        - {
+            name: Work,
+            account: { $exact: true, id: work, auth: "{{string}}" },
+          }
         - { name: Agy, account: { $exact: true, id: second, auth: unknown } }
         - { name: Plain, account: "{{absent}}" }
 contract_exceptions:

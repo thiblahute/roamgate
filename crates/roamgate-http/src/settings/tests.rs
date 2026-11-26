@@ -603,7 +603,7 @@ async fn account_profiles_keep_their_account_and_show_its_directory_and_sign_in(
         .join("codex")
         .join("perso");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("auth.json"), "{}").unwrap();
+    std::fs::write(dir.join("auth.json"), r#"{"tokens":{"refresh_token":"r"}}"#).unwrap();
     let result = profiles_reply(&written.settings, home.path());
     let work = &result["profiles"][1]["account"];
     assert_eq!(work["id"], "work");

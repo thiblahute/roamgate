@@ -1166,8 +1166,11 @@ Inspector state is scoped to each checkout; see
   agent side by side (two Claude accounts, Codex accounts, Antigravity
   accounts): each starts its agent on a configuration directory of its
   own that keeps the sign-in, while settings, plugins, skills, MCP
-  servers and transcripts stay shared with yours; the settings show each
-  account's directory and whether it is signed in. See [Agent
+  servers, MCP logins and transcripts stay shared with yours. Sign each
+  in from the settings (**Sign in**: open the link in any browser, paste
+  back the code or address it ends on; agy signs in inside itself), see
+  whether it is signed in, sign it out; Roamgate refreshes the sign-ins
+  before they expire. See [Agent
   profiles](docs/DEPLOYMENT.md#agent-profiles) and [Account
   profiles](docs/DEPLOYMENT.md#account-profiles).
   With Roamgate's Claude Code mod the chip's title and menu also show the

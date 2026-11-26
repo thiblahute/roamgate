@@ -13,7 +13,7 @@
 
 .agent-profiles-list li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto auto auto;
   align-items: center;
   gap: 8px;
   font-size: 13px;
@@ -92,4 +92,30 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.agent-profiles-account {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.agent-profiles-account small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.agent-profiles-account small[data-auth="needs_relogin"],
+.agent-profiles-account small[data-auth="signed_out"] {
+  color: var(--warning-text);
+}
+
+.agent-profiles-login > span {
+  font-size: 12px;
+}
+
+.agent-profiles-login-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }

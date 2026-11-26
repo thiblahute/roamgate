@@ -958,22 +958,21 @@ Codex or Antigravity accounts can be used side by side. It adds
 
 Each account has a directory of its own in the data directory,
 `accounts/<agent>/<id>/`, made (0700) and prepared each time the agent
-starts there. Sign in once from a session on the profile (`/login` in
-Claude Code, `codex login`, `agy`'s own sign-in): the sign-in stays in that
-directory.
+starts there; the sign-in stays in that directory.
 
 - **Claude Code** starts with `CLAUDE_CONFIG_DIR=<dir>`, without
   `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN`
   unless the profile sets them. `.credentials.json` and `.claude.json` are
-  the account's own: the first start seeds `.claude.json` from yours
+  the account's own. The first start seeds `.claude.json` from yours
   (`~/.claude.json`, or in your `$CLAUDE_CONFIG_DIR`) without your
-  account's identity and plan caches, and each start brings in your MCP
-  servers (`mcpServers`, yours winning). Every other entry of your
+  account's identity and plan caches; afterwards each start and each
+  minute keep yours and every account's in step, the most recently
+  written one winning for every key but the account's own (`oauthAccount`
+  and the plan, organisation and model caches). Every other entry of your
   `~/.claude` (settings, plugins, skills, agents, commands, `projects`,
   `sessions`, `jobs`) is linked, so sessions, transcripts and settings
   are the same as yours; `projects`, `sessions` and `jobs` are made in
-  `~/.claude` when missing. MCP server logins are kept with the sign-in
-  and are not shared.
+  `~/.claude` when missing.
 - **Codex** starts with `CODEX_HOME=<dir>`, without `CODEX_API_KEY` or
   `OPENAI_API_KEY` unless the profile sets them. `auth.json` and
   `models_cache.json` are the account's own; every other entry of your
@@ -983,26 +982,68 @@ directory.
   directories under it, `USERPROFILE` on Windows) and, off Windows, with
   `DBUS_SESSION_BUS_ADDRESS` naming a bus that is not there: `agy` cannot
   reach the keyring, whose one entry every home shares, and keeps the
-  account's sign-in in its own token file in that home. Nothing of your
-  home is shared with it. Roamgate never reads, writes or sends an `agy`
-  token; your own `agy` (with no account profile) is unchanged.
+  account's sign-in in its own token file in that home. That home links
+  your `.gitconfig`, `.config/git`, `.ssh` and `.gnupg` (those you have),
+  so the tools `agy` runs behave as yours; nothing else of your home is
+  shared. Roamgate never reads, writes or sends an `agy` token; your own
+  `agy` (with no account profile) is unchanged.
 
 Links are symbolic links; on Windows without the right to make them,
 directories are junctions and files are copied (the settings files,
 `CLAUDE.md`, `config.toml`, `AGENTS.md`, plugin and skill folders), a
-copied file being refreshed when yours is newer. Where neither works,
-the entry stays the account's own: a Claude account's `projects` or a
-Codex account's `sessions` that could not be linked is then read by
-session discovery, the agent history and the archive beside yours, as
-every `agy` account's conversations are. Your own `~/.claude`, `~/.codex`
-and `~/.gemini` are never changed but for the stores made when missing.
+copied file being refreshed when yours is newer; a copied folder is
+copied once and not refreshed afterwards. Where neither works, the entry
+stays the account's own: a Claude account's `projects` or a Codex
+account's `sessions` that could not be linked is then read by session
+discovery, the agent history and the archive beside yours, as every
+`agy` account's conversations are. Your own `~/.claude`, `~/.codex` and
+`~/.gemini` are never changed but for the stores made when missing and
+`.claude.json` kept in step.
 
-**Configuration > Integrations > Agent profiles** (`settings.profiles.get`)
-shows each account's directory and whether its sign-in is there
-(`signed_in` or `signed_out`, from its credential file being present;
-`unknown` for `agy` and for Claude on macOS, which keeps the sign-in in
-the Keychain). An account directory is on this machine: account
-profiles are for agents running here, not on SSH hosts.
+#### Signing in
+
+**Configuration > Integrations > Agent profiles** shows each account's
+sign-in (`settings.profiles.get`: its directory and `auth`) with **Sign
+in** (again) and **Sign out** buttons; the profile editor's **Account**
+field makes a profile an account profile.
+
+- **Claude**: **Sign in** gives Claude Code's own sign-in link. Open it in
+  any browser (the one you use Roamgate from is fine: nothing needs this
+  machine's browser), sign in to the account, and paste back the code the
+  page shows (`code#state`). Roamgate exchanges it and writes the tokens
+  in the account's `.credentials.json` (0600), Claude Code's format.
+- **Codex**: **Sign in** gives Codex's sign-in link. Its sign-in ends on
+  `http://localhost:1455/auth/callback?code=...`, a page that does not load
+  when the browser is not on this machine: paste that page's address
+  back. Roamgate exchanges it and writes the account's `auth.json`.
+- **agy**: sign in inside `agy` itself: start a session on the profile
+  (the agent launcher) and follow its sign-in there; then **Check the
+  sign-in** runs `agy models` in the account's environment and keeps what
+  it answers (`unknown` until then). Sign out inside `agy` too.
+
+Roamgate keeps the Claude and Codex sign-ins alive, each minute, under a
+lock per account and after reading the file again (an agent may have
+refreshed it meanwhile): a Claude account's tokens are refreshed when
+they expire within 20 minutes, well before Claude Code would, so Claude
+Code finds fresh ones in the file; a Codex account's after seven days, a
+day before Codex itself would, the previous `auth.json` kept as
+`.roamgate/auth.last-good.json`. A refresh token the server refuses as
+dead is quarantined (`needs_relogin`): it is never sent again, and the
+account needs a new sign-in. Roamgate's own records of an account
+(locks, quarantine, last checks) are in its `.roamgate/` and hold
+fingerprints, never tokens.
+
+MCP server logins (Claude Code keeps them with the sign-in, as
+`mcpOAuth` in `.credentials.json`) are shared: each minute every
+server's freshest login reaches every Claude account, and a sign-out
+from one server in any of them removes that login from all. Your own
+`.credentials.json` is only read, never written.
+
+On macOS Claude Code keeps its sign-in in the Keychain, not in the file:
+a Claude account signed in from Roamgate is not seen by Claude Code
+there yet (sign in with `/login` in a session on the profile instead),
+and its state shows `unknown`. An account directory is on this machine:
+account profiles are for agents running here, not on SSH hosts.
 
 Nothing secret is ever typed into a pane. When the profile is not plain
 `claude`, what Roamgate types is `roamgate-hold --launch <token>`: the
