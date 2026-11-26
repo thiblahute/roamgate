@@ -606,7 +606,7 @@ impl RenderedPages {
             return Err("a page's home is a relative directory".to_owned());
         }
         if let RenderedSource::Files { root, .. } = &source
-            && !root.starts_with('/')
+            && !roamgate_base::paths::is_host_path(root)
         {
             return Err("pages are served from an absolute directory".to_owned());
         }

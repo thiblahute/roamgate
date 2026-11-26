@@ -313,8 +313,10 @@ fn expand_file(text: &str, expand: &dyn Fn(&str) -> String) -> String {
     if !structured || expanded == text {
         return expanded;
     }
-    // Every placeholder's value, escaped as a JSON string's content.
-    let pattern = regex::Regex::new(r"\$\{[A-Za-z0-9_]+\}").expect("regex");
+    // Every placeholder's value, escaped as a JSON string's content (the
+    // voice helper's whole name, which `expand` spells with `.exe`).
+    let pattern =
+        regex::Regex::new(r"\$\{BIN\}/roamgate-voice\b|\$\{[A-Za-z0-9_]+\}").expect("regex");
     pattern
         .replace_all(text, |found: &regex::Captures| {
             let value = expand(&found[0]);
@@ -670,7 +672,26 @@ impl Run {
         let mut by_name = BTreeMap::new();
         by_name.insert("root".into(), self.root.to_string_lossy().into_owned());
         by_name.insert("home".into(), self.home.to_string_lossy().into_owned());
-        RunPaths { by_name }
+        // The fake Herdrs' sockets: named pipes on Windows, the files the
+        // goldens name elsewhere.
+        let mut aliases = Vec::new();
+        if cfg!(windows) {
+            let dirs = std::iter::once(self.root.join("herdr")).chain(
+                self.herdrs
+                    .keys()
+                    .map(|id| self.root.join(format!("herdr-{id}"))),
+            );
+            for dir in dirs {
+                let (control, client) = crate::fakes::herdr::socket_paths(&dir);
+                for (pipe, file) in [(control, "herdr.sock"), (client, "client.sock")] {
+                    aliases.push((
+                        pipe.to_string_lossy().into_owned(),
+                        dir.join(file).to_string_lossy().into_owned(),
+                    ));
+                }
+            }
+        }
+        RunPaths { by_name, aliases }
     }
 
     /// Starts the server and waits until it listens.

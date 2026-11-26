@@ -50,6 +50,10 @@ impl Normalizers {
 #[derive(Debug, Clone, Default)]
 pub struct RunPaths {
     pub by_name: BTreeMap<String, String>,
+    /// Names spelled another way on this system, each with its spelling in
+    /// the goldens: a fake Herdr's named pipes on Windows are its socket
+    /// files elsewhere.
+    pub aliases: Vec<(String, String)>,
 }
 
 fn map_strings(value: &mut Value, apply: &dyn Fn(&str) -> String) {
@@ -149,6 +153,10 @@ impl Normalizers {
                     pairs.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));
                     map_strings(&mut out, &|text| {
                         let mut text = text.to_owned();
+                        for (alias, path) in &paths.aliases {
+                            text = text.replace(alias.as_str(), path);
+                            text = text.replace(&alias.replace('\\', "/"), path);
+                        }
                         for (path, token) in &pairs {
                             text = text.replace(path.as_str(), token);
                         }

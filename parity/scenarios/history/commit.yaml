@@ -67,7 +67,8 @@ steps:
   - cli: [history, commit]
     expect:
       exit: 0
-      stdout: "Nothing changed in ~/.config/roamgate/history.\n"
+      # Windows spells the data root whole: %APPDATA%\roamgate.
+      stdout: "{{re:^Nothing changed in (~/\\.config|.+/AppData/Roaming)/roamgate/history\\.\\n$}}"
   - http: PUT /api/history
     headers: { x-roamgate-settings: "1" }
     body: { location: relative/dir }

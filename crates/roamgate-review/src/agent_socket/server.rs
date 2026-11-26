@@ -426,7 +426,7 @@ impl AgentSocket {
         if let ReviewTarget::Rendered {
             path: Some(shown), ..
         } = &session.target
-            && file.starts_with('/')
+            && crate::parse::is_host_path(file)
             && (file == format!("{}/{shown}", session.root) || file.ends_with(&format!("/{shown}")))
         {
             return Some(shown.clone());
@@ -867,7 +867,7 @@ impl AgentSocket {
             .get("repo")
             .unwrap_or("")
             .split('\n')
-            .filter(|entry| entry.starts_with('/'))
+            .filter(|entry| crate::parse::is_host_path(entry))
             .map(|entry| match entry.rfind('=') {
                 Some(at) if at > 0 && entry[at + 1..].contains("..") => {
                     (entry[..at].to_owned(), entry[at + 1..].to_owned())

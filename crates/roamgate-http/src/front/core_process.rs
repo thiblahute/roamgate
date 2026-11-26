@@ -24,6 +24,9 @@ const STEADY: Duration = Duration::from_secs(10 * 60);
 /// How long a stopping core gets to finish its own shutdown (flushing its
 /// stores) once the front said `bye`.
 const STOP_GRACE: Duration = Duration::from_secs(15);
+/// Win32's `CREATE_NEW_PROCESS_GROUP` process creation flag.
+#[cfg(windows)]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
 /// What the front gives its core.
 #[derive(Clone)]
@@ -103,6 +106,12 @@ async fn run_once(
         .envs((config.env)())
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
+    // Its own process group on Windows: a console's CTRL_BREAK or CTRL_C
+    // stops the front, which then closes the channel, and the core ends
+    // as on a SIGTERM's (its families write what they hold), never killed
+    // by the event first.
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     let mut child = command
         .spawn()
         .map_err(|error| format!("cannot start {}: {error}", config.program.display()))?;

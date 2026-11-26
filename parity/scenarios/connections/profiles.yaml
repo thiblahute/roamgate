@@ -7,9 +7,6 @@ description: >
   HTTP (a stale generation is refused before Herdr is asked), legacy
   unscoped requests routed to the current generation, and the profile CRUD
   ending with beta as the only, default connection.
-# Local profiles' sockets are named pipes on Windows; the golden records
-# the Unix socket files' paths.
-platforms: [linux, macos]
 server:
   herdr: false
   herdrs:

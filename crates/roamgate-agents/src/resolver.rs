@@ -331,7 +331,12 @@ fn find_kimi_session(id: &str, context: &ResolverContext) -> Option<String> {
         let root = context.env.home.join(".kimi-code").join("sessions");
         let suffix = format!("{id}/agents/main/wire.jsonl");
         newest_file(walk_files(&root, &|path| {
-            let text = path.to_string_lossy();
+            // Its parts joined with `/`, as on Windows too.
+            let text = path
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
             text.ends_with(&suffix) || text.contains(&format!("/{id}/agents/main/wire.jsonl"))
         }))
     })

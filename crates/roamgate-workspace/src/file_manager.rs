@@ -76,6 +76,10 @@ pub type Spawn = Arc<dyn Fn(&[String]) -> Result<(), String> + Send + Sync>;
 pub fn spawn_file_manager() -> Spawn {
     Arc::new(|argv: &[String]| {
         let (program, args) = argv.split_first().ok_or("nothing to start")?;
+        // Found on PATH as everywhere: Windows' own search would look in
+        // its system directories first.
+        let program = roamgate_base::posix_shell::which_on_path(program.trim_end_matches(".exe"))
+            .unwrap_or_else(|| program.clone());
         std::process::Command::new(program)
             .args(args)
             .stdin(std::process::Stdio::null())
