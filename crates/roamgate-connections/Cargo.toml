@@ -21,6 +21,7 @@ rand = "0.9"
 rusqlite = { version = "0.43", features = ["bundled"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 regex = "1"
+roamgate-accounts = { path = "../roamgate-accounts" }
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-channel = { path = "../roamgate-channel" }

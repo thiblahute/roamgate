@@ -3,6 +3,11 @@
   "$id": "https://roamgate.dev/contract/schemas/shared/agentProfiles.schema.json",
   "x-generated-from": "shared/agentProfiles.ts",
   "$defs": {
+    "AccountAuthState": {
+      "type": "string",
+      "enum": ["unknown", "signed_in", "signed_out", "needs_relogin"],
+      "description": "Whether an account's sign-in is there, as far as the server can tell."
+    },
     "AgentProfile": {
       "type": "object",
       "properties": {
@@ -11,7 +16,7 @@
         },
         "agent": {
           "$ref": "#/$defs/ProfileAgent",
-          "description": "The agent driver (claude; more once their drivers exist)."
+          "description": "The agent driver."
         },
         "command": {
           "type": "string",
@@ -30,14 +35,47 @@
             "type": "string"
           },
           "description": "Removed from the agent's environment (besides the implied ones)."
+        },
+        "account": {
+          "$ref": "#/$defs/ProfileAccount",
+          "description": "Set: an account profile, its own sign-in of the agent."
         }
       },
       "required": ["name", "agent"],
       "additionalProperties": false
     },
+    "ProfileAccount": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false,
+      "description": "An account profile's sign-in: the directory `accounts/<agent>/<id>/`."
+    },
+    "ProfileAccountView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "dir": {
+          "type": "string",
+          "description": "The account's directory (`settings.profiles.get` only)."
+        },
+        "auth": {
+          "$ref": "#/$defs/AccountAuthState",
+          "description": "Its sign-in (`settings.profiles.get` only)."
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
     "ProfileAgent": {
       "type": "string",
-      "const": "claude"
+      "enum": ["claude", "codex", "agy"]
     },
     "ProfileEnvValue": {
       "anyOf": [
@@ -117,6 +155,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "account": {
+          "$ref": "#/$defs/ProfileAccountView",
+          "description": "An account profile's id; the server adds its `dir` and `auth`."
         }
       },
       "required": ["name", "agent", "builtin", "env", "unset"],

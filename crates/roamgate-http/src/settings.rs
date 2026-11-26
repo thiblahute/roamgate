@@ -665,6 +665,17 @@ pub fn profiles_reply(settings: &Settings, home: &std::path::Path) -> Value {
             }
             if let Some(view) = view.as_object_mut() {
                 view.insert("label".into(), json!(profile_model_label(profile)));
+                // An account's directory and whether its sign-in is there.
+                if let Some((agent, dir)) =
+                    roamgate_connections::agent_profiles::store::account_dir_of(profile, home)
+                    && let Some(account) = view.get_mut("account").and_then(Value::as_object_mut)
+                {
+                    account.insert("dir".into(), json!(dir.to_string_lossy()));
+                    account.insert(
+                        "auth".into(),
+                        json!(roamgate_accounts::auth_state(agent, &dir).as_str()),
+                    );
+                }
             }
             view
         })
@@ -723,6 +734,17 @@ pub fn profile_from_view(raw: &Value) -> Value {
         .filter(|unset| unset.as_array().is_some_and(|unset| !unset.is_empty()))
     {
         profile.insert("unset".into(), unset.clone());
+    }
+    // An account keeps its id; its directory and state are the server's.
+    if let Some(account) = view.get("account") {
+        let id = account.get("id").cloned();
+        profile.insert(
+            "account".into(),
+            match id {
+                Some(id) if account.is_object() => json!({ "id": id }),
+                _ => account.clone(),
+            },
+        );
     }
     Value::Object(profile)
 }

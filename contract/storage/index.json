@@ -1,6 +1,13 @@
 {
   "description": "Files and tables the server reads or writes. data:<path> is under the data root (~/.config/roamgate, %APPDATA%\\roamgate on Windows; legacy ~/.config/herdr-gui migrated by copy); file:<name> is a file joined by name anywhere (data, an agent's own files, service definitions); sqlite:<module>:<table> is a table the module creates, its DDL in sqlite/. Private files are 0600 in 0700 directories, opened with O_NOFOLLOW and checked for one link.",
   "entries": {
+    "data:accounts": {
+      "kind": "data",
+      "used_in": ["crates/roamgate-accounts/src/lib.rs"],
+      "format": "dir",
+      "description": "account profiles' own configuration directories, accounts/<agent>/<id>/ (0700): the agent's sign-in and identity, the rest linked to the user's own configuration",
+      "status": "inventoried"
+    },
     "data:agent-seen.json": {
       "kind": "data",
       "used_in": ["server/src/agent/agent-seen.ts"],

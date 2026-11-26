@@ -39,6 +39,15 @@ When updating these website icons, copy them from the application sources
 used by `web/src/components/AgentIcon.tsx`. The deployed site includes their
 notices in `site/assets/agent-icons-LICENSE.txt`.
 
+## clauth
+
+Parts of `crates/roamgate-accounts` (how an account directory shares the
+user's Claude Code configuration, and which `.claude.json` keys belong to
+one account) are adapted from [clauth](https://github.com/uwuclxdy/clauth),
+Copyright (c) 2026 cloudy, under the MIT License. See
+[`LICENSES/CLAUTH.txt`](./LICENSES/CLAUTH.txt); the adapted source files
+name their origin.
+
 ## Trademarks
 
 Herdr, Pi, Codex, Claude, Gemini, Kimi, Grok, and other product names and logos

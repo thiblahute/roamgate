@@ -325,3 +325,59 @@ fn the_file_is_bun_s_text_and_reads_back() {
         vec!["a", "d"]
     );
 }
+
+#[test]
+fn an_account_profile_starts_on_its_own_directory() {
+    if std::env::var_os("ROAMGATE_DATA_ROOT").is_some() {
+        return;
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path();
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    std::fs::write(home.join(".claude").join("settings.json"), "{}").unwrap();
+    let profile = json!({
+        "name": "Work",
+        "agent": "claude",
+        "env": {"CLAUDE_CONFIG_DIR": "/elsewhere", "ANTHROPIC_API_KEY": "k", "FOO": "1"},
+        "account": {"id": "work"},
+    });
+    let command = profile_command(&profile, home).unwrap();
+    let dir = data_root_for(home).join("accounts/claude/work");
+    assert!(!command.plain);
+    assert_eq!(command.program, "claude");
+    assert_eq!(command.env["CLAUDE_CONFIG_DIR"], dir.to_str().unwrap());
+    assert_eq!(command.env["FOO"], "1");
+    // The profile's own key stays; the other sign-ins are removed.
+    assert_eq!(command.env["ANTHROPIC_API_KEY"], "k");
+    assert_eq!(
+        command.unset,
+        [
+            "ANTHROPIC_AUTH_TOKEN",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+        ]
+    );
+    // Its directory is ready, the user's settings linked in.
+    assert_eq!(
+        std::fs::read_link(dir.join("settings.json")).unwrap(),
+        home.join(".claude").join("settings.json")
+    );
+    assert_eq!(
+        account_dir_of(&profile, home),
+        Some((AccountAgent::Claude, dir))
+    );
+
+    let codex = json!({"name": "Codex", "agent": "codex", "account": {"id": "perso"}});
+    let command = profile_command(&codex, home).unwrap();
+    assert_eq!(command.program, "codex");
+    assert_eq!(command.agent, "codex");
+    assert!(command.env["CODEX_HOME"].ends_with("accounts/codex/perso"));
+
+    // Another agent's profile without an account is started as it says.
+    let agy = json!({"name": "Agy", "agent": "agy"});
+    let command = profile_command(&agy, home).unwrap();
+    assert!(!command.plain);
+    assert_eq!(command.program, "agy");
+    assert!(command.env.is_empty());
+}

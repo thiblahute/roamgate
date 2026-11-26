@@ -14,8 +14,8 @@ use std::sync::LazyLock;
 use regex::Regex;
 use roamgate_base::log::{parse_iso_millis, slice_utf16};
 pub use roamgate_base::settings::sections::{
-    BUILTIN_PROFILE_NAME, MAX_PROFILE_ENV, MAX_PROFILES, normalize_profile,
-    normalize_profiles_settings, profile_error,
+    BUILTIN_PROFILE_NAME, MAX_PROFILE_ENV, MAX_PROFILES, PROFILE_AGENTS, account_id_valid,
+    normalize_profile, normalize_profiles_settings, profile_account_id, profile_error,
 };
 use serde_json::{Map, Value, json};
 
@@ -24,11 +24,9 @@ use crate::agent_profiles::time::{zone_date, zone_offset_ms, zoned_time};
 use crate::usage_limit::usage_limit_stop_of;
 use roamgate_base::settings::js_trim;
 
-/// The agents a profile may name (`PROFILE_AGENTS`).
-pub const PROFILE_AGENTS: &[&str] = &["claude"];
-
 /// The program of each agent driver (`PROGRAM_BY_AGENT`).
-const PROGRAM_BY_AGENT: &[(&str, &str)] = &[("claude", "claude")];
+const PROGRAM_BY_AGENT: &[(&str, &str)] =
+    &[("claude", "claude"), ("codex", "codex"), ("agy", "agy")];
 
 /// The driver's own program of an agent.
 pub fn program_by_agent(agent: &str) -> &'static str {
@@ -97,6 +95,7 @@ pub fn profiles_settings_error(raw: &Value) -> Option<String> {
         return Some(format!("At most {MAX_PROFILES} profiles"));
     }
     let mut names = BTreeSet::new();
+    let mut accounts = BTreeSet::new();
     for each in list {
         if let Some(error) = profile_error(each) {
             return Some(error);
@@ -104,6 +103,12 @@ pub fn profiles_settings_error(raw: &Value) -> Option<String> {
         let name = js_trim(profile_name(each));
         if !names.insert(name.to_lowercase()) {
             return Some(format!("Two profiles are named {name}"));
+        }
+        if let Some(id) = profile_account_id(each) {
+            let account = format!("{}/{id}", profile_agent(each));
+            if !accounts.insert(account.clone()) {
+                return Some(format!("Two profiles use the account {account}"));
+            }
         }
     }
     match raw.get("default") {
@@ -153,10 +158,13 @@ pub fn profile_program(profile: &Value) -> String {
     }
 }
 
-/// A profile that changes nothing: the driver's own program, no
-/// environment.
+/// A profile that changes nothing: plain `claude`, no environment, no
+/// account. Another agent's profile is never plain: Roamgate starts it
+/// itself.
 pub fn is_plain_profile(profile: &Value) -> bool {
-    profile_program(profile) == program_by_agent(profile_agent(profile))
+    profile_agent(profile) == "claude"
+        && profile_account_id(profile).is_none()
+        && profile_program(profile) == program_by_agent(profile_agent(profile))
         && env_of(profile).is_none_or(Map::is_empty)
         && profile
             .get("unset")
@@ -240,6 +248,9 @@ pub fn profile_view(profile: &Value, builtin: bool) -> Value {
         "unset".into(),
         profile.get("unset").cloned().unwrap_or_else(|| json!([])),
     );
+    if let Some(id) = profile_account_id(profile) {
+        view.insert("account".into(), json!({"id": id}));
+    }
     Value::Object(view)
 }
 
