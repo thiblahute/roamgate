@@ -1057,11 +1057,13 @@ server's `Retry-After`).
   `api/oauth/profile` (plan, email), with the account's own token.
 - **Codex**: ChatGPT's `backend-api/wham/usage` (its two windows, placed
   as 5-hour and 7-day by their length; a reached limit reads 100 %).
-- **agy**: Roamgate never asks Google. Every 10 minutes it runs
+- **agy**: Roamgate never asks Google. Every 5 minutes it runs
   `agy -p /usage` in the account's environment, which prints agy's own
-  usage records (one tab-separated record per line); a record with a
-  percentage shows as a window, and the rest are kept as they are. An
-  agy that prints nothing it can read shows `unknown`.
+  records: model group, window, percent remaining and reset time. Each
+  group's windows show as `5h <group>` and `7d <group>` (agy serves
+  Gemini models and, with their own windows, Claude and GPT models); a
+  window not used yet has no reset time. An agy that prints nothing it
+  can read shows `unknown`.
 
 Each reading has a status: `fresh`, `cached` (the last reading, from
 before a restart), `failed`, `rate_limited`, `auth_expired` (signed out,

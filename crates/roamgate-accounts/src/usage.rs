@@ -30,7 +30,7 @@ use crate::{AccountAgent, AuthState, claude_auth, codex_auth, launch_env};
 /// How often a signed-in Claude or Codex account is read (ms).
 pub const INTERVAL_MS: i64 = 90_000;
 /// How often an `agy` account is asked (ms): each ask runs `agy`.
-pub const AGY_INTERVAL_MS: i64 = 10 * 60_000;
+pub const AGY_INTERVAL_MS: i64 = 5 * 60_000;
 /// The longest wait after failures (ms).
 const MAX_BACKOFF_MS: i64 = 15 * 60_000;
 /// How often the Claude profile (plan, email) is read again (ms).
@@ -390,9 +390,24 @@ async fn read_codex(
 
 // --------------------------------------------------------------- agy
 
-/// `agy`'s tab-separated records, and the windows read off them: a record
-/// with a `<n>%` field is a window named by its first field, a field that
-/// reads as a time its reset.
+/// The window an `agy` window name is: `5h`, `7d`, else its own words.
+fn agy_window(name: &str) -> String {
+    let lower = name.to_lowercase();
+    let lower = lower
+        .trim_end_matches(" remaining")
+        .trim_end_matches(" limit");
+    match lower {
+        "five hour" => "5h".into(),
+        "weekly" | "seven day" => "7d".into(),
+        other => other.to_owned(),
+    }
+}
+
+/// `agy`'s usage records (`agy -p /usage`: model group, window name,
+/// percent remaining, reset time; one tab-separated record per line), as
+/// windows per model group (`5h gemini models`, `7d claude and gpt
+/// models`), the used part being 100 less the remaining. A reset at the
+/// epoch is a window not used yet, with no reset pending.
 pub(crate) fn agy_usage(output: &str) -> Usage {
     let records: Vec<Vec<String>> = output
         .lines()
@@ -404,24 +419,26 @@ pub(crate) fn agy_usage(output: &str) -> Usage {
                 .collect()
         })
         .collect();
-    let windows = records
+    let mut windows: Vec<UsageWindow> = records
         .iter()
         .filter_map(|record| {
-            let percent = record
-                .iter()
-                .skip(1)
-                .find_map(|field| field.strip_suffix('%')?.trim().parse::<f64>().ok())?;
+            let [group, name, remaining, rest @ ..] = record.as_slice() else {
+                return None;
+            };
+            let remaining = remaining.strip_suffix('%')?.trim().parse::<f64>().ok()?;
+            let resets_at = rest
+                .first()
+                .filter(|at| roamgate_base::log::parse_iso_millis(at).is_some_and(|at| at > 0))
+                .cloned();
             Some(UsageWindow {
-                label: record.first()?.clone(),
-                utilization: percent,
-                resets_at: record
-                    .iter()
-                    .skip(1)
-                    .find(|field| roamgate_base::log::parse_iso_millis(field).is_some())
-                    .cloned(),
+                label: format!("{} {}", agy_window(name), group.to_lowercase()),
+                utilization: (100.0 - remaining).clamp(0.0, 100.0),
+                resets_at,
             })
         })
         .collect();
+    // 5h before 7d, as the other agents' windows.
+    windows.sort_by_key(|window| !window.label.starts_with("5h "));
     Usage {
         windows,
         records,
@@ -755,16 +772,25 @@ mod tests {
     }
 
     #[test]
-    fn agy_records_are_kept_and_percentages_read() {
-        let usage = agy_usage("Gemini Pro\t42%\t2026-11-27T05:00:00Z\nnote\tnothing\nplain line\n");
-        assert_eq!(usage.records.len(), 2);
-        assert_eq!(usage.windows.len(), 1);
-        assert_eq!(usage.windows[0].label, "Gemini Pro");
-        assert_eq!(usage.windows[0].utilization, 42.0);
+    fn agy_usage_reads_its_own_records() {
+        // `agy -p "/usage"` as the official client printed it (2026-11-26).
+        let usage = agy_usage(include_str!("../tests/fixtures/agy-usage.txt"));
+        assert_eq!(usage.records.len(), 4);
+        let windows: Vec<_> = usage
+            .windows
+            .iter()
+            .map(|w| (w.label.as_str(), w.utilization, w.resets_at.as_deref()))
+            .collect();
         assert_eq!(
-            usage.windows[0].resets_at.as_deref(),
-            Some("2026-11-27T05:00:00Z")
+            windows,
+            [
+                ("5h gemini models", 21.0, Some("2026-11-26T23:22:34Z")),
+                ("5h claude and gpt models", 0.0, None),
+                ("7d gemini models", 23.0, Some("2026-12-03T13:22:34Z")),
+                ("7d claude and gpt models", 0.0, None),
+            ]
         );
+        assert!(agy_usage("plain line\nnote\tnothing\n").windows.is_empty());
     }
 
     fn claude_account(data: &Path) -> PolledAccount {
