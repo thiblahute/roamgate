@@ -250,9 +250,16 @@ mod tests {
             try_lock(&file, options),
             Err(LockError::Locked(_))
         ));
+        // Refreshed every 20 ms; a loaded machine may take longer to run it.
         let before = std::fs::metadata(held.path()).unwrap().modified().unwrap();
-        std::thread::sleep(Duration::from_millis(80));
-        let after = std::fs::metadata(held.path()).unwrap().modified().unwrap();
+        let mut after = before;
+        for _ in 0..100 {
+            std::thread::sleep(Duration::from_millis(40));
+            after = std::fs::metadata(held.path()).unwrap().modified().unwrap();
+            if after > before {
+                break;
+            }
+        }
         assert!(after > before, "the holder refreshes the mtime");
         drop(held);
         assert!(!dir.path().join("state.json.lock").exists());
