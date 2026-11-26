@@ -310,16 +310,16 @@ impl ReviewHost for ReverseHost {
         ))
     }
 
+    /// None until the front said which connections' hosts take the review
+    /// client: a comment made right after a start is then delivered, not
+    /// marked undeliverable for good.
     fn agent_channel(&self, connection_id: &str) -> Option<bool> {
-        Some(
-            self.agents
-                .lock()
-                .unwrap()
-                .channels
-                .get(connection_id)
-                .copied()
-                .unwrap_or(false),
-        )
+        self.agents
+            .lock()
+            .unwrap()
+            .channels
+            .get(connection_id)
+            .copied()
     }
 
     fn agent_tools(&self, connection_id: &str, pane_id: &str) -> bool {
