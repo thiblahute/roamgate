@@ -23,6 +23,7 @@ use roamgate_base::paths::{DataContext, Platform};
 pub use roamgate_base::settings::sections::account_id_valid;
 
 pub mod agy_auth;
+pub mod chain;
 pub mod claude_auth;
 pub mod codex_auth;
 mod files;
@@ -41,7 +42,9 @@ pub use files::fingerprint;
 pub use logins::{Logins, Started, maintain};
 pub use oauth::{Endpoints, Http};
 pub use prepare::{Prepared, UserDirs, prepare};
-pub use usage::{AccountUsage, PolledAccount, UsageDelta, UsagePoller, UsageStatus};
+pub use usage::{
+    AccountUsage, PolledAccount, UsageDelta, UsagePoller, UsageSample, UsageStatus, UsageWindow,
+};
 
 /// An agent an account profile can sign in to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
