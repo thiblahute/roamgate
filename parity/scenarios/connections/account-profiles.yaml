@@ -1,0 +1,92 @@
+name: an account profile signs in and out without a network
+family: agent_profile
+description: >
+  agent_profile.account.* on account profiles of settings.json: a Claude
+  account's sign-in gives Claude Code's sign-in link (its directory made
+  first) and refuses a pasted code of another sign-in before sending
+  anything; signing out leaves it signed out; an agy account signs in
+  inside agy itself; a profile without an account has no sign-in.
+  agent_profile.get lists each account's state.
+server:
+  files:
+    ".config/roamgate/settings.json":
+      mode: "0600"
+      json:
+        version: 1
+        profiles:
+          list:
+            - { name: Work, agent: claude, account: { id: work } }
+            - { name: Agy, agent: agy, account: { id: second } }
+            - { name: Plain, agent: codex }
+          default: Claude
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}", agent: claude }]
+    agents:
+      - {
+          pane_id: p1,
+          agent: claude,
+          agent_status: idle,
+          agent_session:
+            {
+              source: claude,
+              agent: claude,
+              kind: id,
+              value: 33333333-3333-4333-8333-333333333333,
+            },
+        }
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_profile.account.login.start
+    params: { profile: Work }
+    reply:
+      $exact: true
+      profile: Work
+      kind: link
+      login: "{{string}}"
+      url: "{{string}}"
+      paste: code
+  - assert_file: { path: .config/roamgate/accounts/claude/work, mode: "0700" }
+  - call: agent_profile.account.login.complete
+    params: { profile: Work, login: nope, code: "c#s" }
+    error: { message: "This sign-in is over; start again" }
+  - call: agent_profile.account.logout
+    params: { profile: Work }
+    reply: { $exact: true, profile: Work, auth: signed_out }
+  - call: agent_profile.account.login.start
+    params: { profile: Agy }
+    reply: { profile: Agy, kind: terminal, message: "{{string}}" }
+  - call: agent_profile.account.logout
+    params: { profile: Agy }
+    error: { message: "Sign out inside agy, in a session on this account" }
+  - call: agent_profile.account.login.start
+    params: { profile: Plain }
+    error: { message: "Plain is not an account profile" }
+  - call: agent_profile.get
+    params: { pane_id: p1 }
+    reply:
+      profiles:
+        - { name: Claude }
+        - { name: Work, account: { $exact: true, id: work, auth: signed_out } }
+        - { name: Agy, account: { $exact: true, id: second, auth: unknown } }
+        - { name: Plain, account: "{{absent}}" }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: agent_profile.account.login.complete,
+      kind: mismatch,
+      reason: "refused requests sent on purpose",
+    }
+  - {
+      surface: rpc.request,
+      name: agent_profile.account.logout,
+      kind: mismatch,
+      reason: "refused requests sent on purpose",
+    }
+  - {
+      surface: rpc.request,
+      name: agent_profile.account.login.start,
+      kind: mismatch,
+      reason: "refused requests sent on purpose",
+    }

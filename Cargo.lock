@@ -2901,6 +2901,7 @@ dependencies = [
  "indexmap",
  "mimalloc",
  "reqwest",
+ "roamgate-accounts",
  "roamgate-activity",
  "roamgate-agent-client",
  "roamgate-agents",

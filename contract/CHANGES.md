@@ -6,6 +6,23 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.52
+
+inventory: df089a2e7d64be8b4073b59a2dcd2461cce2eb45f85b4bf9dea7b97daa2d5aeb
+
+An account profile signs in from Roamgate: Claude and Codex through their
+own sign-in pages (the link opens in any browser; the code or the address
+the page ends on is pasted back), `agy` inside `agy` itself, Roamgate only
+asking it whether that works.
+
+- rpc: `agent_profile.account.login.start` (`profile`; answers `kind`
+  `link` with `login`, `url` and what to `paste`, or `terminal` with a
+  `message`), `agent_profile.account.login.complete` (`profile`, `login`,
+  `code`) and `agent_profile.account.logout` (`profile`), each answering
+  the account's `auth`. Family: agent_profile.
+- rpc: `agent_profile.get` lists an account profile's `account` (`id`,
+  `auth`). Family: agent_profile.
+
 ## 1.51
 
 inventory: 1ea6e625d343fe9210dc6b762ec9ec0b594918bbce0a3ef4b201ca4b6d1cfdcb

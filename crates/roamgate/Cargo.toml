@@ -25,6 +25,7 @@ http = "1"
 # the read-only empty heap as each thread exited (windows-arm64 crashed
 # with 0xc0000005).
 mimalloc = { version = "0.1.52", default-features = false }
+roamgate-accounts = { path = "../roamgate-accounts" }
 roamgate-activity = { path = "../roamgate-activity" }
 roamgate-agent-client = { path = "../roamgate-agent-client" }
 roamgate-agents = { path = "../roamgate-agents" }

@@ -117,6 +117,7 @@ fn running_store(cx: &FamilyContext) -> Running {
             loop {
                 ticks.tick().await;
                 return_due(&cx, &store, &logger).await;
+                account_upkeep(&cx, &logger).await;
                 notifier.flush().await;
             }
         })
@@ -154,6 +155,33 @@ async fn return_due(cx: &FamilyContext, store: &Arc<SessionProfiles>, logger: &L
         logger.info(message, Some(&fields));
     };
     return_after_reset(&settings, store, &connections, &log).await;
+}
+
+/// The account profiles' upkeep (roamgate_accounts::maintain): tokens
+/// refreshed before they expire, MCP logins shared, `.claude.json` kept
+/// in step. Each minute, with the return after a reset.
+async fn account_upkeep(cx: &FamilyContext, logger: &Logger) {
+    use roamgate_connections::agent_profiles::store::{account_dir_of, profiles_list, profiles_of};
+    let Ok(settings) = cx.reverse("profiles.host", json!({"op": "settings"})).await else {
+        return;
+    };
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let accounts: Vec<_> = profiles_list(&profiles_of(Some(&settings)))
+        .iter()
+        .filter_map(|profile| account_dir_of(profile, &home))
+        .collect();
+    if accounts.is_empty() {
+        return;
+    }
+    let user = roamgate_accounts::UserDirs::of(&home, &|name| std::env::var(name).ok());
+    let data_root = roamgate_connections::agent_profiles::store::data_root_for(&home);
+    for line in
+        roamgate_accounts::maintain(&LOGINS, &accounts, &user, &data_root, cx.clock.now()).await
+    {
+        logger.info(&format!("accounts: {line}"), None);
+    }
 }
 
 /// A connection as the return after a reset sees it: Bun's panes, and the
@@ -210,8 +238,13 @@ fn rpc_context(cx: &FamilyContext, store: Arc<SessionProfiles>) -> ProfileRpcCon
         home: std::env::var_os("HOME")
             .map(std::path::PathBuf::from)
             .unwrap_or_default(),
+        logins: LOGINS.clone(),
     }
 }
+
+/// The account sign-ins in progress, one set for the process.
+static LOGINS: std::sync::LazyLock<Arc<roamgate_accounts::Logins>> =
+    std::sync::LazyLock::new(Arc::default);
 
 /// What the RPCs ask of Bun, by `profiles.host` reverse calls.
 struct ReverseHost {
