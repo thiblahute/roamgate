@@ -15,13 +15,15 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use roamgate_base::private::create_private_dir;
-use serde_json::{Map, Value};
 
+use crate::files::{read_object, write_private};
 use crate::{AccountAgent, agy_home};
 
 /// The user's own configuration an account shares.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserDirs {
+    /// The user's home.
+    pub home: PathBuf,
     /// `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
     pub claude_dir: PathBuf,
     /// Claude Code's global config: `~/.claude.json`, or in
@@ -37,6 +39,7 @@ impl UserDirs {
         let set = |name: &str| var(name).filter(|value| !value.trim().is_empty());
         let claude_config = set("CLAUDE_CONFIG_DIR").map(PathBuf::from);
         Self {
+            home: home.to_path_buf(),
             claude_dir: claude_config
                 .clone()
                 .unwrap_or_else(|| home.join(".claude")),
@@ -101,10 +104,13 @@ const CODEX: Sharing = Sharing {
     ],
 };
 
+/// What an agy account's home links to the user's own home.
+const AGY_HOME_SHARED: &[&str] = &[".gitconfig", ".config/git", ".ssh", ".gnupg"];
+
 /// The `.claude.json` keys that belong to one account (clauth's
 /// `PER_PROFILE_FIELDS`): its identity, and the caches of its plan,
 /// organisation and models.
-const CLAUDE_JSON_OWN: &[&str] = &[
+pub(crate) const CLAUDE_JSON_OWN: &[&str] = &[
     "oauthAccount",
     "overageCreditGrantCache",
     "passesEligibilityCache",
@@ -152,11 +158,36 @@ pub fn prepare(agent: AccountAgent, dir: &Path, user: &UserDirs) -> io::Result<P
         }
         AccountAgent::Codex => share(&user.codex_home, dir, &CODEX),
         AccountAgent::Agy => {
-            // TODO(accounts plan, Work item 315289b9, D8 and D11): an agy
-            // account shares nothing with the user's home yet; its home only
-            // has to exist for agy to keep its sign-in there.
-            create_private_dir(&agy_home(dir))?;
-            Ok(Prepared::default())
+            // TODO(accounts plan, Work item 315289b9, D11): agy's own
+            // settings are not shared yet. Its isolated home gets the user's
+            // git, ssh and gpg configuration, so that the tools it runs behave
+            // as the user's.
+            let home = agy_home(dir);
+            create_private_dir(&home)?;
+            let mut prepared = Prepared::default();
+            for name in AGY_HOME_SHARED {
+                let from = user.home.join(name);
+                let to = home.join(name);
+                if std::fs::symlink_metadata(&from).is_err() || user.home.starts_with(dir) {
+                    continue;
+                }
+                if is_link(&to) && !to.exists() {
+                    unlink(&to);
+                }
+                if std::fs::symlink_metadata(&to).is_ok() {
+                    prepared.linked.push((*name).to_owned());
+                    continue;
+                }
+                if let Some(parent) = to.parent() {
+                    create_private_dir(parent)?;
+                }
+                if link(&from, &to).is_ok() {
+                    prepared.linked.push((*name).to_owned());
+                } else {
+                    prepared.own.push((*name).to_owned());
+                }
+            }
+            Ok(prepared)
         }
     }
 }
@@ -273,64 +304,20 @@ fn share(user: &Path, dir: &Path, sharing: &Sharing) -> io::Result<Prepared> {
     Ok(prepared)
 }
 
-fn read_object(path: &Path) -> Option<Map<String, Value>> {
-    let text = std::fs::read_to_string(path).ok()?;
-    match serde_json::from_str(&text).ok()? {
-        Value::Object(object) => Some(object),
-        _ => None,
-    }
-}
-
-/// Writes 0600 through a temporary file renamed into place.
-fn write_private(path: &Path, value: &Map<String, Value>) -> io::Result<()> {
-    let text = serde_json::to_string_pretty(value).map_err(io::Error::other)?;
-    let temporary = path.with_extension("json.roamgate-tmp");
-    std::fs::write(&temporary, text)?;
-    roamgate_base::private::set_mode(&temporary, 0o600)?;
-    std::fs::rename(&temporary, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&temporary);
-    })
-}
-
 /// An account's `.claude.json`: on its first start, the user's without
-/// what belongs to the user's account; afterwards the user's MCP servers
-/// (`mcpServers`) are brought in on each start, theirs winning, the
-/// account's own kept. True when it wrote.
-///
-/// TODO(accounts plan, Work item 315289b9, D11): the rest of the shared
-/// keys (projects, settings Claude Code writes there) are not kept in
-/// sync after the first start, and MCP logins (`mcpOAuth`, kept with the
-/// sign-in in `.credentials.json`) are not shared.
+/// what belongs to the user's account; afterwards kept in step with the
+/// user's ([`crate::json_sync`]), each keeping its own account's fields.
+/// True when it wrote.
 fn seed_claude_json(user: &Path, own: &Path) -> io::Result<bool> {
-    let Some(user) = read_object(user) else {
+    let Some(mut seeded) = read_object(user) else {
         return Ok(false);
     };
     if std::fs::symlink_metadata(own).is_err() {
-        let mut seeded = user;
         for key in CLAUDE_JSON_OWN {
             seeded.shift_remove(*key);
         }
         write_private(own, &seeded)?;
         return Ok(true);
     }
-    // One being written, or not JSON: left alone until the next start.
-    let Some(mut current) = read_object(own) else {
-        return Ok(false);
-    };
-    let Some(Value::Object(servers)) = user.get("mcpServers") else {
-        return Ok(false);
-    };
-    let mut merged = match current.get("mcpServers") {
-        Some(Value::Object(mine)) => mine.clone(),
-        _ => Map::new(),
-    };
-    for (name, server) in servers {
-        merged.insert(name.clone(), server.clone());
-    }
-    if current.get("mcpServers") == Some(&Value::Object(merged.clone())) {
-        return Ok(false);
-    }
-    current.insert("mcpServers".into(), Value::Object(merged));
-    write_private(own, &current)?;
-    Ok(true)
+    Ok(crate::json_sync::sync_claude_json(&[user.to_path_buf(), own.to_path_buf()])? > 0)
 }

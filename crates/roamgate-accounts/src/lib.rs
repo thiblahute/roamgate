@@ -22,8 +22,21 @@ use roamgate_base::env::Env;
 use roamgate_base::paths::{DataContext, Platform};
 pub use roamgate_base::settings::sections::account_id_valid;
 
+pub mod agy_auth;
+pub mod claude_auth;
+pub mod codex_auth;
+mod files;
+pub mod json_sync;
+mod logins;
+pub mod mcp_sync;
+mod oauth;
 mod prepare;
+#[cfg(test)]
+mod test_server;
 
+pub use files::fingerprint;
+pub use logins::{Logins, Started, maintain};
+pub use oauth::{Endpoints, Http};
 pub use prepare::{Prepared, UserDirs, prepare};
 
 /// An agent an account profile can sign in to.
@@ -169,23 +182,19 @@ pub fn launch_env(agent: AccountAgent, dir: &Path) -> LaunchEnv {
     }
 }
 
-/// An account's sign-in state, from whether its agent's credential file
-/// is there (never from what it holds).
+/// An account's sign-in state: from its credentials for Claude and Codex
+/// (a refused refresh token is `needs_relogin`), from `agy`'s own last
+/// answer for `agy`.
 pub fn auth_state(agent: AccountAgent, dir: &Path) -> AuthState {
-    let state = |file: &str| {
-        if dir.join(file).is_file() {
-            AuthState::SignedIn
-        } else {
-            AuthState::SignedOut
-        }
-    };
     match agent {
-        // Claude Code keeps a macOS sign-in in the Keychain.
-        AccountAgent::Claude if cfg!(target_os = "macos") => AuthState::Unknown,
-        AccountAgent::Claude => state(".credentials.json"),
-        AccountAgent::Codex => state("auth.json"),
-        // agy's own token store; Roamgate does not look into it.
-        AccountAgent::Agy => AuthState::Unknown,
+        // Claude Code keeps a macOS sign-in in the Keychain, not the file.
+        AccountAgent::Claude if cfg!(target_os = "macos") => match claude_auth::auth_state(dir) {
+            AuthState::SignedIn => AuthState::SignedIn,
+            _ => AuthState::Unknown,
+        },
+        AccountAgent::Claude => claude_auth::auth_state(dir),
+        AccountAgent::Codex => codex_auth::auth_state(dir),
+        AccountAgent::Agy => agy_auth::auth_state(dir),
     }
 }
 
