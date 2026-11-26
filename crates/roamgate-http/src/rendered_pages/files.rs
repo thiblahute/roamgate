@@ -333,7 +333,7 @@ impl ConnectionFileReader {
     ) -> Result<RenderedFile, ReadError> {
         // page_path already refuses these; never hand the helpers an
         // absolute path (they read those anywhere) or a step up.
-        if !root.starts_with('/')
+        if !roamgate_base::paths::is_host_path(&root)
             || path.is_empty()
             || path.starts_with('/')
             || path.contains('\0')

@@ -4,6 +4,13 @@ use std::path::{Component, Path, PathBuf};
 
 /// `path.resolve(p)`: absolute, `.` and `..` resolved, no symlinks read.
 pub fn resolve(p: &str) -> PathBuf {
+    // A POSIX path on Windows is a Unix host's (a pane's folder there),
+    // never this machine's current drive.
+    if cfg!(windows) && p.starts_with('/') {
+        let normal = roamgate_base::paths::posix_normalize(p);
+        let trimmed = normal.trim_end_matches('/');
+        return PathBuf::from(if trimmed.is_empty() { "/" } else { trimmed });
+    }
     let path = Path::new(p);
     let base = if path.is_absolute() {
         PathBuf::new()

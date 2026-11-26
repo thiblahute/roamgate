@@ -2583,9 +2583,14 @@ fn pane_logs(root: &Path) -> String {
             let name = entry.file_name().to_string_lossy().into_owned();
             if path.is_dir() && name != "home" && name != "record" {
                 dirs.push(path);
-            } else if name.starts_with("pane-") && name.ends_with(".log") {
+            } else if (name.starts_with("pane-") && name.ends_with(".log")) || name == "calls.jsonl"
+            {
+                // A pane's output, and the fakes' calls: what the server ran.
                 let text = std::fs::read_to_string(&path).unwrap_or_default();
-                let lines: Vec<&str> = text.lines().collect();
+                let lines: Vec<String> = text
+                    .lines()
+                    .map(|line| line.chars().take(600).collect())
+                    .collect();
                 let tail = lines[lines.len().saturating_sub(30)..].join("\n");
                 out.push_str(&format!(
                     "\n--- {} (last lines) ---\n{tail}",

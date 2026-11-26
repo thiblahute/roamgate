@@ -6,39 +6,7 @@ use std::future::Future;
 use crate::error::ReviewError;
 use crate::model::ReviewTarget;
 
-/// `posix.normalize`.
-pub fn posix_normalize(path: &str) -> String {
-    if path.is_empty() {
-        return ".".into();
-    }
-    let absolute = path.starts_with('/');
-    let trailing = path.ends_with('/');
-    let mut parts: Vec<&str> = Vec::new();
-    for part in path.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                if parts.last().is_some_and(|last| *last != "..") {
-                    parts.pop();
-                } else if !absolute {
-                    parts.push("..");
-                }
-            }
-            other => parts.push(other),
-        }
-    }
-    let mut out = parts.join("/");
-    if absolute {
-        out.insert(0, '/');
-    }
-    if out.is_empty() {
-        out = if absolute { "/".into() } else { ".".into() };
-    }
-    if trailing && !out.ends_with('/') {
-        out.push('/');
-    }
-    out
-}
+pub use roamgate_base::paths::posix_normalize;
 
 /// `posix.dirname`.
 pub fn posix_dirname(path: &str) -> String {

@@ -564,15 +564,23 @@ impl Auth {
         let id = {
             let now = self.now();
             let mut state = self.state.lock().unwrap();
-            if use_pin && let Some(cooldown) = Self::check_pin_cooldown(&mut state, now) {
-                return cooldown;
-            }
-            match Self::begin_login(&mut state, use_pin, ip, now) {
-                Ok(id) => id,
-                Err(wait) => return too_many_attempts(wait),
+            let cooldown = if use_pin {
+                Self::check_pin_cooldown(&mut state, now)
+            } else {
+                None
+            };
+            match cooldown {
+                Some(cooldown) => Err(cooldown),
+                None => Self::begin_login(&mut state, use_pin, ip, now).map_err(too_many_attempts),
             }
         };
         let body = read_json_body(body, LOGIN_MAX_BODY_BYTES).await;
+        // Answered once the body is read: a socket closed on unread data
+        // is reset on Windows, and the client loses the answer.
+        let id = match id {
+            Ok(id) => id,
+            Err(refused) => return refused,
+        };
         let now = self.now();
         let mut state = self.state.lock().unwrap();
         // A slow body must not authorize using an expired or replaced IP record.

@@ -21,7 +21,13 @@ fn program_name() -> (String, Vec<String>) {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let name = name.strip_suffix(".exe").unwrap_or(&name).to_owned();
+    // Windows' PATHEXT spells it `.EXE`: a program found on PATH.
+    let name = match name.len().checked_sub(4) {
+        Some(at) if name.is_char_boundary(at) && name[at..].eq_ignore_ascii_case(".exe") => {
+            name[..at].to_owned()
+        }
+        _ => name,
+    };
     let rest: Vec<String> = args.collect();
     if name == "parity-fake" {
         let mut rest = rest.into_iter();
