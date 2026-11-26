@@ -236,7 +236,14 @@ fn build_pi_sidecar() -> Result<PathBuf> {
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
-    std::fs::rename(&building, &path)?;
+    if let Err(error) = std::fs::rename(&building, &path) {
+        // Windows replaces no executable another suite's server runs: that
+        // one, built from this checkout by the same build, serves.
+        let _ = std::fs::remove_file(&building);
+        if !path.is_file() {
+            return Err(error.into());
+        }
+    }
     Ok(path)
 }
 
