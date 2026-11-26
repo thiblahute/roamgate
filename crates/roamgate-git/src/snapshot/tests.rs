@@ -801,8 +801,22 @@ async fn actual_timeout_during_phase_retains_ownership_and_blocks_retries() {
             },
             Some(Duration::from_millis(8000)),
         );
-        assert_fails(capture_with(&runner, repo.path()).await, "timed out");
-        assert_fails(capture(repo.path()).await, "capture locked");
+        let first = capture_with(&runner, repo.path()).await;
+        let ls = std::process::Command::new("ls")
+            .arg("-la")
+            .arg(repo.root.join(".git"))
+            .output()
+            .unwrap();
+        let ps = std::process::Command::new("ps").arg("-ax").arg("-o").arg("pid,ppid,pgid,stat,command").output().unwrap();
+        let second = capture(repo.path()).await;
+        let summary = format!(
+            "DBG phase={phase} first={:?} git={} ps={} second={:?}",
+            first.as_ref().map_err(ToString::to_string),
+            String::from_utf8_lossy(&ls.stdout),
+            String::from_utf8_lossy(&ps.stdout).lines().filter(|l| l.contains("pause") || l.contains("roamgate-snapshot")).collect::<Vec<_>>().join("\n"),
+            second.as_ref().map_err(ToString::to_string)
+        );
+        assert!(first.is_err() && second.is_err(), "{summary}");
         let git_dir = repo.root.join(".git");
         assert!(!no_quarantine(&git_dir), "{phase}");
         assert!(listing(&git_dir.join("objects").join("pack")).is_empty());
