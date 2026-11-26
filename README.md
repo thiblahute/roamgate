@@ -20,6 +20,28 @@ models other than Claude Code. Linux/macOS hosts it reaches over SSH need
 `python3` (standard library only) for agent features
 ([what an SSH host needs](docs/DEPLOYMENT.md#multiple-and-remote-herdr-connections)).
 
+## Get started
+
+Install on Linux or macOS:
+
+```bash
+curl -fsSL https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.ps1 | iex
+```
+
+Then run `roamgate` and keep it running. In another terminal, `roamgate url`
+prints the login link (`http://localhost:8787/?token=...`): open it, and the
+token in it logs you in. Roamgate needs a running [Herdr](https://herdr.dev);
+`roamgate herdr setup` installs and starts it. `roamgate url --qr` shows a QR
+code for your phone, and `roamgate doctor` diagnoses problems.
+[Deployment](./docs/DEPLOYMENT.md#install-a-release) covers pinned versions,
+mirrors, services, and updates.
+
 ## Step away. Stay in flow.
 
 Start on any computer. Leave Herdr running, then continue in the same workspace
@@ -164,30 +186,6 @@ Click any screenshot to open the full-resolution image.
 > **Moving from Herdr Studio / herdr-gui?** Follow the
 > [migration guide](./docs/DEPLOYMENT.md#transition-from-herdr-studio--herdr-gui);
 > automatic upgrades are not supported.
-
-## Quick start
-
-1. Install and start [Herdr](https://herdr.dev), or let Roamgate do it later
-   with `roamgate herdr setup`.
-2. Install Roamgate on Linux or macOS (to pin a version, end the command with
-   `| ROAMGATE_VERSION=X.Y.Z sh`):
-
-   ```bash
-   curl -fsSL \
-     https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh \
-     | sh
-   ```
-
-   On Windows, in PowerShell:
-
-   ```powershell
-   irm https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.ps1 | iex
-   ```
-3. Run `roamgate` (`roamgate.exe` on Windows; on Linux/macOS make sure
-   `~/.local/bin` is on `PATH`) and open the printed URL. `roamgate url --qr`
-   shows a QR code for your phone, and `roamgate doctor` diagnoses problems.
-
-See [deployment](./docs/DEPLOYMENT.md) for configuration, services, and updates.
 
 ## Install as a PWA
 

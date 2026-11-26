@@ -3,6 +3,7 @@
 
 mod binary;
 mod compile;
+mod getting_started;
 mod notices;
 mod package;
 mod proof;
@@ -41,6 +42,12 @@ Commands:
                                       the /ws hello and an agent-socket call
                                       (--container: in the target's
                                       container image of targets.toml)
+  getting-started <platform> [--container]
+                                      run the documented install line of
+                                      site/install.json against a loopback
+                                      mirror of the packaged target, then
+                                      `roamgate` and the login link
+                                      `roamgate url` prints
   version [--next]                    print the workspace version (--next:
                                       the next patch, as a prerelease above
                                       the current one, for update proofs)
@@ -299,6 +306,24 @@ fn run() -> Result<()> {
                 (Some(image), true) => smoke::run_in_container(&smoke, image)?,
                 (None, true) => bail!("{} has no container", target.platform),
                 (_, false) => smoke::run(&smoke)?,
+            }
+        }
+        "getting-started" => {
+            let [name] = args.names.as_slice() else {
+                bail!("getting-started takes one platform");
+            };
+            let target = targets::select(&all, std::slice::from_ref(name))?.remove(0);
+            let proof = getting_started::GettingStarted {
+                dist: &out,
+                target: &target,
+                version: &version,
+                exec_prefix: args.exec_prefix.clone(),
+                keep: args.keep.clone().map(absolute).transpose()?,
+            };
+            match (&target.container, args.container) {
+                (Some(image), true) => getting_started::run_in_container(&proof, image)?,
+                (None, true) => bail!("{} has no container", target.platform),
+                (_, false) => getting_started::run(&proof)?,
             }
         }
         "help" | "" => print!("{USAGE}"),

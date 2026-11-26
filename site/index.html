@@ -209,6 +209,124 @@
         </div>
       </section>
 
+      <section class="section shell install-section" id="install">
+        <div class="install-card reveal" data-spotlight>
+          <div class="install-copy">
+            <p class="kicker">Get started</p>
+            <h2>One line, then log in.</h2>
+            <ol class="install-steps">
+              <li>Run the line for your system. It checks the release's checksum and installs <code>roamgate</code>.</li>
+              <li>Run <code>roamgate</code> and keep it running.</li>
+              <li>In another terminal, <code>roamgate url</code> prints the login link, <code>http://localhost:8787/?token=...</code>. Open it: the token in it logs you in.</li>
+            </ol>
+            <p>
+              Roamgate needs a running
+              <a href="https://herdr.dev" target="_blank" rel="noopener noreferrer">Herdr</a>;
+              <code>roamgate herdr setup</code> installs and starts it.
+            </p>
+            <div class="install-actions">
+              <a
+                class="button button-primary"
+                href="https://github.com/powerfooI/roamgate/releases/latest"
+              >
+                Download latest release
+              </a>
+              <a
+                class="button button-secondary"
+                href="https://github.com/powerfooI/roamgate/blob/main/docs/DEPLOYMENT.md#install-a-release"
+              >
+                Deployment guide
+              </a>
+            </div>
+          </div>
+
+          <div class="install-terminal">
+            <div class="install-terminal-bar">
+              <span><i></i><i></i><i></i></span>
+              <div class="install-tabs" role="tablist" aria-label="Your system">
+                <button
+                  type="button"
+                  role="tab"
+                  id="install-tab-linux"
+                  aria-controls="install-panel-linux"
+                  aria-selected="true"
+                  tabindex="0"
+                  data-install-tab
+                >
+                  Linux
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="install-tab-macos"
+                  aria-controls="install-panel-macos"
+                  aria-selected="false"
+                  tabindex="-1"
+                  data-install-tab
+                >
+                  macOS
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="install-tab-windows"
+                  aria-controls="install-panel-windows"
+                  aria-selected="false"
+                  tabindex="-1"
+                  data-install-tab
+                >
+                  Windows
+                </button>
+              </div>
+              <button
+                type="button"
+                data-copy-command
+                aria-label="Copy install command"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M7 6V4h9v9h-2M4 7h9v9H4z" />
+                </svg>
+                <span aria-live="polite">Copy</span>
+              </button>
+            </div>
+            <div
+              class="install-panel"
+              id="install-panel-linux"
+              role="tabpanel"
+              aria-labelledby="install-tab-linux"
+              data-install-panel
+            >
+              <pre><code data-install-command="curl -fsSL https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh | sh"><span aria-hidden="true">$ </span>curl -fsSL https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh | sh</code></pre>
+            </div>
+            <div
+              class="install-panel"
+              id="install-panel-macos"
+              role="tabpanel"
+              aria-labelledby="install-tab-macos"
+              data-install-panel hidden
+            >
+              <pre><code data-install-command="curl -fsSL https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh | sh"><span aria-hidden="true">$ </span>curl -fsSL https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh | sh</code></pre>
+            </div>
+            <div
+              class="install-panel"
+              id="install-panel-windows"
+              role="tabpanel"
+              aria-labelledby="install-tab-windows"
+              data-install-panel hidden
+            >
+              <pre><code data-install-command="irm https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.ps1 | iex"><span aria-hidden="true">PS&gt; </span>irm https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.ps1 | iex</code></pre>
+            </div>
+            <div class="install-result" aria-hidden="true">
+              <span></span>
+              <p>
+                <strong>Roamgate installed</strong
+                ><small>Run <code>roamgate</code>, then <code>roamgate url</code></small>
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="section shell" id="product">
         <div class="section-heading reveal">
           <div>
@@ -1009,60 +1127,6 @@
         </div>
       </section>
 
-      <section class="section shell install-section" id="install">
-        <div class="install-card reveal" data-spotlight>
-          <div class="install-copy">
-            <p class="kicker">Ready when the next task starts</p>
-            <h2>Give your agents a window.</h2>
-            <p>
-              Install the native binary on macOS or Linux, start Roamgate,
-              and open the URL it prints. No runtime to install. Windows x64 and ARM64 archives
-              are available from GitHub Releases.
-            </p>
-            <div class="install-actions">
-              <a
-                class="button button-primary"
-                href="https://github.com/powerfooI/roamgate/releases/latest"
-              >
-                Download latest release
-              </a>
-              <a
-                class="button button-secondary"
-                href="https://github.com/powerfooI/roamgate/blob/main/docs/DEPLOYMENT.md"
-              >
-                Deployment guide
-              </a>
-            </div>
-          </div>
-
-          <div class="install-terminal">
-            <div class="install-terminal-bar">
-              <span><i></i><i></i><i></i></span>
-              <strong>Install</strong>
-              <button
-                type="button"
-                data-copy-command
-                aria-label="Copy install command"
-              >
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="M7 6V4h9v9h-2M4 7h9v9H4z" />
-                </svg>
-                <span aria-live="polite">Copy</span>
-              </button>
-            </div>
-            <pre><code data-install-command><span>$</span> curl -fsSL \
-  https://github.com/powerfooI/roamgate/releases/latest/download/install-roamgate.sh \
-  | sh</code></pre>
-            <div class="install-result" aria-hidden="true">
-              <span></span>
-              <p>
-                <strong>Roamgate installed</strong
-                ><small>Run <code>roamgate</code> to start</small>
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
     </main>
 
     <footer class="site-footer">
