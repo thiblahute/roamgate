@@ -14,8 +14,9 @@ use std::sync::LazyLock;
 use regex::Regex;
 use roamgate_base::log::{parse_iso_millis, slice_utf16};
 pub use roamgate_base::settings::sections::{
-    BUILTIN_PROFILE_NAME, MAX_PROFILE_ENV, MAX_PROFILES, PROFILE_AGENTS, account_id_valid,
-    normalize_profile, normalize_profiles_settings, profile_account_id, profile_error,
+    BUILTIN_PROFILE_NAME, CHAIN_WALKS, MAX_PROFILE_ENV, MAX_PROFILES, PROFILE_AGENTS,
+    account_id_valid, chain_error, normalize_chain, normalize_profile, normalize_profiles_settings,
+    profile_account_id, profile_error,
 };
 use serde_json::{Map, Value, json};
 
@@ -122,9 +123,12 @@ pub fn profiles_settings_error(raw: &Value) -> Option<String> {
         Some(_) => return Some("profiles.default must be a profile name".into()),
     }
     match raw.get("return_after_reset") {
-        None | Some(Value::Bool(_)) => None,
-        Some(_) => Some("profiles.return_after_reset must be true or false".into()),
+        None | Some(Value::Bool(_)) => {}
+        Some(_) => return Some("profiles.return_after_reset must be true or false".into()),
     }
+    let normalized: Vec<Value> = list.iter().filter_map(normalize_profile).collect();
+    raw.get("chain")
+        .and_then(|chain| chain_error(chain, &normalized))
 }
 
 /// Every profile offered: the built-in Claude first unless redefined.

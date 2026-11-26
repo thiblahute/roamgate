@@ -52,6 +52,39 @@ export type ProfilesSettings = {
    * the default once the limit resets.
    */
   return_after_reset: boolean;
+  /** The account chain, when set: where sessions go past a limit. */
+  chain?: AccountChain;
+};
+
+/** The walk orders of a chain. */
+export const CHAIN_WALKS = ["chain", "soonest_reset", "most_headroom"] as const;
+export type ChainWalk = (typeof CHAIN_WALKS)[number];
+
+/** An account's own lines (percent used). */
+export type ChainLines = { five_hour?: number; weekly?: number };
+
+/**
+ * The account chain: account profiles in order. The default profile moves
+ * along it when it crosses a line (with `auto_switch`), and a session
+ * stopped by a usage limit goes on with the next account.
+ */
+export type AccountChain = {
+  /** Account profiles' names, in order. */
+  accounts: string[];
+  auto_switch: boolean;
+  /** The 5-hour line (default 95). */
+  five_hour_line: number;
+  /** The weekly line, aggregate and per-model (default 98). */
+  weekly_line: number;
+  /** Lines of their own, by account. */
+  lines?: Record<string, ChainLines>;
+  /** Taken first on its days. */
+  preferred?: string;
+  /** 0 (Sunday) to 6; none: every day. */
+  preferred_days?: number[];
+  /** Taken only when no other account can. */
+  last_resort?: string;
+  walk: ChainWalk;
 };
 
 export const MAX_PROFILES = 16;
@@ -220,6 +253,110 @@ export function profilesSettingsError(raw: unknown): string | null {
     typeof raw.return_after_reset !== "boolean"
   )
     return "profiles.return_after_reset must be true or false";
+  if (raw.chain !== undefined)
+    return chainError(
+      raw.chain,
+      raw.list
+        .map((each) => normalizeProfile(each))
+        .filter((each): each is AgentProfile => each !== null),
+    );
+  return null;
+}
+
+function lineValid(value: unknown): value is number {
+  return typeof value === "number" && value >= 1 && value <= 100;
+}
+
+/** The account profile of `list` so named (case-insensitive). */
+function accountNamed(
+  list: readonly AgentProfile[],
+  name: unknown,
+): string | null {
+  if (typeof name !== "string") return null;
+  const wanted = name.trim().toLowerCase();
+  return (
+    list.find(
+      (profile) => profile.account && profile.name.toLowerCase() === wanted,
+    )?.name ?? null
+  );
+}
+
+/** The account chain, what is not valid dropped or reset. */
+export function normalizeChain(
+  raw: Record<string, unknown>,
+  list: readonly AgentProfile[],
+): AccountChain {
+  const accounts: string[] = [];
+  for (const each of Array.isArray(raw.accounts) ? raw.accounts : []) {
+    const name = accountNamed(list, each);
+    if (name !== null && !accounts.includes(name)) accounts.push(name);
+  }
+  const line = (value: unknown, fallback: number) =>
+    lineValid(value) ? value : fallback;
+  const lines: Record<string, ChainLines> = {};
+  for (const [key, own] of Object.entries(
+    isRecord(raw.lines) ? raw.lines : {},
+  )) {
+    const name = accountNamed(list, key);
+    if (name === null || !accounts.includes(name) || !isRecord(own)) continue;
+    const kept: ChainLines = {};
+    if (lineValid(own.five_hour)) kept.five_hour = own.five_hour;
+    if (lineValid(own.weekly)) kept.weekly = own.weekly;
+    if (Object.keys(kept).length) lines[name] = kept;
+  }
+  const member = (value: unknown) => {
+    const name = accountNamed(list, value);
+    return name !== null && accounts.includes(name) ? name : null;
+  };
+  const preferred = member(raw.preferred);
+  const days = [
+    ...new Set(
+      (Array.isArray(raw.preferred_days) ? raw.preferred_days : []).filter(
+        (day): day is number =>
+          Number.isInteger(day) && (day as number) >= 0 && (day as number) <= 6,
+      ),
+    ),
+  ].sort((a, b) => a - b);
+  const lastResort = member(raw.last_resort);
+  return {
+    accounts,
+    auto_switch: raw.auto_switch === true,
+    five_hour_line: line(raw.five_hour_line, 95),
+    weekly_line: line(raw.weekly_line, 98),
+    ...(Object.keys(lines).length ? { lines } : {}),
+    ...(preferred !== null ? { preferred } : {}),
+    ...(days.length ? { preferred_days: days } : {}),
+    ...(lastResort !== null ? { last_resort: lastResort } : {}),
+    walk: CHAIN_WALKS.includes(raw.walk as ChainWalk)
+      ? (raw.walk as ChainWalk)
+      : "chain",
+  };
+}
+
+/** Why a chain is not valid, or null. */
+export function chainError(
+  raw: unknown,
+  list: readonly AgentProfile[],
+): string | null {
+  if (!isRecord(raw)) return "profiles.chain must be an object";
+  if (raw.accounts !== undefined) {
+    if (!Array.isArray(raw.accounts))
+      return "profiles.chain.accounts must be a list of account profiles";
+    for (const each of raw.accounts)
+      if (accountNamed(list, each) === null)
+        return `${typeof each === "string" ? each : "?"} is not an account profile`;
+  }
+  const lines: unknown[] = ["five_hour_line", "weekly_line"]
+    .filter((key) => raw[key] !== undefined)
+    .map((key) => raw[key]);
+  for (const own of Object.values(isRecord(raw.lines) ? raw.lines : {}))
+    if (isRecord(own))
+      for (const key of ["five_hour", "weekly"])
+        if (own[key] !== undefined) lines.push(own[key]);
+  if (lines.some((line) => !lineValid(line)))
+    return "profiles.chain lines are percents from 1 to 100";
+  if (raw.walk !== undefined && !CHAIN_WALKS.includes(raw.walk as ChainWalk))
+    return "profiles.chain.walk must be chain, soonest_reset or most_headroom";
   return null;
 }
 
@@ -249,6 +386,7 @@ export function normalizeProfilesSettings(raw: unknown): ProfilesSettings {
     list,
     default: profileNamed(list, wanted)?.name ?? BUILTIN_PROFILE_NAME,
     return_after_reset: raw.return_after_reset === true,
+    ...(isRecord(raw.chain) ? { chain: normalizeChain(raw.chain, list) } : {}),
   };
 }
 

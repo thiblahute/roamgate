@@ -705,11 +705,169 @@ pub fn normalize_profiles_settings(raw: Option<&Value>) -> Value {
         _ => BUILTIN_PROFILE_NAME.to_owned(),
     };
     let default = profile_named(&list, &wanted).unwrap_or_else(|| BUILTIN_PROFILE_NAME.to_owned());
-    json!({
+    let mut out = json!({
         "list": list,
         "default": default,
         "return_after_reset": raw.get("return_after_reset") == Some(&Value::Bool(true)),
-    })
+    });
+    if let Some(chain) = raw.get("chain").and_then(Value::as_object) {
+        out["chain"] = normalize_chain(chain, &list);
+    }
+    out
+}
+
+/// The walk orders of a chain (`profiles.chain.walk`).
+pub const CHAIN_WALKS: [&str; 3] = ["chain", "soonest_reset", "most_headroom"];
+
+/// A line: a percent from 1 to 100.
+fn line_valid(value: &Value) -> bool {
+    value
+        .as_f64()
+        .is_some_and(|line| (1.0..=100.0).contains(&line))
+}
+
+/// The account profile of `list` so named (case-insensitive).
+fn account_named(list: &[Value], name: &Value) -> Option<String> {
+    let wanted = js_trim(name.as_str()?).to_lowercase();
+    list.iter()
+        .filter(|profile| profile_account_id(profile).is_some())
+        .map(|profile| profile["name"].as_str().unwrap_or_default())
+        .find(|each| each.to_lowercase() == wanted)
+        .map(str::to_owned)
+}
+
+/// shared/agentProfiles.ts normalizeChain: the account chain, what is not
+/// valid dropped or reset.
+pub fn normalize_chain(raw: &Map<String, Value>, list: &[Value]) -> Value {
+    let mut accounts: Vec<String> = Vec::new();
+    for each in raw
+        .get("accounts")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(name) = account_named(list, each)
+            && !accounts.contains(&name)
+        {
+            accounts.push(name);
+        }
+    }
+    let line = |key: &str, default: i64| {
+        raw.get(key)
+            .filter(|value| line_valid(value))
+            .cloned()
+            .unwrap_or_else(|| json!(default))
+    };
+    let mut out = Map::new();
+    out.insert("accounts".into(), json!(accounts));
+    out.insert(
+        "auto_switch".into(),
+        json!(raw.get("auto_switch") == Some(&Value::Bool(true))),
+    );
+    out.insert("five_hour_line".into(), line("five_hour_line", 95));
+    out.insert("weekly_line".into(), line("weekly_line", 98));
+    let mut lines = Map::new();
+    for (name, own) in raw
+        .get("lines")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let Some(name) = account_named(list, &json!(name)).filter(|name| accounts.contains(name))
+        else {
+            continue;
+        };
+        let mut kept = Map::new();
+        for key in ["five_hour", "weekly"] {
+            if let Some(value) = own.get(key).filter(|value| line_valid(value)) {
+                kept.insert(key.into(), value.clone());
+            }
+        }
+        if !kept.is_empty() {
+            lines.insert(name, Value::Object(kept));
+        }
+    }
+    if !lines.is_empty() {
+        out.insert("lines".into(), Value::Object(lines));
+    }
+    let member = |key: &str| {
+        raw.get(key)
+            .and_then(|name| account_named(list, name))
+            .filter(|name| accounts.contains(name))
+    };
+    if let Some(preferred) = member("preferred") {
+        out.insert("preferred".into(), json!(preferred));
+    }
+    let mut days: Vec<i64> = raw
+        .get("preferred_days")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_i64)
+        .filter(|day| (0..=6).contains(day))
+        .collect();
+    days.sort_unstable();
+    days.dedup();
+    if !days.is_empty() {
+        out.insert("preferred_days".into(), json!(days));
+    }
+    if let Some(last) = member("last_resort") {
+        out.insert("last_resort".into(), json!(last));
+    }
+    let walk = raw
+        .get("walk")
+        .and_then(Value::as_str)
+        .filter(|walk| CHAIN_WALKS.contains(walk))
+        .unwrap_or("chain");
+    out.insert("walk".into(), json!(walk));
+    Value::Object(out)
+}
+
+/// shared/agentProfiles.ts chainError: why a chain is not valid, or None.
+pub fn chain_error(raw: &Value, list: &[Value]) -> Option<String> {
+    let Some(raw) = raw.as_object() else {
+        return Some("profiles.chain must be an object".into());
+    };
+    if let Some(accounts) = raw.get("accounts") {
+        let Some(accounts) = accounts.as_array() else {
+            return Some("profiles.chain.accounts must be a list of account profiles".into());
+        };
+        for each in accounts {
+            if account_named(list, each).is_none() {
+                return Some(format!(
+                    "{} is not an account profile",
+                    each.as_str().unwrap_or("?")
+                ));
+            }
+        }
+    }
+    let mut lines: Vec<&Value> = ["five_hour_line", "weekly_line"]
+        .iter()
+        .filter_map(|key| raw.get(*key))
+        .collect();
+    for own in raw
+        .get("lines")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|lines| lines.values())
+    {
+        lines.extend(
+            ["five_hour", "weekly"]
+                .iter()
+                .filter_map(|key| own.get(*key)),
+        );
+    }
+    if lines.iter().any(|line| !line_valid(line)) {
+        return Some("profiles.chain lines are percents from 1 to 100".into());
+    }
+    if let Some(walk) = raw.get("walk")
+        && !walk
+            .as_str()
+            .is_some_and(|walk| CHAIN_WALKS.contains(&walk))
+    {
+        return Some("profiles.chain.walk must be chain, soonest_reset or most_headroom".into());
+    }
+    None
 }
 
 /// The name of the profile so named (case-insensitive), the built-in
