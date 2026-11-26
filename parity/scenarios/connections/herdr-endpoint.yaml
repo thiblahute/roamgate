@@ -34,6 +34,8 @@ steps:
     socket: feed
   - expect_push: "event:ready"
     socket: feed
+  # The notification shell starts on its own once the connection is
+  # ready: its hello is waited for.
   - herdr_calls:
       {
         method: endpoint.hello,
@@ -41,6 +43,7 @@ steps:
         calls:
           { $contains: [{ params: { generation: 1, surface_active: false } }] },
       }
+    retry: 10000
   - herdr_notify:
       {
         kind: Finished,

@@ -147,7 +147,7 @@ fn hits(dir: &Path, program: &str, index: usize) -> usize {
         .unwrap_or(0)
 }
 
-fn add_hit(dir: &Path, program: &str, index: usize) {
+pub fn count_hit(dir: &Path, program: &str, index: usize) {
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
@@ -191,7 +191,9 @@ impl Rule {
     }
 }
 
-/// The rule answering this call, counting its hit.
+/// The rule answering this call; its hit is counted with [`count_hit`],
+/// once the call is logged (a scenario waiting for the hit then finds the
+/// call too).
 pub fn pick(
     dir: &Path,
     program: &str,
@@ -208,7 +210,6 @@ pub fn pick(
         {
             continue;
         }
-        add_hit(dir, program, index);
         return Some((index, rule.answer.clone()));
     }
     None

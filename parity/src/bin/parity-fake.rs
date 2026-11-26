@@ -115,6 +115,9 @@ fn main() -> ExitCode {
             pid: std::process::id(),
         },
     );
+    if let Some((index, _)) = &picked {
+        script::count_hit(&fakes, &program, *index);
+    }
     let picked = picked.map(|(_, answer)| answer);
 
     let code = match program.as_str() {
