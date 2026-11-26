@@ -152,18 +152,10 @@ steps:
     headers: { x-roamgate-voice: "1" }
     body: { text: hi }
     expect:
-      {
-        status: 502,
-        json:
-          { error: "${DATA}/voice.json: helper is required" },
-      }
+      { status: 502, json: { error: "${DATA}/voice.json: helper is required" } }
   - http: GET /api/voice/voices
     expect:
-      {
-        status: 502,
-        json:
-          { error: "${DATA}/voice.json: helper is required" },
-      }
+      { status: 502, json: { error: "${DATA}/voice.json: helper is required" } }
   - http: POST /api/voice/voices/surprise
     body: { on: true }
     expect: { status: 403 }
