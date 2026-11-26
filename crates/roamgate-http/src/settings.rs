@@ -680,11 +680,15 @@ pub fn profiles_reply(settings: &Settings, home: &std::path::Path) -> Value {
             view
         })
         .collect();
-    json!({
+    let mut reply = json!({
         "profiles": shown,
         "default": profiles.get("default").cloned().unwrap_or(Value::Null),
         "return_after_reset": profiles.get("return_after_reset").cloned().unwrap_or(Value::Null),
-    })
+    });
+    if let Some(chain) = profiles.get("chain") {
+        reply["chain"] = chain.clone();
+    }
+    reply
 }
 
 /// A profile as the browser edits it (`profileFromView`): its env entries
@@ -764,17 +768,21 @@ pub fn profiles_update(params: &Value) -> Result<Value, String> {
             },
         );
     }
-    for key in ["default", "return_after_reset"] {
+    for key in ["default", "return_after_reset", "chain"] {
         if let Some(value) = params.get(key) {
             raw.insert(key.into(), value.clone());
         }
     }
     let raw = Value::Object(raw);
-    if params
-        .keys()
-        .any(|key| !matches!(key.as_str(), "list" | "default" | "return_after_reset"))
-    {
-        return Err("settings.profiles.update takes list, default and return_after_reset".into());
+    if params.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "list" | "default" | "return_after_reset" | "chain"
+        )
+    }) {
+        return Err(
+            "settings.profiles.update takes list, default, return_after_reset and chain".into(),
+        );
     }
     if let Some(error) = roamgate_connections::agent_profiles::shared::profiles_settings_error(&raw)
     {

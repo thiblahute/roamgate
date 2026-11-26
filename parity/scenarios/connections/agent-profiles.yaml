@@ -63,7 +63,7 @@ steps:
     params: { list: [], extra: 1 }
     error:
       {
-        message: "settings.profiles.update takes list, default and return_after_reset",
+        message: "settings.profiles.update takes list, default, return_after_reset and chain",
       }
   - call: settings.profiles.models
     params: { name: Work }

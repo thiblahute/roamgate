@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  type AccountChain,
   MODEL_SLOTS,
   type ProfileAccountView,
 } from "../../../shared/agentProfiles";
@@ -42,6 +43,7 @@ type ProfilesState = {
   profiles: ProfileRow[];
   default: string;
   return_after_reset: boolean;
+  chain?: AccountChain;
 };
 type Models = {
   models: string[];
@@ -71,6 +73,7 @@ export function profilesUpdate(state: ProfilesState) {
       })),
     default: state.default,
     return_after_reset: state.return_after_reset,
+    ...(state.chain ? { chain: state.chain } : {}),
   };
 }
 
@@ -82,6 +85,7 @@ function parseState(value: unknown): ProfilesState {
     profiles: raw.profiles,
     default: raw.default,
     return_after_reset: raw.return_after_reset === true,
+    ...(raw.chain ? { chain: raw.chain } : {}),
   };
 }
 

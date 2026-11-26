@@ -1067,6 +1067,258 @@
           }
         }
       ]
+    },
+    {
+      "name": "the account chain keeps account profiles in order, its lines and choices",
+      "group": ["profiles", "accounts"],
+      "calls": [
+        {
+          "fn": "agentProfiles.normalizeProfilesSettings",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Perso",
+                  "agent": "claude",
+                  "account": { "id": "perso" }
+                },
+                { "name": "Codex", "agent": "codex", "account": { "id": "c" } },
+                { "name": "GLM", "agent": "claude", "env": { "A": "1" } }
+              ],
+              "default": "Work",
+              "chain": {
+                "accounts": [
+                  "perso",
+                  " Work ",
+                  "GLM",
+                  "Nobody",
+                  "Perso",
+                  "Codex"
+                ],
+                "auto_switch": true,
+                "five_hour_line": 90,
+                "weekly_line": 101,
+                "lines": {
+                  "work": { "five_hour": 80, "weekly": "x" },
+                  "GLM": { "weekly": 50 }
+                },
+                "preferred": "Perso",
+                "preferred_days": [0, 6, 0, 9],
+                "last_resort": "glm",
+                "walk": "fastest"
+              }
+            }
+          ],
+          "result": {
+            "list": [
+              {
+                "name": "Work",
+                "agent": "claude",
+                "account": { "id": "work" }
+              },
+              {
+                "name": "Perso",
+                "agent": "claude",
+                "account": { "id": "perso" }
+              },
+              { "name": "Codex", "agent": "codex", "account": { "id": "c" } },
+              { "name": "GLM", "agent": "claude", "env": { "A": "1" } }
+            ],
+            "default": "Work",
+            "return_after_reset": false,
+            "chain": {
+              "accounts": ["Perso", "Work", "Codex"],
+              "auto_switch": true,
+              "five_hour_line": 90,
+              "weekly_line": 98,
+              "lines": { "Work": { "five_hour": 80 } },
+              "preferred": "Perso",
+              "preferred_days": [0, 6],
+              "walk": "chain"
+            }
+          }
+        },
+        {
+          "fn": "agentProfiles.normalizeProfilesSettings",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Perso",
+                  "agent": "claude",
+                  "account": { "id": "perso" }
+                },
+                { "name": "Codex", "agent": "codex", "account": { "id": "c" } },
+                { "name": "GLM", "agent": "claude", "env": { "A": "1" } }
+              ],
+              "chain": {}
+            }
+          ],
+          "result": {
+            "list": [
+              {
+                "name": "Work",
+                "agent": "claude",
+                "account": { "id": "work" }
+              },
+              {
+                "name": "Perso",
+                "agent": "claude",
+                "account": { "id": "perso" }
+              },
+              { "name": "Codex", "agent": "codex", "account": { "id": "c" } },
+              { "name": "GLM", "agent": "claude", "env": { "A": "1" } }
+            ],
+            "default": "Claude",
+            "return_after_reset": false,
+            "chain": {
+              "accounts": [],
+              "auto_switch": false,
+              "five_hour_line": 95,
+              "weekly_line": 98,
+              "walk": "chain"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "an invalid chain is refused with a reason",
+      "group": ["profiles", "accounts"],
+      "calls": [
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Perso",
+                  "agent": "claude",
+                  "account": { "id": "perso" }
+                },
+                { "name": "Codex", "agent": "codex", "account": { "id": "c" } },
+                { "name": "GLM", "agent": "claude", "env": { "A": "1" } }
+              ],
+              "chain": { "accounts": ["Work", "GLM"] }
+            }
+          ],
+          "result": "GLM is not an account profile"
+        },
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Perso",
+                  "agent": "claude",
+                  "account": { "id": "perso" }
+                },
+                { "name": "Codex", "agent": "codex", "account": { "id": "c" } },
+                { "name": "GLM", "agent": "claude", "env": { "A": "1" } }
+              ],
+              "chain": {
+                "accounts": ["Work"],
+                "lines": { "Work": { "weekly": 0 } }
+              }
+            }
+          ],
+          "result": "profiles.chain lines are percents from 1 to 100"
+        },
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Perso",
+                  "agent": "claude",
+                  "account": { "id": "perso" }
+                },
+                { "name": "Codex", "agent": "codex", "account": { "id": "c" } },
+                { "name": "GLM", "agent": "claude", "env": { "A": "1" } }
+              ],
+              "chain": { "walk": "x" }
+            }
+          ],
+          "result": "profiles.chain.walk must be chain, soonest_reset or most_headroom"
+        },
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Perso",
+                  "agent": "claude",
+                  "account": { "id": "perso" }
+                },
+                { "name": "Codex", "agent": "codex", "account": { "id": "c" } },
+                { "name": "GLM", "agent": "claude", "env": { "A": "1" } }
+              ],
+              "chain": []
+            }
+          ],
+          "result": "profiles.chain must be an object"
+        },
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "account": { "id": "work" }
+                },
+                {
+                  "name": "Perso",
+                  "agent": "claude",
+                  "account": { "id": "perso" }
+                },
+                { "name": "Codex", "agent": "codex", "account": { "id": "c" } },
+                { "name": "GLM", "agent": "claude", "env": { "A": "1" } }
+              ],
+              "chain": {
+                "accounts": ["Codex", "Perso"],
+                "five_hour_line": 50,
+                "walk": "most_headroom"
+              }
+            }
+          ],
+          "result": null
+        }
+      ]
     }
   ]
 }
