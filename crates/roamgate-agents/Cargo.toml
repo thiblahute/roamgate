@@ -18,6 +18,7 @@ indexmap = "2"
 jiff = "0.2"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 regex = "1"
+roamgate-accounts = { path = "../roamgate-accounts" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 rusqlite = { version = "0.43", features = ["bundled"] }

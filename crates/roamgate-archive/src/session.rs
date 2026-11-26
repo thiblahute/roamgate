@@ -12,7 +12,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::hosts::{ArchiveRuntime, ResolvedHost, SSH_OPTIONS, local_root, sh_quote};
+use crate::hosts::{ArchiveRuntime, ResolvedHost, SSH_OPTIONS, local_live, local_root, sh_quote};
 use crate::lines::CompleteLines;
 use crate::store::Result;
 use crate::sync::zst_path;
@@ -270,7 +270,7 @@ pub fn lookup_session(
         && !main.subagent
     {
         let target = agent.restore_relpath(&main.relpath, &runtime.home_dir.to_string_lossy());
-        live = local_root(agent, me, runtime).join(target).exists();
+        live = local_live(agent, me, runtime, &target).exists();
     }
     let has_main = rows_of_best.iter().any(|r| !r.subagent);
     let cwd = rows_of_best.iter().find_map(|r| non_empty(&r.cwd).cloned());

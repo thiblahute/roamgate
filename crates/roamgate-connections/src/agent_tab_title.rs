@@ -160,9 +160,26 @@ impl AgentTabTitleReader {
             let path = options.env.home.join(".hermes").join("state.db");
             return read_hermes_session_title(&path, id);
         }
-        let path = antigravity_home(&options.env)
-            .join("annotations")
-            .join(format!("{id}.pbtxt"));
+        // The user's own, else an agy account's (its isolated home).
+        let name = format!("{id}.pbtxt");
+        let mut homes = vec![antigravity_home(&options.env)];
+        homes.extend(
+            roamgate_accounts::account_dirs(
+                &options.env.data_root(),
+                roamgate_accounts::AccountAgent::Agy,
+            )
+            .iter()
+            .map(|dir| {
+                roamgate_accounts::agy_home(dir)
+                    .join(".gemini")
+                    .join("antigravity-cli")
+            }),
+        );
+        let path = homes
+            .iter()
+            .map(|home| home.join("annotations").join(&name))
+            .find(|path| path.is_file())
+            .unwrap_or_else(|| homes[0].join("annotations").join(&name));
         let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
         Ok(annotation_title(&text))
     }

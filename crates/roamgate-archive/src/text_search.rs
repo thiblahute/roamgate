@@ -19,7 +19,7 @@ use roamgate_agents::js::{js_lower, js_trim, parse_line, utf16_prefix};
 use roamgate_agents::{Agent, ParseState};
 use serde::{Deserialize, Serialize};
 
-use crate::hosts::{ArchiveRuntime, enabled_adapters, local_root, resolve_hosts};
+use crate::hosts::{ArchiveRuntime, enabled_adapters, local_roots, resolve_hosts};
 use crate::lines::{CompleteLines, file_range};
 use crate::settings::{
     ArchiveRule, ArchiveSettings, IndexLevel, RuleSubject, any_rule_matches, index_level_for,
@@ -449,9 +449,9 @@ pub fn live_overlay(
             if !agent.indexable() {
                 continue;
             }
-            let root = local_root(agent, me, runtime);
-            let mut candidates: Vec<(PathBuf, String, u64, bool)> = list_files(&root, agent)
-                .into_iter()
+            let mut candidates: Vec<(PathBuf, String, u64, bool)> = local_roots(agent, me, runtime)
+                .iter()
+                .flat_map(|root| list_files(root, agent))
                 .map(|file| (file.path, file.relpath, file.size, false))
                 .collect();
             for extra in agent.extra_files() {

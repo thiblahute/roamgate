@@ -322,6 +322,20 @@ impl Agent {
         }
     }
 
+    /// The session roots account profiles keep apart from the user's own
+    /// ([`Self::root_for`]), under Roamgate's data root: Claude's and
+    /// Codex's that could not be linked to the user's, and every `agy`
+    /// account's conversations.
+    pub fn account_roots(self, data_root: &Path) -> Vec<PathBuf> {
+        use roamgate_accounts::{AccountAgent, session_roots};
+        match self {
+            Agent::Claude => session_roots(data_root, AccountAgent::Claude),
+            Agent::Codex => session_roots(data_root, AccountAgent::Codex),
+            Agent::Antigravity => session_roots(data_root, AccountAgent::Agy),
+            Agent::Pi | Agent::Grok | Agent::Muse => Vec::new(),
+        }
+    }
+
     /// rsync filter arguments that select the session files under the root.
     pub fn rsync_filters(self) -> &'static [&'static str] {
         match self {

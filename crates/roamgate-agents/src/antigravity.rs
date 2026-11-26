@@ -246,6 +246,41 @@ pub fn antigravity_conversations_root(env: &AgentEnv) -> PathBuf {
         .unwrap_or_else(|| antigravity_home(env).join("conversations"))
 }
 
+/// Every conversations root: the user's own, then each `agy` account's.
+pub fn antigravity_conversation_roots(env: &AgentEnv) -> Vec<PathBuf> {
+    let mut roots = vec![antigravity_conversations_root(env)];
+    roots.extend(env.account_session_roots(roamgate_accounts::AccountAgent::Agy));
+    roots
+}
+
+/// [`find_antigravity_session_by_id`] in the first root that has it.
+pub fn find_antigravity_session_by_id_in(
+    id: &str,
+    cwd: &str,
+    roots: &[PathBuf],
+) -> Option<AntigravityDescriptor> {
+    roots
+        .iter()
+        .find_map(|root| find_antigravity_session_by_id(id, cwd, root))
+}
+
+/// [`find_antigravity_session_for_cwd`]: the newest of every root's.
+pub fn find_antigravity_session_for_cwd_in(
+    cwd: &str,
+    roots: &[PathBuf],
+) -> Option<AntigravityDescriptor> {
+    roots
+        .iter()
+        .filter_map(|root| find_antigravity_session_for_cwd(cwd, root))
+        .reduce(|best, each| {
+            if each.file.mtime_ms > best.file.mtime_ms {
+                each
+            } else {
+                best
+            }
+        })
+}
+
 fn same_directory(left: &str, right: &str) -> bool {
     crate::paths::resolve(left) == crate::paths::resolve(right)
 }
@@ -1092,5 +1127,37 @@ pub(crate) mod tests {
         let path = root.path().join("not-a-db.db");
         std::fs::write(&path, "this is not an sqlite database at all").unwrap();
         assert!(read_antigravity_session_records(&path.to_string_lossy()).is_empty());
+    }
+
+    #[test]
+    fn sessions_are_found_in_every_account_home() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let data = temp.path().join("data");
+        let env = AgentEnv {
+            home: home.clone(),
+            vars: [(
+                "ROAMGATE_DATA_ROOT".to_owned(),
+                data.to_string_lossy().into_owned(),
+            )]
+            .into(),
+        };
+        let account =
+            roamgate_accounts::account_dir(&data, roamgate_accounts::AccountAgent::Agy, "work");
+        let own_root = antigravity_conversations_root(&env);
+        let account_root = roamgate_accounts::agy_conversations_root(&account);
+        assert_eq!(
+            antigravity_conversation_roots(&env),
+            vec![own_root.clone()],
+            "no account home yet"
+        );
+        synthetic_db(&own_root, "older", "/repo", 1_000, "m");
+        synthetic_db(&account_root, "newer", "/repo", 9_000_000, "m");
+        let roots = antigravity_conversation_roots(&env);
+        assert_eq!(roots, vec![own_root, account_root]);
+        let found = find_antigravity_session_for_cwd_in("/repo", &roots).unwrap();
+        assert_eq!(found.session.session_id, "newer");
+        let found = find_antigravity_session_by_id_in("older", "", &roots).unwrap();
+        assert_eq!(found.session.session_id, "older");
     }
 }

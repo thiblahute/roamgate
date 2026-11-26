@@ -29,4 +29,5 @@ zstd = "0.13"
 rustix = { version = "1", features = ["fs", "process"] }
 
 [dev-dependencies]
+roamgate-accounts = { path = "../roamgate-accounts" }
 tempfile = "3"
