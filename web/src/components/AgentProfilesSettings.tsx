@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Gauge, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { MODEL_SLOTS } from "../../../shared/agentProfiles";
+import {
+  MODEL_SLOTS,
+  type ProfileAccountView,
+} from "../../../shared/agentProfiles";
 import {
   useConnectionClient,
   useConnectionReady,
@@ -22,6 +25,8 @@ export type ProfileRow = {
   env: ProfileEnvRow[];
   unset: string[];
   label?: string;
+  /** An account profile's sign-in: its id, directory and state. */
+  account?: ProfileAccountView;
 };
 type ProfilesState = {
   profiles: ProfileRow[];
@@ -43,7 +48,7 @@ export function profilesUpdate(state: ProfilesState) {
   return {
     list: state.profiles
       .filter((each) => !each.builtin)
-      .map(({ name, agent, command, env, unset }) => ({
+      .map(({ name, agent, command, env, unset, account }) => ({
         name,
         agent,
         ...(command ? { command } : {}),
@@ -51,6 +56,8 @@ export function profilesUpdate(state: ProfilesState) {
           file !== undefined ? { name: key, file } : { name: key, value },
         ),
         unset,
+        // The account's id only: its directory and state are the server's.
+        ...(account ? { account: { id: account.id } } : {}),
       })),
     default: state.default,
     return_after_reset: state.return_after_reset,
@@ -346,6 +353,8 @@ function ProfileEditor({
           }
         >
           <option value="claude">Claude Code</option>
+          <option value="codex">Codex</option>
+          <option value="agy">Antigravity</option>
         </select>
       </label>
       <label>
