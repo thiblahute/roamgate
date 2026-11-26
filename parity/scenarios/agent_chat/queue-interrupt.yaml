@@ -103,6 +103,10 @@ server:
 steps:
   - login: {}
   - connect: {}
+  # The pane holder is typed as the installed client: installed once the
+  # local agent socket listens.
+  - expect_log:
+      { contains: "agent socket listening key=@local", within_ms: 10000 }
   - call: agent_chat.handover
     id: handover
     no_wait: true
