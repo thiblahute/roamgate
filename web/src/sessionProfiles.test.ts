@@ -78,6 +78,37 @@ describe("session profiles", () => {
     );
   });
 
+  test("settings send back an account profile's id, not what the server adds", () => {
+    expect(
+      profilesUpdate({
+        profiles: [
+          {
+            name: "Work",
+            agent: "claude",
+            builtin: false,
+            env: [],
+            unset: [],
+            account: {
+              id: "work",
+              dir: "/d/accounts/claude/work",
+              auth: "signed_in",
+            },
+          },
+        ],
+        default: "Work",
+        return_after_reset: false,
+      }).list,
+    ).toEqual([
+      {
+        name: "Work",
+        agent: "claude",
+        env: [],
+        unset: [],
+        account: { id: "work" },
+      },
+    ]);
+  });
+
   test("settings send back the user's profiles only, secrets as paths", () => {
     expect(
       profilesUpdate({
