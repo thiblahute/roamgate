@@ -2906,7 +2906,9 @@ lease keeps each agent's terminal flags apart (`agent_terminal_args`). A
 switch that fails before the incoming agent started gives the conversation
 back to the outgoing one. A restart mid-switch, before any process starts,
 gives it to the agent the lease names: undone before the lease moved,
-finished after (that agent is given the history again, first).
+finished after (that agent is given the history again, first). With
+`conversation.fallback_agent` set, a conversation the limit resumer pauses
+on a usage limit is switched to that agent and its pause skipped.
 
 ### Idle stop
 

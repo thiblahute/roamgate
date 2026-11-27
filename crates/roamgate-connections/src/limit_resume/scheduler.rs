@@ -158,6 +158,23 @@ pub struct LimitResumer {
     inner: Arc<Inner>,
 }
 
+/// A resumer that is not kept alive by this handle (for its own
+/// callbacks).
+#[derive(Clone)]
+pub struct WeakLimitResumer(std::sync::Weak<Inner>);
+
+impl WeakLimitResumer {
+    pub fn upgrade(&self) -> Option<LimitResumer> {
+        self.0.upgrade().map(|inner| LimitResumer { inner })
+    }
+}
+
+impl LimitResumer {
+    pub fn downgrade(&self) -> WeakLimitResumer {
+        WeakLimitResumer(Arc::downgrade(&self.inner))
+    }
+}
+
 /// What "Resume now" and "Don't resume" answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {

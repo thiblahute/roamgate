@@ -17,8 +17,8 @@ use roamgate_base::settings::sections::{
 };
 use roamgate_base::settings::{
     LEGACY_DEFAULT_CONNECTION_ID, MAX_IDLE_STOP_MINUTES, Settings, SettingsError, SettingsStore,
-    is_idle_stop_minutes, js_trim, normalize_title_suffix, ui_setting_key_is_valid,
-    ui_setting_value_error,
+    is_fallback_agent, is_idle_stop_minutes, js_trim, normalize_title_suffix,
+    ui_setting_key_is_valid, ui_setting_value_error,
 };
 use roamgate_connections::usage_limit::limit_resume_settings_of;
 use serde_json::{Map, Value, json};
@@ -241,18 +241,31 @@ impl SettingsService {
             }
             "settings.conversation.get" => {
                 let settings = self.store.read().await;
-                Ok(read(
-                    json!({ "idle_stop_minutes": settings.conversation_idle_stop_minutes() }),
-                ))
+                let mut result = json!({
+                    "idle_stop_minutes": settings.conversation_idle_stop_minutes()
+                });
+                if let Some(fallback) = settings.conversation_fallback_agent() {
+                    result["fallback_agent"] = json!(fallback);
+                }
+                Ok(read(result))
             }
             "settings.conversation.update" => {
-                let minutes = params_map.get("idle_stop_minutes");
-                if !is_idle_stop_minutes(minutes) || !only("idle_stop_minutes") {
+                let known = |key: &str| matches!(key, "idle_stop_minutes" | "fallback_agent");
+                let valid = !params_map.is_empty()
+                    && params_map.keys().all(|key| known(key))
+                    && params_map
+                        .get("idle_stop_minutes")
+                        .is_none_or(|minutes| is_idle_stop_minutes(Some(minutes)))
+                    && params_map
+                        .get("fallback_agent")
+                        .is_none_or(|agent| is_fallback_agent(Some(agent)));
+                if !valid {
                     return Err(format!(
-                        "settings.conversation.update takes only idle_stop_minutes: a whole number of minutes from 0 (never) to {MAX_IDLE_STOP_MINUTES}"
+                        "settings.conversation.update takes idle_stop_minutes (a whole number of minutes from 0, never, to {MAX_IDLE_STOP_MINUTES}) and fallback_agent (claude, agy or null)"
                     ));
                 }
-                let minutes = minutes.cloned().unwrap_or(Value::Null);
+                let minutes = params_map.get("idle_stop_minutes").cloned();
+                let fallback = params_map.get("fallback_agent").cloned();
                 let written = self
                     .write(|current| {
                         let mut conversation = current
@@ -260,14 +273,27 @@ impl SettingsService {
                             .and_then(Value::as_object)
                             .cloned()
                             .unwrap_or_default();
-                        conversation.insert("idle_stop_minutes".into(), minutes);
+                        if let Some(minutes) = minutes {
+                            conversation.insert("idle_stop_minutes".into(), minutes);
+                        }
+                        if let Some(fallback) = fallback {
+                            if fallback.is_null() {
+                                conversation.remove("fallback_agent");
+                            } else {
+                                conversation.insert("fallback_agent".into(), fallback);
+                            }
+                        }
                         current.with("conversation", Some(Value::Object(conversation)))
                     })
                     .await?;
+                let mut result = json!({
+                    "idle_stop_minutes": written.settings.conversation_idle_stop_minutes()
+                });
+                if let Some(fallback) = written.settings.conversation_fallback_agent() {
+                    result["fallback_agent"] = json!(fallback);
+                }
                 Ok(RpcAnswer {
-                    result: json!({
-                        "idle_stop_minutes": written.settings.conversation_idle_stop_minutes()
-                    }),
+                    result,
                     written: Some(written),
                 })
             }

@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Info, Moon } from "lucide-react";
+import { ArrowLeftRight, Info, Moon } from "lucide-react";
 import {
+  CONVERSATION_AGENTS,
+  type ConversationAgent,
   DEFAULT_IDLE_STOP_MINUTES,
+  agentDisplayName,
+  isConversationAgent,
   isIdleStopMinutes,
 } from "../../../shared/agentChat";
 import {
@@ -48,6 +52,9 @@ export function ConversationIdleSettings() {
   const client = useConnectionClient();
   const ready = useConnectionReady(client);
   const [minutes, setMinutes] = useState<number | null>(null);
+  const [fallbackAgent, setFallbackAgent] = useState<ConversationAgent | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sequence = useRef(0);
@@ -67,6 +74,11 @@ export function ConversationIdleSettings() {
       )
         return;
       setMinutes(result.idle_stop_minutes);
+      setFallbackAgent(
+        isConversationAgent(result?.fallback_agent)
+          ? result.fallback_agent
+          : null,
+      );
       setError(null);
     } catch (e) {
       if (
@@ -112,6 +124,43 @@ export function ConversationIdleSettings() {
       if (!isIdleStopMinutes(result?.idle_stop_minutes))
         throw new Error("Invalid idle stop setting");
       setMinutes(result.idle_stop_minutes);
+    } catch (e) {
+      if (
+        !mounted.current ||
+        !client.isCurrent() ||
+        request !== sequence.current
+      )
+        return;
+      setError((e as Error).message);
+    } finally {
+      if (mounted.current && request === sequence.current) {
+        pending.current = false;
+        setSaving(false);
+      }
+    }
+  };
+
+  const saveFallback = async (value: ConversationAgent | null) => {
+    if (pending.current || !client.isCurrent()) return;
+    pending.current = true;
+    setSaving(true);
+    setError(null);
+    const request = ++sequence.current;
+    try {
+      const result = await client.call("settings.conversation.update", {
+        fallback_agent: value,
+      });
+      if (
+        !mounted.current ||
+        !client.isCurrent() ||
+        request !== sequence.current
+      )
+        return;
+      setFallbackAgent(
+        isConversationAgent(result?.fallback_agent)
+          ? result.fallback_agent
+          : null,
+      );
     } catch (e) {
       if (
         !mounted.current ||
@@ -177,6 +226,38 @@ export function ConversationIdleSettings() {
           onChange={(value) => {
             const next = Number(value);
             if (isIdleStopMinutes(next) && next !== minutes) void save(next);
+          }}
+        />
+      </div>
+      <div className="config-preference-row">
+        <span className="config-item-icon">
+          <ArrowLeftRight size={15} />
+        </span>
+        <div className="config-item-copy">
+          <div className="configuration-setting-label">
+            <strong id="fallback-agent-label">At a usage limit</strong>
+          </div>
+          <span role="status">
+            {fallbackAgent
+              ? `A conversation that hits its usage limit continues on ${agentDisplayName(fallbackAgent)}`
+              : "A conversation that hits its usage limit waits for the reset"}
+          </span>
+        </div>
+        <ThemedSelect
+          aria-label="At a usage limit"
+          value={fallbackAgent ?? "none"}
+          options={[
+            { value: "none", label: "Wait", detail: "Wait for the reset" },
+            ...CONVERSATION_AGENTS.map((agent) => ({
+              value: agent,
+              label: agentDisplayName(agent),
+              detail: `Continue with ${agentDisplayName(agent)}`,
+            })),
+          ]}
+          disabled={minutes === null || saving || !client.isCurrent()}
+          onChange={(value) => {
+            const next = value === "none" ? null : (value as ConversationAgent);
+            if (next !== fallbackAgent) void saveFallback(next);
           }}
         />
       </div>

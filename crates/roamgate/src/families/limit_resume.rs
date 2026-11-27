@@ -34,9 +34,13 @@ use roamgate_connections::BoxFuture;
 use roamgate_connections::limit_resume::connection::{
     HostConnection, LimitConnection, LimitHost, ModPane, OwnedPane,
 };
-use roamgate_connections::limit_resume::scheduler::{LimitResumer, ResumerOptions, Timings};
+use roamgate_connections::limit_resume::scheduler::{
+    LimitResumer, ResumerOptions, Timings, WeakLimitResumer,
+};
 use roamgate_connections::limit_resume::store::{LimitResumeStore, StoreFile};
-use roamgate_connections::usage_limit::{LIMIT_PAUSES_EVENT, LimitPause, LimitResumeSettings};
+use roamgate_connections::usage_limit::{
+    LIMIT_PAUSES_EVENT, LimitPause, LimitPauseState, LimitResumeSettings, PaneOwner,
+};
 use serde_json::{Value, json};
 
 pub const FAMILY: &str = "limit_resume";
@@ -241,10 +245,32 @@ fn resumer(cx: &FamilyContext, owned: bool) -> LimitResumer {
         StoreFile::ReadOnly(Some(path))
     };
     let store = LimitResumeStore::new(file, Arc::new(move || clock.now()));
+    // A conversation that hit its limit continues on the fallback agent,
+    // once per limit; set once the resumer exists.
+    let fallen_back: Arc<Mutex<std::collections::HashSet<(String, String, i64)>>> = Arc::default();
+    let this: Arc<std::sync::OnceLock<WeakLimitResumer>> = Arc::default();
     let on_change: Option<OnChange> = owned.then(|| {
         let cx = cx.clone();
+        let this = this.clone();
         Arc::new(move |connection_id: &str, pauses: Vec<LimitPause>| {
             let generation = generations.lock().unwrap().get(connection_id).copied();
+            for pause in &pauses {
+                if pause.owner == PaneOwner::Conversation
+                    && pause.state == LimitPauseState::Scheduled
+                    && fallen_back.lock().unwrap().insert((
+                        connection_id.to_owned(),
+                        pause.pane_id.clone(),
+                        pause.resets_at,
+                    ))
+                {
+                    tokio::spawn(fall_back(
+                        cx.clone(),
+                        this.clone(),
+                        connection_id.to_owned(),
+                        pause.pane_id.clone(),
+                    ));
+                }
+            }
             cx.push(Push {
                 message: json!({"event": LIMIT_PAUSES_EVENT, "data": {"pauses": pauses}}),
                 connection_id: Some(connection_id.to_owned()),
@@ -259,7 +285,7 @@ fn resumer(cx: &FamilyContext, owned: bool) -> LimitResumer {
             logger.log(level, message, Some(&fields));
         }) as Log
     });
-    LimitResumer::new(ResumerOptions {
+    let resumer = LimitResumer::new(ResumerOptions {
         connections,
         settings,
         store,
@@ -268,7 +294,41 @@ fn resumer(cx: &FamilyContext, owned: bool) -> LimitResumer {
         clock: cx.clock.clone(),
         timings: Timings::default(),
         observer: !owned,
-    })
+    });
+    let _ = this.set(resumer.downgrade());
+    resumer
+}
+
+/// Moves a conversation that hit its usage limit to the fallback agent
+/// (`conversation.fallback_agent`), if one is set; once it moved, the
+/// pause is skipped: nothing is resumed on the old agent at the reset.
+async fn fall_back(
+    cx: FamilyContext,
+    resumer: Arc<std::sync::OnceLock<WeakLimitResumer>>,
+    connection_id: String,
+    pane_id: String,
+) {
+    let settings = super::settings::read_shared(&cx).await;
+    let Some(agent) = settings.conversation_fallback_agent().map(str::to_owned) else {
+        return;
+    };
+    let switched = super::standalone::call(
+        &cx,
+        "internal.conversation.switch_agent",
+        json!({
+            "connection_id": connection_id,
+            "pane_id": pane_id,
+            "agent": agent,
+            "reason": "usage_limit",
+        }),
+    )
+    .await;
+    let moved = switched.as_ref().is_ok_and(|answer| {
+        answer.get("ok") == Some(&Value::Bool(true)) && answer.get("unchanged").is_none()
+    });
+    if moved && let Some(resumer) = resumer.get().and_then(WeakLimitResumer::upgrade) {
+        let _ = resumer.set_skip(&connection_id, &pane_id, true).await;
+    }
 }
 
 impl LimitResumeFamily {

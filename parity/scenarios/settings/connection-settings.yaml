@@ -37,8 +37,20 @@ steps:
     params: { idle_stop_minutes: -1 }
     error:
       {
-        message: "{{contains:settings.conversation.update takes only idle_stop_minutes}}",
+        message: "{{contains:settings.conversation.update takes idle_stop_minutes}}",
       }
+  # A conversation that hits its usage limit can move to another agent.
+  - call: settings.conversation.update
+    params: { fallback_agent: agy }
+    reply: { idle_stop_minutes: 15, fallback_agent: agy, $exact: true }
+  - call: settings.conversation.get
+    reply: { idle_stop_minutes: 15, fallback_agent: agy, $exact: true }
+  - call: settings.conversation.update
+    params: { fallback_agent: null }
+    reply: { idle_stop_minutes: 15, $exact: true }
+  - call: settings.conversation.update
+    params: { fallback_agent: gpt }
+    error: { message: "{{contains:fallback_agent (claude, agy or null)}}" }
   - call: settings.limit_resume.update
     params: { enabled: false, message: "  go on  ", margin_seconds: 30 }
     reply: { enabled: false, message: go on, margin_seconds: 30 }
@@ -117,7 +129,7 @@ contract_exceptions:
       surface: rpc.request,
       name: settings.conversation.update,
       kind: mismatch,
-      reason: "a refused update on purpose: a negative minute count",
+      reason: "refused updates on purpose: a negative minute count, an unknown agent",
     }
   - {
       surface: rpc.request,
