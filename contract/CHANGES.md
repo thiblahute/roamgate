@@ -6,6 +6,20 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.49
+
+inventory: 70d4b01c5087708a8b0d7a51e7a2eb30bc9dfbafdaae7c453fe4d35ee964af91
+
+A conversation that hits its usage limit can continue on another agent
+instead of waiting for the reset.
+
+- rpc: `settings.conversation.get` and `.update` carry `fallback_agent`
+  (`claude` or `agy`; an update's `null` clears it); an update takes either
+  key. Family: settings.
+- channel: the limit resumer calls `internal.conversation.switch_agent`
+  with `reason: usage_limit` when it pauses a conversation and a fallback
+  agent is set, then skips that pause. Family: limit_resume.
+
 ## 1.48
 
 inventory: 70d4b01c5087708a8b0d7a51e7a2eb30bc9dfbafdaae7c453fe4d35ee964af91
