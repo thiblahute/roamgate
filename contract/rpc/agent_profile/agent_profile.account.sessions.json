@@ -68,6 +68,9 @@
                 }
               },
               "required": ["connection_id", "pane_id"]
+            },
+            "pinned": {
+              "type": "boolean"
             }
           },
           "required": [

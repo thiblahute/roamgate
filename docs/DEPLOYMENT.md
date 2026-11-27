@@ -1048,7 +1048,12 @@ told what changed, once for all of them (the `account_usage` push); the
 agent profiles settings show each account's windows as bars with their
 reset times.
 
-Roamgate records which account each session runs on, from when it
+The **Usage** view (`Option+U` / `Alt+U`, the menu, or the header's usage
+chip) shows every account's reading, the chain, the sessions that spent
+each account (`agent_profile.account.sessions`, named by their pane or
+their transcript's title) and the chain's recent moves
+(`agent_profile.account.switches`, kept in `accounts/switches.jsonl`, the
+last 500). Roamgate records which account each session runs on, from when it
 starts or finds the session there until it moves to another profile
 (`accounts/sessions.json`). **Sessions this week** on an account
 (`agent_profile.account.sessions`, any window) lists those sessions with

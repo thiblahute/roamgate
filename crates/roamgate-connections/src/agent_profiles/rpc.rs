@@ -671,6 +671,12 @@ async fn account_rpc(
             let since = at("since", until - 7 * 24 * 60 * 60 * 1000);
             let mut report =
                 super::account_usage::sessions_report(&context.home, &profile, since, until).await;
+            if let Some(sessions) = report.get_mut("sessions").and_then(Value::as_array_mut) {
+                for session in sessions {
+                    let id = session["session_id"].as_str().unwrap_or("").to_owned();
+                    session["pinned"] = json!(context.store.pinned(&id));
+                }
+            }
             report["profile"] = json!(name);
             report["since"] = json!(since);
             report["until"] = json!(until);

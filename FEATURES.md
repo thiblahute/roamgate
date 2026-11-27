@@ -2705,6 +2705,19 @@ search the same way. See
   attention on each device, agent states, idle time and recording gaps, never
   terminal contents. Turn it on in
   [settings](docs/DEPLOYMENT.md#activity-log).
+- **Usage** (the command menu, the application menu, `Option+U` / `Alt+U`,
+  or the header's usage chip, which shows the default account and its
+  tightest window, such as "work 61% 7d", yellow from 80 % and red from
+  95 %) shows each account as a card: its agent, plan and email, its
+  sign-in (or that clauth manages it), how fresh its reading is, its
+  windows as bars with their reset times, its place in the account chain,
+  the Default badge or **Make default**; the chain's order, auto-switch,
+  lines and the account it would move to next (**Edit the chain** opens
+  the settings); the sessions that spent each account today or this week,
+  by name and workspace, the most spent first, with their tokens, pinned
+  ones marked and live ones one click away; and the chain's recent
+  switches with the reading behind each. Its numbers come from the
+  server's usage pushes, never polled by the page.
 - **Activity** (one entry in the command menu and the application menu, or
   `Option+A` / `Alt+A`, Zen mode included) opens the activity timeline, a day of
   that log: a lane for you, coloured per workspace (Herdr's TUI focus hatched,
@@ -2788,6 +2801,7 @@ and is skipped, with a note, on a browser that does not match.
 | Call the voice companion                                              | `Cmd+Option+V`          | `Ctrl+Alt+V`                            |
 | Ask the companion in writing, without a call                          | `Cmd+Option+Shift+V`    | `Ctrl+Alt+Shift+V`                      |
 | Activity timeline                                                     | `Option+A`              | `Alt+A`                                 |
+| Usage (accounts)                                                      | `Option+U`              | `Alt+U`                                 |
 | Reviews inbox                                                         | `Option+M`              | `Alt+M`                                 |
 | Work board                                                            | `Option+W`              | `Alt+W`                                 |
 | Zen mode (desktop)                                                    | `Cmd+Shift+Z`           | `Ctrl+Alt+Z`                            |

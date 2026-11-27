@@ -21,6 +21,7 @@ const descriptions: [ShortcutId, string, string][] = [
   ["companion.call", "Call the voice companion", "Global"],
   ["companion.ask", "Ask the companion in writing, without a call", "Global"],
   ["activity.open", "Open or close the activity timeline", "Global"],
+  ["usage.open", "Open or close the accounts' Usage view", "Global"],
   ["reviews.inbox", "Open or close the inspector's Reviews tab", "Global"],
   ["work.board", "Open or close the inspector's Work tab", "Global"],
   ["zen.toggle", "Toggle Zen mode on desktop", "Global"],

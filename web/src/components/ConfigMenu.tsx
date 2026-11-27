@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   ChartGantt,
+  Gauge,
   FileSearch,
   MessageCircleQuestionMark,
   PhoneCall,
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 import packageJson from "../../package.json";
 import { ACTIVITY_ENTRY, openActivityTimeline } from "../activityTimelineOpen";
+import { USAGE_ENTRY, openUsageView } from "../usageViewOpen";
 import { ARCHIVE_SEARCH_ENTRY, openArchiveSearch } from "../archiveSearchOpen";
 import { MR_REVIEWS_ENTRY, openMrReviews } from "../mrReviewsOpen";
 import { openWork, WORK_ENTRY } from "../workOpen";
@@ -390,6 +392,16 @@ export function ConfigMenu({
                   onClick={() => {
                     setOpen(false);
                     openActivityTimeline();
+                  }}
+                />
+                <ConfigMenuItem
+                  icon={<Gauge size={15} />}
+                  label={USAGE_ENTRY.title}
+                  description={`${USAGE_ENTRY.detail}${layout.mobile ? "" : ` \u00b7 ${shortcutLabel("usage.open")}`}`}
+                  className="config-menu-item-row"
+                  onClick={() => {
+                    setOpen(false);
+                    openUsageView();
                   }}
                 />
                 <ConfigMenuItem
