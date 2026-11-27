@@ -372,6 +372,34 @@ fn tool_uses_results_and_the_users_replayed_message() {
 }
 
 #[test]
+fn a_replayed_local_command_reads_as_typed_and_its_output_is_not_the_users() {
+    let items = parse_all(json!([
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>opus</command-args>",
+        },
+        "uuid": "u-1",
+        "isReplay": true,
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<local-command-stdout>Set model to opus (claude-opus-5-5)</local-command-stdout>",
+        },
+        "uuid": "u-2",
+        "isReplay": true,
+      },
+    ]));
+    assert_eq!(
+        json!(kinds(&items, &["user_replay"])),
+        json!([{ "kind": "user_replay", "uuid": "u-1", "text": "/model opus", "images": 0 }])
+    );
+}
+
+#[test]
 fn an_interrupt_abandons_the_streamed_blocks() {
     let items = parse_all(json!([
       {"$wrap": { "type": "message_start", "message": { "id": "msg_3" } }},

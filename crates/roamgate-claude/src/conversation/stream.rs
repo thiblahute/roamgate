@@ -8,6 +8,9 @@ use indexmap::IndexMap;
 use roamgate_agents::js::{self, Obj};
 use roamgate_agents::obj;
 use roamgate_agents::shared::bash_mode::split_bash_mode;
+use roamgate_agents::shared::slash_command::{
+    local_command_output, parse_slash_command, slash_command_text,
+};
 use serde_json::{Value, json};
 
 const INTERRUPTED: &str = "[Request interrupted by user]";
@@ -317,6 +320,16 @@ impl StreamParser {
             return vec![obj! {"kind" => "interrupted"}];
         }
         if js::is_true(event.get("isReplay")) {
+            // What a local command printed is not the user's words: Claude
+            // Code also sends it as an assistant message
+            // (`local_command_source`), the chat's command output.
+            if local_command_output(&text).is_some() {
+                return Vec::new();
+            }
+            // A slash command reads as typed ("/model opus"), not as tags.
+            let text = parse_slash_command(&text)
+                .map(|command| slash_command_text(&command))
+                .unwrap_or(text);
             return vec![obj! {
                 "kind" => "user_replay",
                 "uuid" => str_of(event.get("uuid")),
