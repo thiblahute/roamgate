@@ -93,3 +93,14 @@ steps:
   # not listed): the move is logged as refused, the session left as it was.
   - expect_log:
       { contains: "from=Work to=Perso why=usage_limit", within_ms: 10000 }
+  - call: agent_profile.account.switches
+    reply:
+      switches:
+        - {
+            kind: session,
+            from: Work,
+            to: Perso,
+            why: usage_limit,
+            session_id: 11111111-2222-4333-8444-555555555555,
+            ok: false,
+          }

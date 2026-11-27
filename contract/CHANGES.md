@@ -6,6 +6,21 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.55
+
+inventory: ab0c05858e379a60d9f6f108c4754b64217d347539ecadc812441871a8c82b19
+
+The Usage view reads the account chain's moves and names the sessions that
+spent an account.
+
+- rpc: `agent_profile.account.switches` (`limit`): the chain's last moves,
+  newest first (`at`, `kind`, `from`, `to`, `why`, `reading`,
+  `session_id`, `ok`, `error`), kept in `accounts/switches.jsonl`. Family:
+  agent_profile.
+- rpc: `agent_profile.account.sessions` gives each session's `title`
+  (its transcript's summary, else the first thing asked), `cwd` and the
+  `pane` it last ran in. Family: agent_profile.
+
 ## 1.54
 
 inventory: ab63cd4214c93ad2124286d8c01895c2c6a6b522812a37f79584261b63e0f4f4

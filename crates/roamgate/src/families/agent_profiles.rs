@@ -296,6 +296,17 @@ async fn move_session(
     fields.insert("to".into(), json!(movement.to));
     fields.insert("why".into(), json!(why));
     fields.insert("reading".into(), json!(crossing));
+    let _ = switch_log().append(&roamgate_accounts::sessions::SwitchEntry {
+        at: cx.clock.now(),
+        kind: "session".into(),
+        from: session.profile.clone(),
+        to: movement.to.clone(),
+        why: why.into(),
+        reading: crossing.clone(),
+        session_id: Some(session.session_id.clone()),
+        ok: done.is_ok(),
+        error: done.as_ref().err().cloned(),
+    });
     match &done {
         Ok(()) => {
             logger.info("accounts: session moved to another account", Some(&fields));
@@ -358,6 +369,33 @@ async fn chain_tick(cx: &FamilyContext, store: &Arc<SessionProfiles>, logger: &L
             })
             .await;
         let line = roamgate_accounts::chain::move_log(moved, "accounts: default account moved");
+        let _ = switch_log().append(&roamgate_accounts::sessions::SwitchEntry {
+            at: now,
+            kind: "default".into(),
+            from: moved.from.clone(),
+            to: moved.to.clone(),
+            why: if moved.crossing.is_some() {
+                "account_line".into()
+            } else {
+                "preferred_day".into()
+            },
+            reading: moved.crossing.as_ref().map(|crossing| {
+                format!(
+                    "{} at {:.1}% (line {:.0}%{})",
+                    crossing.label,
+                    crossing.utilization,
+                    crossing.line,
+                    if crossing.projected {
+                        ", projected"
+                    } else {
+                        ""
+                    }
+                )
+            }),
+            session_id: None,
+            ok: written.is_ok(),
+            error: written.as_ref().err().map(|error| error.message.clone()),
+        });
         match written {
             Ok(_) => logger.info(&line, None),
             Err(error) => logger.warn(&format!("{line}: not written: {}", error.message), None),
@@ -500,6 +538,16 @@ async fn import_rpc(cx: &FamilyContext, action: &str, params: &Value) -> Result<
     }
 }
 
+/// The account chain's switch log, in the data root.
+fn switch_log() -> roamgate_accounts::sessions::SwitchLog {
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    roamgate_accounts::sessions::SwitchLog::new(
+        &roamgate_connections::agent_profiles::store::data_root_for(&home),
+    )
+}
+
 /// How often the usage scheduler looks for accounts due a reading (each
 /// account is read about every 90 s, see roamgate_accounts::usage).
 const USAGE_CHECK: Duration = Duration::from_secs(15);
@@ -624,6 +672,7 @@ fn rpc_context(cx: &FamilyContext, store: Arc<SessionProfiles>) -> ProfileRpcCon
             .unwrap_or_default(),
         logins: LOGINS.clone(),
         usage: Some(USAGE.clone()),
+        connection_id: None,
     }
 }
 
@@ -868,7 +917,8 @@ impl CoreFamily for AgentProfilesFamily {
             let params = call.params.as_object().unwrap_or(&empty);
             let host =
                 ReverseHost::new(&cx, call.ctx.connection_id.clone(), running.logger.clone());
-            let context = rpc_context(&cx, running.store.clone());
+            let mut context = rpc_context(&cx, running.store.clone());
+            context.connection_id = call.ctx.connection_id.clone();
             let result = handle_profile_rpc(&call.method, params, &host, &context).await;
             // The front's store hears each write before the answer goes out.
             running.notifier.flush().await;

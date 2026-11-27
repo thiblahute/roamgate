@@ -49,6 +49,25 @@
             },
             "tokens": {
               "type": ["object", "null"]
+            },
+            "title": {
+              "type": ["string", "null"],
+              "description": "its transcript's summary, else the first thing asked"
+            },
+            "cwd": {
+              "type": ["string", "null"]
+            },
+            "pane": {
+              "type": ["object", "null"],
+              "properties": {
+                "connection_id": {
+                  "type": "string"
+                },
+                "pane_id": {
+                  "type": "string"
+                }
+              },
+              "required": ["connection_id", "pane_id"]
             }
           },
           "required": [
