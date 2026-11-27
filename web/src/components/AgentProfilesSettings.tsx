@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   Copy,
   Gauge,
   LogIn,
@@ -308,6 +310,13 @@ export function AgentProfilesSettings() {
           </li>
         ))}
       </ul>
+      {state.profiles.some((profile) => profile.account) ? (
+        <ChainEditor
+          state={state}
+          saving={saving}
+          onSave={(chain) => void save({ ...state, chain })}
+        />
+      ) : null}
       <label className="agent-profiles-return">
         <input
           type="checkbox"
@@ -354,6 +363,203 @@ export function AgentProfilesSettings() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function blankChain(): AccountChain {
+  return {
+    accounts: [],
+    auto_switch: false,
+    five_hour_line: 95,
+    weekly_line: 98,
+    walk: "chain",
+  };
+}
+
+/** The account chain: its accounts in order, its lines, the preferred
+ * account and its days, the last resort, the walk order, auto-switch. */
+function ChainEditor({
+  state,
+  saving,
+  onSave,
+}: {
+  state: ProfilesState;
+  saving: boolean;
+  onSave: (chain: AccountChain) => void;
+}) {
+  const chain = state.chain ?? blankChain();
+  const accounts = state.profiles.filter((profile) => profile.account);
+  const outside = accounts.filter(
+    (profile) => !chain.accounts.includes(profile.name),
+  );
+  const set = (change: Partial<AccountChain>) =>
+    onSave({ ...chain, ...change });
+  const move = (index: number, by: number) => {
+    const next = [...chain.accounts];
+    const [item] = next.splice(index, 1);
+    next.splice(index + by, 0, item!);
+    set({ accounts: next });
+  };
+  const choice = (key: "preferred" | "last_resort", value: string) => {
+    const next = { ...chain };
+    if (value) next[key] = value;
+    else delete next[key];
+    onSave(next);
+  };
+  return (
+    <fieldset className="agent-profiles-chain" disabled={saving}>
+      <legend>Account chain</legend>
+      <label className="agent-profiles-return">
+        <input
+          type="checkbox"
+          checked={chain.auto_switch}
+          onChange={(event) => set({ auto_switch: event.target.checked })}
+        />
+        Switch on its own: the default account moves to the next one past a
+        line, with the sessions on it; a session stopped by a usage limit goes
+        on with the next account
+      </label>
+      <ol>
+        {chain.accounts.map((name, index) => (
+          <li key={name}>
+            <span>{name}</span>
+            <button
+              type="button"
+              className="ghost"
+              aria-label={`Move ${name} up`}
+              disabled={index === 0}
+              onClick={() => move(index, -1)}
+            >
+              <ArrowUp size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              aria-label={`Move ${name} down`}
+              disabled={index === chain.accounts.length - 1}
+              onClick={() => move(index, 1)}
+            >
+              <ArrowDown size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              aria-label={`Take ${name} out of the chain`}
+              onClick={() =>
+                set({
+                  accounts: chain.accounts.filter((each) => each !== name),
+                })
+              }
+            >
+              <Trash2 size={14} aria-hidden="true" />
+            </button>
+          </li>
+        ))}
+      </ol>
+      {outside.length ? (
+        <label>
+          Add
+          <select
+            value=""
+            onChange={(event) =>
+              event.target.value &&
+              set({ accounts: [...chain.accounts, event.target.value] })
+            }
+          >
+            <option value="">an account...</option>
+            {outside.map((profile) => (
+              <option key={profile.name} value={profile.name}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <div className="agent-profiles-chain-row">
+        <label>
+          5-hour line %
+          <input
+            type="number"
+            min={1}
+            max={100}
+            defaultValue={chain.five_hour_line}
+            onBlur={(event) =>
+              set({ five_hour_line: Number(event.target.value) || 95 })
+            }
+          />
+        </label>
+        <label>
+          Weekly line %
+          <input
+            type="number"
+            min={1}
+            max={100}
+            defaultValue={chain.weekly_line}
+            onBlur={(event) =>
+              set({ weekly_line: Number(event.target.value) || 98 })
+            }
+          />
+        </label>
+        <label>
+          Order
+          <select
+            value={chain.walk}
+            onChange={(event) =>
+              set({ walk: event.target.value as AccountChain["walk"] })
+            }
+          >
+            <option value="chain">The chain's</option>
+            <option value="soonest_reset">Soonest weekly reset</option>
+            <option value="most_headroom">Most headroom</option>
+          </select>
+        </label>
+      </div>
+      <div className="agent-profiles-chain-row">
+        <label>
+          Preferred
+          <select
+            value={chain.preferred ?? ""}
+            onChange={(event) => choice("preferred", event.target.value)}
+          >
+            <option value="">None</option>
+            {chain.accounts.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+        </label>
+        <span className="agent-profiles-chain-days">
+          {DAYS.map((day, index) => (
+            <label key={day}>
+              <input
+                type="checkbox"
+                checked={(chain.preferred_days ?? []).includes(index)}
+                onChange={(event) => {
+                  const days = new Set(chain.preferred_days ?? []);
+                  if (event.target.checked) days.add(index);
+                  else days.delete(index);
+                  set({ preferred_days: [...days].sort((a, b) => a - b) });
+                }}
+              />
+              {day}
+            </label>
+          ))}
+        </span>
+        <label>
+          Last resort
+          <select
+            value={chain.last_resort ?? ""}
+            onChange={(event) => choice("last_resort", event.target.value)}
+          >
+            <option value="">None</option>
+            {chain.accounts.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </fieldset>
   );
 }
 

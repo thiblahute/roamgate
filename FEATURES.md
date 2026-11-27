@@ -1168,7 +1168,14 @@ Inspector state is scoped to each checkout; see
   before they expire. Each account's usage (5-hour and 7-day windows,
   per-model weeks, agy's windows per model group, reset times) shows as bars, read once for every
   browser, and **Sessions this week** lists the sessions that spent it,
-  with their tokens. See [Agent
+  with their tokens. An **account chain** orders the accounts: past a
+  line (5 hours at 95 %, the week at 98 %, or a burn that will get there)
+  the default account moves to the next one with the sessions on it, a
+  session a usage limit stops goes on with the next account (another
+  agent's through the conversation handoff, "Continued on <account>" in
+  its chat), and a session pinned to its account stays there until 100 %;
+  each session's profile menu offers **Pin to**, **Unpin** and **Move
+  to** an account. See [Agent
   profiles](docs/DEPLOYMENT.md#agent-profiles) and [Account
   profiles](docs/DEPLOYMENT.md#account-profiles).
   With Roamgate's Claude Code mod the chip's title and menu also show the
