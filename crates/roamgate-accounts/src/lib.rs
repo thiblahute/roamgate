@@ -25,6 +25,7 @@ pub use roamgate_base::settings::sections::account_id_valid;
 pub mod agy_auth;
 pub mod chain;
 pub mod claude_auth;
+pub mod clauth;
 pub mod codex_auth;
 mod files;
 pub mod json_sync;

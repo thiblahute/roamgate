@@ -6,6 +6,24 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.54
+
+inventory: ab63cd4214c93ad2124286d8c01895c2c6a6b522812a37f79584261b63e0f4f4
+
+clauth's profiles import as account profiles: each becomes an account
+profile of the same name whose sign-in stays clauth's (a link to its
+file, never refreshed, signed out or rewritten by Roamgate) until the
+user takes it over; clauth's chain, lines, preferred account and days,
+last resort, walk order and active profile carry over. Nothing under
+`~/.clauth` is ever written.
+
+- rpc: `agent_profile.import.scan` (what `~/.clauth` and the user's own
+  agy hold, no secret), `agent_profile.import.apply` (`accounts`,
+  `agy_default`), `agent_profile.import.take_over` (`profile`). Family:
+  agent_profile.
+- rpc: `settings.profiles.get`'s account gives `clauth` (the clauth
+  profile) while clauth manages its sign-in. Family: settings.
+
 ## 1.53
 
 inventory: 91f572a7a364cb6f8336b0f1ee55b966554e5c724f54fc42c127f19ef9b5c491

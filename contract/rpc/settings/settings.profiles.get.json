@@ -34,6 +34,10 @@
                     "signed_out",
                     "needs_relogin"
                   ]
+                },
+                "clauth": {
+                  "type": "string",
+                  "description": "the clauth profile whose sign-in it reads, while clauth manages it"
                 }
               },
               "required": ["id", "dir", "auth"]

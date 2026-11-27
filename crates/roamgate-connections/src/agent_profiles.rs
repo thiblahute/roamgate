@@ -12,10 +12,12 @@
 //! | [`discovery`] | the models a profile's server lists (profiles/models.ts) |
 //! | [`account_usage`] | which sessions ran on each account, and the tokens they spent there |
 //! | [`chain`] | the account chain over the settings: its members, and the account a session of another agent starts on |
+//! | [`clauth_import`] | importing clauth's profiles as account profiles |
 //! | [`rpc`] | `agent_profile.*` and the return after a limit's reset (profiles/rpc.ts) |
 
 pub mod account_usage;
 pub mod chain;
+pub mod clauth_import;
 pub mod discovery;
 pub mod rpc;
 pub mod shared;

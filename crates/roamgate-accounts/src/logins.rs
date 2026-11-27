@@ -97,6 +97,11 @@ impl Logins {
         if agent == AccountAgent::Agy {
             return Ok(agy_auth::check(&self.agy_program, dir, now_ms).await);
         }
+        if let Some(profile) = crate::clauth::managed_by_clauth(dir) {
+            return Err(format!(
+                "clauth manages this sign-in (its profile {profile}); take it over from clauth first"
+            ));
+        }
         let pending = {
             let mut logins = self.pending.lock().unwrap_or_else(|e| e.into_inner());
             logins.retain(|_, (_, _, at)| at.elapsed() < LOGIN_TTL);
@@ -133,6 +138,11 @@ impl Logins {
     /// Signs the account out (Claude, Codex); `agy` is signed out inside
     /// `agy`.
     pub fn logout(&self, agent: AccountAgent, dir: &Path) -> Result<AuthState, String> {
+        if let Some(profile) = crate::clauth::managed_by_clauth(dir) {
+            return Err(format!(
+                "clauth manages this sign-in (its profile {profile}); sign out there, or take it over first"
+            ));
+        }
         let done = match agent {
             AccountAgent::Claude => claude_auth::logout(dir),
             AccountAgent::Codex => codex_auth::logout(dir),
@@ -193,8 +203,10 @@ pub async fn maintain(
         }
     }
     if !claude_dirs.is_empty() {
+        // clauth's own files (imports it still manages) are never written.
         let stores: Vec<PathBuf> = claude_dirs
             .iter()
+            .filter(|dir| crate::clauth::managed_by_clauth(dir).is_none())
             .map(|dir| dir.join(".credentials.json"))
             .collect();
         let record = crate::accounts_root(data_root)

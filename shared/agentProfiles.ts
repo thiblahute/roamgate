@@ -486,6 +486,8 @@ export type ProfileAccountView = {
   dir?: string;
   /** Its sign-in (`settings.profiles.get` only). */
   auth?: AccountAuthState;
+  /** The clauth profile whose sign-in it reads, while clauth manages it. */
+  clauth?: string;
 };
 
 export function profileView(
