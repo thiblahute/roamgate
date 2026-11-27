@@ -2,8 +2,7 @@
 //! Claude Code headless over stream-json (the protocol driver, its codec,
 //! rewind, models and MCP servers), its TUI (the terminal driver) and the
 //! companion's memory directory, implementing roamgate-conversation's
-//! driver traits. [`drivers`] is every agent's drivers, for the core to
-//! give the conversation service.
+//! driver traits.
 
 pub mod claude;
 pub mod env;
@@ -29,8 +28,9 @@ pub fn claude_driver() -> ConversationDriver {
     }
 }
 
-/// Every agent's drivers (`drivers/index.ts`), Claude's first: the
-/// default, an older lease's agent.
+/// Claude's drivers alone, as a registry (the driver contract's); the
+/// server composes every agent's, Claude's first: the default, an older
+/// lease's agent.
 pub fn drivers() -> Drivers {
     Drivers::new(vec![claude_driver()])
 }

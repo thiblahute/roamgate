@@ -49,9 +49,58 @@ export const CLAUDE_BUILTIN_COMMANDS: AgentCommand[] = [
   { name: "vim", description: "Toggle Vim editing" },
 ];
 
+/** Antigravity CLI (`agy`) built-in slash commands. */
+export const AGY_BUILTIN_COMMANDS: AgentCommand[] = [
+  { name: "usage", description: "Show model quota usage" },
+  { name: "context", description: "Show context usage" },
+  {
+    name: "mode",
+    description: "Switch mode (default, accept-edits, auto, plan)",
+  },
+  { name: "model", description: "Choose the reasoning model" },
+  { name: "compact", description: "Compact conversation history" },
+  { name: "goal", description: "Run until a goal is finished" },
+  { name: "plan", description: "Plan carefully before executing" },
+  { name: "grill-me", description: "Interview to align on a plan" },
+  { name: "schedule", description: "Run on a schedule or timer" },
+  { name: "browser", description: "Invoke a browser agent" },
+  { name: "teamwork", description: "Invoke an autonomous agent team" },
+  { name: "learn", description: "Capture reusable skills or rules" },
+  { name: "boost", description: "Invoke the Boost orchestrator" },
+  { name: "swarm", description: "Run parallel agents on a task" },
+  { name: "help", description: "Show commands and keyboard shortcuts" },
+  { name: "config", description: "Open the settings editor" },
+  { name: "clear", description: "Clear the terminal and reset context" },
+  { name: "resume", description: "Open the conversation picker" },
+  { name: "fork", description: "Clone the conversation" },
+  { name: "rewind", description: "Roll back to an earlier message" },
+  { name: "rename", description: "Rename the current session" },
+  { name: "planning", description: "Enable multi-turn planning mode" },
+  { name: "fast", description: "Enable fast mode without reasoning plans" },
+  { name: "diff", description: "Review changes, turns, and commits" },
+  { name: "artifact", description: "Open the artifact review panel" },
+  { name: "agents", description: "Manage agents and subagents" },
+  { name: "tasks", description: "Monitor background shell tasks" },
+  { name: "mcp", description: "Manage MCP servers" },
+  { name: "skills", description: "Browse loaded skills" },
+  { name: "hooks", description: "Browse active script hooks" },
+  { name: "plugin", description: "Browse and manage plugins" },
+  { name: "permissions", description: "Manage tool permissions" },
+  { name: "keybindings", description: "Edit keyboard shortcuts" },
+  { name: "statusline", description: "Customize the status bar" },
+  { name: "title", description: "Configure terminal window title updates" },
+  { name: "add-dir", description: "Add a directory to the active workspace" },
+  { name: "open", description: "Open a path in the system editor" },
+  { name: "btw", description: "Ask a side question without interrupting" },
+  { name: "copy", description: "Copy the last agent response" },
+  { name: "feedback", description: "Open the feedback panel" },
+  { name: "logout", description: "Sign out and remove auth tokens" },
+  { name: "exit", description: "Exit Antigravity CLI" },
+];
+
 const REFRESH_MS = 60_000;
 
-/** The /commands a Claude pane offers: its own, then the session's. */
+/** The /commands a Claude or AGY pane offers: its own, then the session's. */
 export function useAgentCommands(pane: Pane, enabled: boolean): AgentCommand[] {
   const client = useConnectionClient();
   const scope = connectionClientScopeKey(
@@ -66,6 +115,7 @@ export function useAgentCommands(pane: Pane, enabled: boolean): AgentCommand[] {
     values: AgentCommand[];
   } | null>(null);
   const claude = enabled && pane.agent === "claude";
+  const agy = enabled && pane.agent === "agy";
   useEffect(() => {
     if (!claude) {
       setSession(null);
@@ -113,6 +163,7 @@ export function useAgentCommands(pane: Pane, enabled: boolean): AgentCommand[] {
     pane.tab_id,
     pane.workspace_id,
   ]);
+  if (agy) return AGY_BUILTIN_COMMANDS;
   if (!claude) return [];
   const builtin = new Set(CLAUDE_BUILTIN_COMMANDS.map((each) => each.name));
   return [
@@ -163,6 +214,24 @@ const CONVERSATION_BUILTINS = new Set([
   "rewind",
 ]);
 
+/** AGY commands that work in ACP conversation mode. */
+const AGY_CONVERSATION_BUILTINS = new Set([
+  "usage",
+  "context",
+  "mode",
+  "model",
+  "compact",
+  "goal",
+  "plan",
+  "grill-me",
+  "schedule",
+  "browser",
+  "teamwork",
+  "learn",
+  "boost",
+  "swarm",
+]);
+
 /** `/mcp`, with or without the arguments Claude Code's own command takes. */
 export function isMcpCommand(text: string): boolean {
   return /^\s*\/mcp(?:\s[\s\S]*)?$/.test(text);
@@ -171,7 +240,15 @@ export function isMcpCommand(text: string): boolean {
 /** The commands offered in conversation mode: no TUI-only ones. */
 export function conversationCommands(
   commands: readonly AgentCommand[],
+  kind: "claude" | "agy" = "claude",
 ): AgentCommand[] {
+  if (kind === "agy") {
+    const builtin = new Set(AGY_BUILTIN_COMMANDS.map((each) => each.name));
+    return commands.filter(
+      (each) =>
+        !builtin.has(each.name) || AGY_CONVERSATION_BUILTINS.has(each.name),
+    );
+  }
   const builtin = new Set(CLAUDE_BUILTIN_COMMANDS.map((each) => each.name));
   return commands.filter(
     (each) => !builtin.has(each.name) || CONVERSATION_BUILTINS.has(each.name),
@@ -180,13 +257,24 @@ export function conversationCommands(
 
 /**
  * Why a message cannot go to conversation mode, or null: a command only
- * Claude Code's terminal has. (A `!` line runs, as bash mode: shellLine.)
+ * the agent's terminal TUI has. (A `!` line runs, as bash mode: shellLine.)
  */
-export function conversationRefusal(text: string): string | null {
+export function conversationRefusal(
+  text: string,
+  kind: "claude" | "agy" = "claude",
+): string | null {
   const trimmed = text.trim();
   const command = /^\/([\w:.-]+)/.exec(trimmed)?.[1];
+  if (!command) return null;
+  if (kind === "agy") {
+    if (
+      !AGY_CONVERSATION_BUILTINS.has(command) &&
+      AGY_BUILTIN_COMMANDS.some((each) => each.name === command)
+    )
+      return `/${command} works only in the terminal: show the terminal to use it.`;
+    return null;
+  }
   if (
-    command &&
     !CONVERSATION_BUILTINS.has(command) &&
     CLAUDE_BUILTIN_COMMANDS.some((each) => each.name === command)
   )

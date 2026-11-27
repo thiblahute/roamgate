@@ -21,7 +21,7 @@ pub use roamgate_agents::shared::agent_models::{
 };
 
 use super::{Inner, obj_of, sv};
-use crate::driver::ApiKeyAnswer;
+use crate::driver::{ApiKeyAnswer, BoxFuture, CommandOutput};
 use crate::idle_stop::{IdleStopFacts, idle_stop_refusal};
 use crate::session::Prelude;
 use crate::shared::{Obj, lease_str};
@@ -433,6 +433,50 @@ impl Inner {
                     me.emit_shell(&pane, &delivered, true);
                 }
             }),
+        })
+    }
+
+    /// What runs a driver command's command line on the pane's host, in
+    /// the session's directory (`ShellRunner`, as a `!` line runs).
+    pub(crate) fn command_runner(&self, pane_id: &str) -> crate::session::CommandRunner {
+        let runner = self.options.run_shell.clone();
+        let cwd = self
+            .lease(pane_id)
+            .and_then(|lease| lease_str(&lease, "cwd").map(str::to_owned))
+            .unwrap_or_default();
+        Arc::new(move |command: String, timeout_ms: u64| {
+            let runner = runner.clone();
+            let cwd = cwd.clone();
+            Box::pin(async move {
+                let Some(runner) = runner else {
+                    return Err("commands cannot run on this connection".to_owned());
+                };
+                let captured = Arc::new(Mutex::new(ShellOutput::default()));
+                let sink = captured.clone();
+                let run = runner.run(
+                    &cwd,
+                    &command,
+                    Arc::new(move |output: ShellOutput| *sink.lock().unwrap() = output),
+                );
+                let stop = run.stop.clone();
+                match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), run.done)
+                    .await
+                {
+                    Ok(Ok(done)) => {
+                        let output = captured.lock().unwrap().clone();
+                        Ok(CommandOutput {
+                            code: done.code,
+                            stdout: output.stdout,
+                            stderr: output.stderr,
+                        })
+                    }
+                    Ok(Err(error)) => Err(error),
+                    Err(_) => {
+                        stop();
+                        Err(format!("it did not end within {} s", timeout_ms / 1000))
+                    }
+                }
+            }) as BoxFuture<'static, Result<CommandOutput, String>>
         })
     }
 

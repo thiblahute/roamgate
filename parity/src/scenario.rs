@@ -731,7 +731,21 @@ impl Runner {
                     }
                 }
             }
-            "fake_calls" => self.fake_calls(&step),
+            // `within_ms` in the spec: waits for the calls (a process the
+            // server's side starts after the step before answered).
+            "fake_calls" => {
+                let wait = step["fake_calls"].get("within_ms").and_then(Value::as_u64);
+                let deadline =
+                    tokio::time::Instant::now() + Duration::from_millis(wait.unwrap_or(0));
+                loop {
+                    match self.fake_calls(&step) {
+                        Err(_) if tokio::time::Instant::now() < deadline => {
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
+                        done => break done,
+                    }
+                }
+            }
             "http_fake_calls" => self.http_fake_calls(&step),
             "push_subscription" => {
                 let id = str_of(&step["push_subscription"]).context("push_subscription: an id")?;

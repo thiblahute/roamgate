@@ -610,7 +610,8 @@ impl Handover {
             .deps()
             .resume_profile
             .as_ref()
-            .and_then(|profile| profile(session_id));
+            .and_then(|profile| profile(session_id))
+            .filter(|profile| profile.agent.is_empty() || profile.agent == terminal.agent());
         let flags = with_model(
             args,
             profile

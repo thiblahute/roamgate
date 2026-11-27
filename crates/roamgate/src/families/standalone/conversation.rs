@@ -302,7 +302,7 @@ async fn host(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result<Va
                 "timeoutMs": args.get("timeout_ms").and_then(Value::as_f64).unwrap_or(0.0),
                 "connectionId": id,
                 "paneId": pane,
-                "agent": "Claude",
+                "agent": text(args, "agent").unwrap_or("Claude"),
                 "noTerminal": true,
             });
             if let Some(questions) = args.get("questions").filter(|q| q.is_array()) {

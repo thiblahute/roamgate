@@ -53,8 +53,9 @@ use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 use crate::driver::{
-    BoxFuture, ControlAnswer, DriverCodec, DriverEvent, DriverImage, DriverMessage,
-    HeadlessProcess, ModelContext, Object, ProtocolDriver, RewindContext, RewindInput, Transcript,
+    BoxFuture, CommandContext, CommandNotice, CommandOutput, ControlAnswer, DriverCodec,
+    DriverEvent, DriverImage, DriverMessage, HeadlessProcess, ModelContext, Object, ProtocolDriver,
+    RewindContext, RewindInput, Transcript,
 };
 use crate::headless::{HeadlessSpawnOptions, SpawnHeadless};
 use crate::images::ConversationImage;
@@ -344,6 +345,7 @@ struct St {
     turn_uuid: Option<String>,
     model: Option<String>,
     chosen_model: Option<String>,
+    context_usage: Option<(u64, u64)>,
     rewinding: bool,
     reply: ReplyStream,
 }
@@ -422,6 +424,7 @@ impl ConversationSession {
             turn_uuid: None,
             model: None,
             chosen_model: None,
+            context_usage: None,
             rewinding: false,
             reply: ReplyStream::new(),
         };
@@ -679,15 +682,15 @@ impl ConversationSession {
 
     // ------------------------------------------------------------ messages
 
-    /// The lines of a user message, its images read when sent inline.
-    async fn user_message(
+    /// Builds a [`DriverMessage`], reading inline images when needed.
+    async fn build_driver_message(
         &self,
         text: &str,
         images: &[String],
         uuid: &str,
         prelude: Vec<String>,
         steer: bool,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<DriverMessage, String> {
         let inline = self
             .o()
             .driver
@@ -711,13 +714,27 @@ impl ConversationSession {
                 });
             }
         }
-        let message = DriverMessage {
+        Ok(DriverMessage {
             text: text.to_owned(),
             images: read,
             uuid: uuid.to_owned(),
             prelude,
             steer,
-        };
+        })
+    }
+
+    /// The lines of a user message, its images read when sent inline.
+    async fn user_message(
+        &self,
+        text: &str,
+        images: &[String],
+        uuid: &str,
+        prelude: Vec<String>,
+        steer: bool,
+    ) -> Result<Vec<String>, String> {
+        let message = self
+            .build_driver_message(text, images, uuid, prelude, steer)
+            .await?;
         Ok(self.with(|st, _| st.codec.message(&message)))
     }
 
@@ -761,10 +778,13 @@ impl ConversationSession {
             Some(prelude) => (prelude.texts, Some(prelude.commit)),
             None => (Vec::new(), None),
         };
-        let message = self.user_message(text, images, uuid, texts, false).await?;
+        let driver_message = self
+            .build_driver_message(text, images, uuid, texts, false)
+            .await?;
         self.ensure_process(false).await?;
         self.with(|st, fx| {
-            Self::write(st, &message)?;
+            let lines = st.codec.message(&driver_message);
+            Self::write(st, &lines)?;
             if let Some(commit) = commit {
                 fx.push(commit);
             }
@@ -778,6 +798,16 @@ impl ConversationSession {
     fn handle(&self, st: &mut St, fx: &mut Fx, item: DriverEvent) {
         match s(item.get("kind")) {
             "model" => st.model = Some(s(item.get("model")).to_owned()),
+            "context_usage" => {
+                if let (Some(used), Some(size)) = (
+                    item.get("used").and_then(Value::as_f64),
+                    item.get("size").and_then(Value::as_f64),
+                ) && used >= 0.0
+                    && size > 0.0
+                {
+                    st.context_usage = Some((used as u64, size as u64));
+                }
+            }
             "init" => {
                 if let Some(model) = item.get("model").and_then(Value::as_str)
                     && !model.is_empty()
@@ -1354,6 +1384,18 @@ impl ConversationSession {
                         obj(json!({"session": st.session_id})),
                     );
                     self.begin_read(st, fx, child.clone());
+                    if !attach_only && child.replayed() == 0 && child.resume().is_none() {
+                        let init = st.codec.on_start(&resumed, &self.o().cwd);
+                        if !init.is_empty()
+                            && let Err(error) = Self::write(st, &init)
+                        {
+                            self.log(
+                                fx,
+                                "conversation startup handshake not written",
+                                obj(json!({"error": error})),
+                            );
+                        }
+                    }
                     Ok(Some(child))
                 }
             };
@@ -1634,6 +1676,19 @@ impl ConversationSession {
                     let items = st.codec.line(&line);
                     for item in items {
                         self.handle(st, fx, item);
+                    }
+                    // What the protocol answers to a line: a replayed line's
+                    // answer went out with the reader that first had it.
+                    let pending = st.codec.pending_writes();
+                    if !st.muted
+                        && !pending.is_empty()
+                        && let Err(error) = Self::write(st, &pending)
+                    {
+                        self.log(
+                            fx,
+                            "protocol follow-up not written",
+                            obj(json!({"error": error})),
+                        );
                     }
                     if !st.catching && !st.muted {
                         st.last_activity = self.now();
@@ -2457,6 +2512,24 @@ impl ConversationSession {
         self.with(|st, _| st.chosen_model.clone())
     }
 
+    /// The latest `(used_tokens, max_tokens)` context window usage reported by the agent.
+    pub fn context_usage(&self) -> Option<(u64, u64)> {
+        self.with(|st, _| st.context_usage)
+    }
+
+    /// A slash command the driver answers itself (`ProtocolDriver::command`),
+    /// its notice; None: the line is the agent's. `run` runs a command
+    /// line on the pane's host.
+    pub async fn command(&self, text: &str, run: CommandRunner) -> Option<CommandNotice> {
+        let driver = self.o().driver.clone();
+        let context = SessionCommand {
+            session: self.clone(),
+            run,
+        };
+        let answer = driver.command(text, &context)?;
+        Some(answer.await)
+    }
+
     pub fn edit_queued(&self, id: &str, text: &str) -> bool {
         self.with(|st, fx| {
             let Some(item) = st.queue.iter_mut().find(|each| s(each.get("id")) == id) else {
@@ -2648,6 +2721,46 @@ impl ModelContext for SessionControl {
                 .control(&self.child, &kind, params, self.wait_ms)
                 .await
         })
+    }
+}
+
+/// What runs a command line for a driver's command: the line, its
+/// timeout in ms.
+pub type CommandRunner =
+    Arc<dyn Fn(String, u64) -> BoxFuture<'static, Result<CommandOutput, String>> + Send + Sync>;
+
+/// A driver's slash command in its session.
+struct SessionCommand {
+    session: ConversationSession,
+    run: CommandRunner,
+}
+
+impl CommandContext for SessionCommand {
+    fn control(&self, kind: &str, params: Object) -> BoxFuture<'_, Option<ControlAnswer>> {
+        let kind = kind.to_owned();
+        Box::pin(async move {
+            let child = self.session.mcp_child().await.ok()?;
+            let wait_ms = self.session.o().rewind_wait_ms;
+            let answer = self.session.control(&child, &kind, params, wait_ms).await;
+            self.session.after_mcp();
+            answer
+        })
+    }
+
+    fn run<'a>(
+        &'a self,
+        command: &'a str,
+        timeout_ms: u64,
+    ) -> BoxFuture<'a, Result<CommandOutput, String>> {
+        (self.run)(command.to_owned(), timeout_ms)
+    }
+
+    fn context_usage(&self) -> Option<(u64, u64)> {
+        self.session.context_usage()
+    }
+
+    fn model(&self) -> Option<String> {
+        self.session.model()
     }
 }
 

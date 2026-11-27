@@ -1053,11 +1053,12 @@ Inspector state is scoped to each checkout; see
   browser's voices, the speed button steps the browser's speaking rate.
   Starting voice chat while Speak reads with the server's voices lets it
   play on, until you talk over it.
-  **Conversation mode** (Claude Code): a Claude pane has two modes, each
-  with one view. In terminal mode the pane shows Claude Code's terminal
-  only, with **Conversation mode** in its toolbar (and the pane's chat
-  shortcut, or **Chat** on a phone, which asks first): it hands the session
-  to a headless Claude Code that the chat drives. While Claude works, waits
+  **Conversation mode** (Claude Code, and the Antigravity CLI `agy`): an
+  agent pane has two modes, each with one view. In terminal mode the pane
+  shows the agent's terminal only, with **Conversation mode** in its toolbar
+  (and the pane's chat shortcut, or **Chat** on a phone, which asks first):
+  it hands the session to a headless agent that the chat drives (`claude
+  -p`, or `agy acp`). While Claude works, waits
   on a question or runs background work, the switch says so and waits for
   it, until cancelled; when it cannot go (a draft in the prompt box, say),
   the terminal says why. When another Claude runs the same session in
@@ -1190,6 +1191,8 @@ Inspector state is scoped to each checkout; see
   Claude...** in the chat, then goes to it once. Never while Claude works,
   asks you something, runs background work, during a voice call or a
   companion job on it, or within 10 minutes of another session's message.
+  In an AGY conversation Roamgate answers
+  /usage (the account's quota, from `agy`), /context and /mode itself.
   A Claude chat rewinds as /rewind does: the arrow beside one of your
   messages restores the code and the conversation, or either, to before
   it, through Claude Code's own rewind menu. The message comes back in the

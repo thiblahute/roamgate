@@ -1,0 +1,16 @@
+[package]
+name = "roamgate-agy"
+version = "0.0.0"
+description = "Conversation mode's Antigravity CLI drivers: agy acp --stdio as the headless protocol (an ACP JSON-RPC codec), the agy TUI for handovers, the companion's memory, and the commands AGY answers locally (/usage, /context, /mode), implementing roamgate-conversation's driver traits"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+regex = "1"
+roamgate-agents = { path = "../roamgate-agents" }
+roamgate-conversation = { path = "../roamgate-conversation" }
+serde_json = { version = "1", features = ["preserve_order"] }

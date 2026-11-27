@@ -2846,22 +2846,29 @@ is lost (every 4 seconds from a bridge that cannot push). Local files are
 watched; an SSH connection runs one stat loop for all its watched files.
 
 Conversation mode's core (`crates/roamgate-conversation`: session, service,
-handover, holder) is the same for every agent; it reaches the agent only
-through a driver pair in `crates/roamgate-claude/src/conversation` (`types.ts`). The
+handover, holder) is the same for every agent; it reaches the
+agent only through its drivers: Claude Code's in
+`crates/roamgate-claude/src/conversation`, the Antigravity CLI's (`agy`) in
+`crates/roamgate-agy`; the server composes them, Claude's first. The
 protocol driver says what the holder runs (`startCommand`), turns each line
 of the process into normalized events and encodes messages, interrupts,
 prompt answers and the agent's own requests (`createCodec`, its state saved
-with the lease), says what the holder notes of a written line (`inputKind`)
-and reads a dropped message back (`parseWrittenMessage`), and may rewind.
-The terminal driver recognizes the TUI, keeps its flags, reads its screen
-before an exit (`readiness`, the exit dialog, background work), exits it
-and resumes it (`resumeArgv`), and probes the host for the headless process
-and for other interactive writers. Claude Code is the only driver
-(`claude.ts`, `claude-stream.ts`, `claude-env.ts`, `claude-rewind.ts`,
-`claude-tui.ts`); a lease without `agent` is Claude's. `agent_chat` state
-carries the lease's `agent` and its `capabilities` (steer, questions,
-"always", rewind, prompt suggestions, `!` lines, background tasks, images
-inline or by path, slash commands); the browser gates conversation mode on
+with the lease; a codec may write a handshake when a new process starts and
+answer what it reads, as ACP's `initialize` then `session/resume` or
+`session/new`), says what the holder notes of a written line (`inputKind`)
+and reads a dropped message back (`parseWrittenMessage`), names a new
+native session (a session id Roamgate picks, or `new` until the agent names
+it), may rewind, and may answer slash commands itself (AGY's /usage,
+/context, /mode). The terminal driver recognizes the TUI, keeps its flags,
+reads its screen before an exit (`readiness`, the exit dialog, background
+work), exits it and resumes it (`resumeArgv`: `claude --resume`, `agy
+--conversation`), and probes the host for the headless process and for
+other interactive writers (`agy acp`'s command line names no session: the
+holder, which ends its child before it becomes the TUI, keeps AGY to one
+writer). A lease without `agent` is Claude's. `agent_chat` state carries
+the lease's `agent` and its `capabilities` (steer, questions, "always",
+rewind, prompt suggestions, `!` lines, background tasks, images inline or
+by path, slash commands); the browser gates conversation mode on
 `isConversationAgent` and hides what the capabilities leave out, reading a
 state without them (an older bridge) as Claude's. The holder's resume reply
 carries the TUI's whole `argv`, and `args` (Claude's arguments alone) for a

@@ -59,6 +59,7 @@ pub fn resume_reply(
     drivers: &Drivers,
 ) -> HolderReply {
     let terminal = drivers.of(lease_str(lease, "agent")).terminal.clone();
+    let profile = profile.filter(|p| p.agent.is_empty() || p.agent == terminal.agent());
     let session_id = lease_str(lease, "session_id").unwrap_or("");
     let mut argv = terminal.resume_argv(
         session_id,

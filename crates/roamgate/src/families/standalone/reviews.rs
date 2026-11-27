@@ -263,14 +263,18 @@ async fn socket(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result<
             let spec = parse_suspended_spec(&form)
                 .ok_or_else(|| review_error("invalid stopped session"))?;
             runtime()?;
+            let mut spec_json = json!({
+                "session_id": spec.session_id,
+                "cwd": spec.cwd,
+                "terminal_args": spec.terminal_args,
+            });
+            if let Some(agent) = spec.agent {
+                spec_json["agent"] = json!(agent);
+            }
             let mut params = json!({
                 "connection_id": connection_id,
                 "pane_id": pane_id,
-                "spec": {
-                    "session_id": spec.session_id,
-                    "cwd": spec.cwd,
-                    "terminal_args": spec.terminal_args,
-                },
+                "spec": spec_json,
             });
             holder_form(&mut params, &form);
             call(cx, "internal.conversation.holder_fg", params).await

@@ -1,0 +1,265 @@
+name: an AGY pane in conversation mode runs over ACP, asks permissions in the chat and goes back to its terminal
+family: agent_chat
+description: >
+  An agy TUI is taken over: the holder runs agy acp --stdio, which is
+  given initialize and session/resume on the pane's conversation. A turn
+  streams its text, a tool call whose permission the browser answers
+  and the tool's result; /context is answered by Roamgate; Stop cancels
+  a turn (session/cancel). Handing back resumes agy --conversation in
+  the terminal.
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/work" }]
+    agents:
+      - pane_id: p1
+        agent: agy
+        agent_status: idle
+        cwd: "${ROOT}/work"
+        agent_session:
+          {
+            source: agy,
+            agent: agy,
+            kind: id,
+            value: aaaaaaaa-1111-4222-8333-444444444444,
+          }
+    terminals:
+      p1: { program: agy, args: [--model, gemini-3-pro, --sandbox] }
+  files:
+    "${ROOT}/work/.keep": ""
+  fakes:
+    agy:
+      model: gemini-3-pro
+      turns:
+        - - {
+              jsonrpc: "2.0",
+              method: session/update,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  update:
+                    {
+                      sessionUpdate: agent_message_chunk,
+                      content: { type: text, text: "Checking. " },
+                    },
+                },
+            }
+          - {
+              jsonrpc: "2.0",
+              method: session/update,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  update:
+                    {
+                      sessionUpdate: tool_call,
+                      toolCallId: tc-1,
+                      title: run_command,
+                      rawInput: { cmd: cargo check },
+                    },
+                },
+            }
+          - {
+              jsonrpc: "2.0",
+              id: 7,
+              method: session/request_permission,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  toolCall:
+                    {
+                      toolCallId: tc-1,
+                      title: run_command,
+                      rawInput: { cmd: cargo check },
+                    },
+                  options:
+                    [
+                      { optionId: once, name: Allow, kind: allow_once },
+                      { optionId: never, name: Deny, kind: reject_once },
+                    ],
+                },
+            }
+          - { $await_response: true }
+          - {
+              jsonrpc: "2.0",
+              method: session/update,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  update:
+                    {
+                      sessionUpdate: tool_call_update,
+                      toolCallId: tc-1,
+                      status: completed,
+                      rawOutput: clean,
+                    },
+                },
+            }
+          - {
+              jsonrpc: "2.0",
+              method: session/update,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  update:
+                    {
+                      sessionUpdate: agent_message_chunk,
+                      content: { type: text, text: Build green. },
+                    },
+                },
+            }
+          - {
+              jsonrpc: "2.0",
+              method: session/update,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  update:
+                    { sessionUpdate: usage_update, used: 1200, size: 100000 },
+                },
+            }
+        - - {
+              jsonrpc: "2.0",
+              method: session/update,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  update:
+                    {
+                      sessionUpdate: agent_message_chunk,
+                      content: { type: text, text: "Working..." },
+                    },
+                },
+            }
+          - { $await_cancel: true }
+steps:
+  - login: {}
+  - connect: {}
+  - expect_log:
+      { contains: "agent socket listening key=@local", within_ms: 10000 }
+  - call: agent_chat.handover
+    id: handover
+    no_wait: true
+    params: { pane_id: p1, to: conversation }
+  - await: handover
+    advance_every: 200
+    within_ms: 30000
+    reply:
+      {
+        ok: true,
+        owner: conversation,
+        session_id: aaaaaaaa-1111-4222-8333-444444444444,
+      }
+  - call: agent_chat.subscribe
+    params: { pane_id: p1 }
+  - call: agent_chat.state
+    params: { pane_id: p1 }
+    reply:
+      {
+        owner: conversation,
+        agent: agy,
+        capabilities:
+          { slashCommands: agy, rewind: null, models: true, steer: false },
+      }
+  - call: agent_chat.send
+    params: { pane_id: p1, text: check the build, uuid: u-1 }
+    within_ms: 20000
+  - expect_push: "event:agent_chat.user"
+    within_ms: 20000
+    message: { data: { uuid: u-1, text: check the build, images: 0 } }
+  - expect_push: "event:agent_chat.tool_use"
+    message:
+      {
+        data:
+          { tool_use_id: tc-1, name: run_command, input: { cmd: cargo check } },
+      }
+  - call: review.prompts
+    until: { prompts: [{ tool: run_command }] }
+    within_ms: 20000
+    reply:
+      {
+        prompts:
+          [{ paneId: p1, agent: AGY, tool: run_command, canAlways: false }],
+      }
+    save: { permission: /result/prompts/0/id }
+  - call: review.prompt.answer
+    params: { id: "${permission}", answer: allow }
+    reply: { answered: true }
+  - expect_push: "event:agent_chat.tool_result"
+    within_ms: 20000
+    message: { data: { tool_use_id: tc-1, is_error: false, text: clean } }
+  - expect_push: "event:agent_chat.result"
+    message:
+      {
+        data:
+          {
+            subtype: success,
+            is_error: false,
+            interrupted: false,
+            text: "Checking. Build green.",
+          },
+      }
+  - expect_push: "event:agent_chat.status"
+    message: { data: { status: idle } }
+  # Roamgate answers /context itself, from what ACP reported.
+  - call: agent_chat.send
+    params: { pane_id: p1, text: /context }
+    reply: { status: sent }
+  - expect_push: "event:agent_chat.model_notice"
+    message:
+      {
+        data:
+          {
+            model_notice:
+              {
+                ok: true,
+                requested: /context,
+                text: "Context: 1,200 / 100,000 tokens (1.2%) | Model: gemini-3-pro",
+              },
+          },
+      }
+  # Stop cancels the turn.
+  - call: agent_chat.send
+    params: { pane_id: p1, text: keep going, uuid: u-2 }
+    within_ms: 20000
+  - expect_push: "event:agent_chat.block_start"
+    within_ms: 20000
+    message: { data: { message_id: agy-msg-2, block: text } }
+  - call: agent_chat.interrupt
+    params: { pane_id: p1 }
+    within_ms: 20000
+    reply: { interrupted: true }
+  - expect_push: "event:agent_chat.result"
+    within_ms: 20000
+    message: { data: { subtype: interrupted, interrupted: true } }
+  - expect_push: "event:agent_chat.status"
+    message: { data: { status: idle } }
+  - drain: {}
+  - call: agent_chat.handover
+    id: back
+    no_wait: true
+    params: { pane_id: p1, to: terminal }
+  - await: back
+    advance_every: 200
+    within_ms: 30000
+    reply:
+      {
+        ok: true,
+        owner: terminal,
+        session_id: aaaaaaaa-1111-4222-8333-444444444444,
+      }
+  - fake_calls:
+      { program: agy, argv_match: "^acp --stdio --sandbox$", count: 1 }
+  - fake_calls:
+      {
+        program: agy,
+        argv_match: "^--model gemini-3-pro --sandbox --conversation aaaaaaaa-1111-4222-8333-444444444444$",
+        count: 1,
+        within_ms: 10000,
+      }
+  - call: agent_chat.unsubscribe
+    params: { pane_id: p1 }
+    reply: { ok: true, $exact: true }

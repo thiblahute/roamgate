@@ -30,6 +30,7 @@ url = "2"
 rustix = { version = "1", features = ["process"] }
 
 [dev-dependencies]
+roamgate-agy = { path = "../roamgate-agy" }
 roamgate-claude = { path = "../roamgate-claude" }
 tempfile = "3"
 tokio = { version = "1", features = ["full", "test-util"] }
