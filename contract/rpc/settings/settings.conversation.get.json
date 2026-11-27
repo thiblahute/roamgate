@@ -12,6 +12,9 @@
       "idle_stop_minutes": {
         "type": "integer",
         "minimum": 0
+      },
+      "fallback_agent": {
+        "enum": ["claude", "agy"]
       }
     },
     "additionalProperties": false,

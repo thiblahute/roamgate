@@ -492,7 +492,8 @@
               },
               "claude_start_mode": "conversation",
               "conversation": {
-                "idle_stop_minutes": 45
+                "idle_stop_minutes": 45,
+                "fallback_agent": "agy"
               },
               "mr_cache": {
                 "running_seconds": 60,
@@ -531,7 +532,8 @@
             },
             "claude_start_mode": "conversation",
             "conversation": {
-              "idle_stop_minutes": 45
+              "idle_stop_minutes": 45,
+              "fallback_agent": "agy"
             },
             "mr_cache": {
               "running_seconds": 60,
@@ -557,7 +559,8 @@
             {
               "claude_start_mode": "sideways",
               "conversation": {
-                "idle_stop_minutes": 1441
+                "idle_stop_minutes": 1441,
+                "fallback_agent": "gpt"
               },
               "time_report": {
                 "command": []
