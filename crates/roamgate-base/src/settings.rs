@@ -256,14 +256,33 @@ pub fn is_idle_stop_minutes(value: Option<&Value>) -> bool {
     integer(value).is_some_and(|minutes| (0..=MAX_IDLE_STOP_MINUTES).contains(&minutes))
 }
 
+/// The agents a conversation that hit its usage limit can move to
+/// (`conversation.fallback_agent`): conversation mode's.
+pub const FALLBACK_AGENTS: [&str; 2] = ["claude", "agy"];
+
+/// `conversation.fallback_agent` as an update sets it: an agent, or null
+/// (off).
+pub fn is_fallback_agent(value: Option<&Value>) -> bool {
+    match value {
+        Some(Value::Null) => true,
+        Some(Value::String(agent)) => FALLBACK_AGENTS.contains(&agent.as_str()),
+        _ => false,
+    }
+}
+
 fn normalize_conversation(raw: Option<&Value>) -> Option<Value> {
     let object = raw?.as_object()?;
+    let mut kept = Map::new();
     let minutes = object.get("idle_stop_minutes");
-    Some(if is_idle_stop_minutes(minutes) {
-        json!({ "idle_stop_minutes": integer(minutes) })
-    } else {
-        json!({})
-    })
+    if is_idle_stop_minutes(minutes) {
+        kept.insert("idle_stop_minutes".into(), json!(integer(minutes)));
+    }
+    if let Some(agent) = object.get("fallback_agent").and_then(Value::as_str)
+        && FALLBACK_AGENTS.contains(&agent)
+    {
+        kept.insert("fallback_agent".into(), Value::String(agent.to_owned()));
+    }
+    Some(Value::Object(kept))
 }
 
 /// The forge cache's durations and limits (mr-cache/cache.ts), in ms.
@@ -757,6 +776,16 @@ impl Settings {
                 .and_then(|conversation| conversation.get("idle_stop_minutes")),
         )
         .unwrap_or(DEFAULT_IDLE_STOP_MINUTES)
+    }
+
+    /// The agent a conversation that hit its usage limit moves to, if
+    /// any (off by default).
+    pub fn conversation_fallback_agent(&self) -> Option<&str> {
+        self.0
+            .get("conversation")
+            .and_then(|conversation| conversation.get("fallback_agent"))
+            .and_then(Value::as_str)
+            .filter(|agent| FALLBACK_AGENTS.contains(agent))
     }
 
     /// The activity settings in effect, defaults included.

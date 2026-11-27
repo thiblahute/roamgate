@@ -102,7 +102,7 @@ async fn connection_settings_validate_and_persist_by_connection() {
         )
         .await
         .unwrap_err()
-        .starts_with("settings.conversation.update takes only idle_stop_minutes")
+        .starts_with("settings.conversation.update takes idle_stop_minutes")
     );
     let resume = call(
         "settings.limit_resume.update",
@@ -322,9 +322,40 @@ async fn idle_stop_is_30_minutes_by_default_and_a_whole_number_up_to_a_day() {
                 )
                 .await
                 .unwrap_err(),
-            "settings.conversation.update takes only idle_stop_minutes: a whole number of minutes from 0 (never) to 1440"
+            "settings.conversation.update takes idle_stop_minutes (a whole number of minutes from 0, never, to 1440) and fallback_agent (claude, agy or null)"
         );
     }
+    let fallback = settings
+        .rpc(
+            "settings.conversation.update",
+            &json!({"fallback_agent": "agy"}),
+            None,
+            "",
+        )
+        .await
+        .unwrap();
+    assert_eq!(fallback.result["fallback_agent"], "agy");
+    let cleared = settings
+        .rpc(
+            "settings.conversation.update",
+            &json!({"fallback_agent": null}),
+            None,
+            "",
+        )
+        .await
+        .unwrap();
+    assert!(cleared.result.get("fallback_agent").is_none());
+    assert!(
+        settings
+            .rpc(
+                "settings.conversation.update",
+                &json!({"fallback_agent": "unknown"}),
+                None,
+                "",
+            )
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]

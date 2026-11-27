@@ -1,0 +1,99 @@
+name: a conversation that hits its usage limit continues on the fallback agent, and its pause is skipped
+family: limit_resume
+description: >
+  With conversation.fallback_agent set to agy, a Claude conversation whose
+  transcript ends on a usage-limit stop is paused by the first scan, then
+  moved to AGY (agent_chat.backend_switched, reason usage_limit), and its
+  pause skipped: nothing is resumed on Claude at the reset.
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/work" }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        cwd: "${ROOT}/work"
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+    terminals:
+      p1: { args: [] }
+  files:
+    "${ROOT}/work/.keep": ""
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: keep going },
+          }
+        - type: assistant
+          uuid: a1
+          timestamp: "2025-12-31T23:59:30.000Z"
+          sessionId: 11111111-2222-4333-8444-555555555555
+          cwd: /work
+          isApiErrorMessage: true
+          apiError: usage_limit_reached
+          apiErrorParams:
+            {
+              rate_limit_info:
+                {
+                  status: rejected,
+                  resetsAt: 1767229200,
+                  rateLimitType: five_hour,
+                },
+            }
+          message:
+            {
+              role: assistant,
+              content: [{ type: text, text: "5-hour limit reached" }],
+            }
+  fakes:
+    agy:
+      session_id: 22222222-3333-4444-8555-666666666666
+steps:
+  - login: {}
+  - connect: {}
+  - expect_log:
+      { contains: "agent socket listening key=@local", within_ms: 10000 }
+  - call: settings.conversation.update
+    params: { fallback_agent: agy }
+    reply: { fallback_agent: agy }
+  - call: agent_chat.handover
+    id: handover
+    no_wait: true
+    params: { pane_id: p1, to: conversation }
+  - await: handover
+    advance_every: 200
+    within_ms: 30000
+    reply: { ok: true, owner: conversation }
+  - call: agent_chat.subscribe
+    params: { pane_id: p1 }
+  - advance: 5000
+  - expect_push: "event:agent_chat.backend_switched"
+    within_ms: 30000
+    message:
+      {
+        data:
+          {
+            from_agent: claude,
+            to_agent: agy,
+            reason: usage_limit,
+            work_session_id: "{{string}}",
+          },
+      }
+  - expect_log: { contains: usage limit resume declined, within_ms: 10000 }
+  - call: agent_chat.state
+    params: { pane_id: p1 }
+    reply: { agent: agy, owner: conversation }

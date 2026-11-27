@@ -1199,7 +1199,10 @@ Inspector state is scoped to each checkout; see
   from Claude** (or AGY) line: all of it the first time, and only what
   happened since when that agent had the conversation before, its own
   session resumed. Messages sent meanwhile go to it after; each agent keeps
-  its own terminal flags. In an AGY conversation Roamgate answers
+  its own terminal flags. **At a usage limit** (Configuration >
+  Integrations, **Wait** by default): a conversation that hits its usage
+  limit continues on the agent chosen there instead of waiting for the
+  reset, which is then not resumed. In an AGY conversation Roamgate answers
   /usage (the account's quota, from `agy`), /context and /mode itself.
   A Claude chat rewinds as /rewind does: the arrow beside one of your
   messages restores the code and the conversation, or either, to before
