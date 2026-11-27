@@ -150,6 +150,7 @@
       "rpc": ["agent_chat."],
       "http": [],
       "files": [
+        "data:conversation-continuity",
         "data:conversation-leases.json",
         "file:conversation-suspended.json"
       ]

@@ -1,0 +1,32 @@
+{
+  "method": "agent_chat.switch_agent",
+  "family": "agent_chat",
+  "scope": "connection",
+  "handler": "crates/roamgate-conversation/src/rpc.rs",
+  "params": {
+    "type": "object",
+    "required": ["pane_id", "agent"],
+    "properties": {
+      "pane_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "agent": {
+        "$ref": "../../schemas/shared/agentChat.schema.json#/$defs/ConversationAgent"
+      },
+      "reason": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "fresh_session": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "reply": {
+    "$ref": "../../schemas/shared/agentChat.schema.json#/$defs/AgentChatSwitchResult"
+  },
+  "status": "typed"
+}

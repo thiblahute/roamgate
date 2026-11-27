@@ -2,10 +2,13 @@ import { useRenderTrace } from "../renderTrace";
 import { shellLine } from "../../../shared/bashMode";
 import {
   type AgentChatMcpRequest,
+  CONVERSATION_AGENTS,
+  type ConversationAgent,
   agentDisplayName,
   chatCapabilities,
   isConversationAgent,
 } from "../../../shared/agentChat";
+import { ActionsMenu } from "./ActionsMenu";
 import { ShellCommandBlock } from "./AgentChatShell";
 import {
   useCallback,
@@ -79,6 +82,7 @@ import {
   removeAgentChatQueued,
   sendAgentChat,
   sendAgentChatVoice,
+  switchAgentChat,
   historyUserUuids,
   settleAgentChatLive,
   useAgentChat,
@@ -2109,6 +2113,10 @@ export function AgentHistoryDrawer({
   const [rewindOpen, setRewindOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [agentMenuPos, setAgentMenuPos] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const sendFromChatBox = useCallback(
     async (text: string) => {
       if (
@@ -2175,6 +2183,7 @@ export function AgentHistoryDrawer({
     if (!inConversation) {
       setModelOpen(false);
       setMcpOpen(false);
+      setAgentMenuPos(null);
     }
   }, [inConversation]);
   const composerDraftKey = terminalComposerDraftKey(
@@ -3963,7 +3972,80 @@ export function AgentHistoryDrawer({
           >
             {paneChat ? (
               <>
-                <AgentIcon agent={conversationState?.agent ?? pane.agent} />
+                {inConversation ? (
+                  <button
+                    type="button"
+                    className="agent-chat-agent-switch"
+                    aria-label={`Switch agent (currently ${agentDisplayName(
+                      conversationState?.agent ?? pane.agent,
+                    )})`}
+                    aria-haspopup="menu"
+                    aria-expanded={agentMenuPos !== null}
+                    title={`Switch agent (currently ${agentDisplayName(
+                      conversationState?.agent ?? pane.agent,
+                    )})`}
+                    disabled={!!conversationState?.handoff_phase}
+                    onClick={(event) => {
+                      if (agentMenuPos) {
+                        setAgentMenuPos(null);
+                        return;
+                      }
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setAgentMenuPos({ x: rect.left, y: rect.bottom + 4 });
+                    }}
+                  >
+                    <AgentIcon agent={conversationState?.agent ?? pane.agent} />
+                    <ChevronDown size={11} aria-hidden="true" />
+                  </button>
+                ) : (
+                  <AgentIcon agent={conversationState?.agent ?? pane.agent} />
+                )}
+                {agentMenuPos
+                  ? createPortal(
+                      <ActionsMenu
+                        x={agentMenuPos.x}
+                        y={agentMenuPos.y}
+                        header={{
+                          title: "Switch agent",
+                          subtitle: `Currently ${agentDisplayName(
+                            conversationState?.agent ?? pane.agent,
+                          )}`,
+                        }}
+                        groups={[
+                          {
+                            label: "Conversation agents",
+                            items: CONVERSATION_AGENTS.map(
+                              (target: ConversationAgent) => {
+                                const current =
+                                  (conversationState?.agent ?? pane.agent) ===
+                                  target;
+                                return {
+                                  key: target,
+                                  label: agentDisplayName(target),
+                                  detail: current ? "Current" : undefined,
+                                  disabled: current,
+                                  action: () => {
+                                    setAgentMenuPos(null);
+                                    void switchAgentChat(
+                                      connectionClient,
+                                      pane.pane_id,
+                                      target,
+                                      { reason: "manual" },
+                                    ).then((res) => {
+                                      if (!res.ok)
+                                        notifyComposerError(res.reason);
+                                    });
+                                  },
+                                };
+                              },
+                            ),
+                          },
+                        ]}
+                        onClose={() => setAgentMenuPos(null)}
+                      />,
+                      document.body,
+                    )
+                  : null}
                 {/* The workspace names it until its title is read. */}
                 <span
                   className={`agent-chat-title${sessionTitle ? "" : " is-placeholder"}`}

@@ -12,6 +12,7 @@
 pub mod auto_start;
 pub mod behind;
 pub mod claude_start_hook;
+pub mod continuity;
 pub mod driver;
 pub mod handover;
 pub mod headless;

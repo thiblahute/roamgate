@@ -860,6 +860,33 @@
   padding: 4px 8px;
 }
 
+/* Top-left agent icon as a generic backend switcher in conversation mode. */
+.agent-chat-agent-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.agent-chat-agent-switch:hover,
+.agent-chat-agent-switch:focus-visible,
+.agent-chat-agent-switch[aria-expanded="true"] {
+  border-color: var(--border-soft);
+  background: var(--surface-soft, var(--accent-soft));
+  color: var(--text);
+}
+
+.agent-chat-agent-switch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* What the session is about, beside the agent's icon. */
 .agent-chat-title {
   min-width: 0;

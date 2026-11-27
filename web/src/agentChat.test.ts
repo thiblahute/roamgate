@@ -61,6 +61,41 @@ describe("conversation mode's state in the browser", () => {
     expect(next?.next_prompt).toBeNull();
   });
 
+  test("follows the conversation to the agent it moved to", () => {
+    const capabilities = {
+      steer: false,
+      questions: false,
+      alwaysAllow: true,
+      rewind: null,
+      promptSuggestions: false,
+      shellLines: "prelude" as const,
+      backgroundTasks: false,
+      images: "base64" as const,
+      slashCommands: "agy" as const,
+      models: true,
+      mcp: false,
+      backgroundTools: false,
+    };
+    const next = applyStateEvent(
+      { ...state, agent: "claude", handoff_phase: "starting_replacement" },
+      {
+        type: "backend_switched",
+        from_agent: "claude",
+        to_agent: "agy",
+        work_session_id: "ws-1",
+        session_id: null,
+        reason: "usage_limit",
+        capabilities,
+        at: "2026-11-26T10:00:00.000Z",
+      },
+    );
+    expect(next?.agent).toBe("agy");
+    expect(next?.capabilities).toEqual(capabilities);
+    expect(next?.session_id).toBeNull();
+    expect(next?.work_session_id).toBe("ws-1");
+    expect(next?.handoff_phase).toBeUndefined();
+  });
+
   test("says what the last /model did until it goes, or the terminal has the session", () => {
     const notice = {
       at: "2026-11-06T10:00:00.000Z",

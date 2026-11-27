@@ -35,6 +35,7 @@ pub const AGENT_CHAT_METHODS: &[&str] = &[
     "agent_chat.handover",
     "agent_chat.handover.cancel",
     "agent_chat.fg",
+    "agent_chat.switch_agent",
 ];
 
 pub fn is_agent_chat_method(method: &str) -> bool {
@@ -255,6 +256,23 @@ pub async fn handle_agent_chat_rpc(
         }
         "agent_chat.handover.cancel" => service.cancel_handover(pane),
         "agent_chat.fg" => service.foreground(pane).await,
+        "agent_chat.switch_agent" => {
+            let agent = match params.get("agent").and_then(Value::as_str) {
+                Some(agent) if crate::driver::is_conversation_agent(agent) => agent.to_owned(),
+                _ => {
+                    return Err(
+                        "agent must be a supported conversation agent (claude or agy)".into(),
+                    );
+                }
+            };
+            let reason = params
+                .get("reason")
+                .and_then(Value::as_str)
+                .filter(|r| !r.is_empty() && js::len16(r) <= 120)
+                .unwrap_or("manual");
+            let fresh = params.get("fresh_session") == Some(&Value::Bool(true));
+            service.switch_agent(pane, &agent, reason, fresh).await
+        }
         other => return Err(format!("unknown method: {other}")),
     })
 }

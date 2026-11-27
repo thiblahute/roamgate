@@ -6,6 +6,27 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.48
+
+inventory: 70d4b01c5087708a8b0d7a51e7a2eb30bc9dfbafdaae7c453fe4d35ee964af91
+
+A conversation-mode conversation is a work session kept across agents, and
+moves between Claude and AGY in the same chat, one writer at a time.
+
+- rpc: `agent_chat.switch_agent {pane_id, agent, reason?, fresh_session?}`
+  answers `AgentChatSwitchResult`. Family: agent_chat.
+- push: `agent_chat.backend_switched` (`from_agent`, `to_agent`,
+  `work_session_id`, `session_id`, `reason`, the new agent's
+  `capabilities`). Family: agent_chat.
+- types: `AgentChatLease` and `AgentChatState` carry `work_session_id` and,
+  during a switch, `handoff_phase`; the lease keeps the other agents'
+  `agent_terminal_args`. `InjectedKind` adds `continuation`: the
+  `<roamgate-continuation>` block an agent is given when a conversation
+  moves to it. Family: agent_chat.
+- storage: `data:conversation-continuity` (`<id>.json`,
+  `<id>.events.jsonl`). Family: conversation.
+- channel: `internal.conversation.switch_agent`. Family: conversation.
+
 ## 1.47
 
 inventory: 049bad51aebad7406098bf2d0ce214d4bce2dba32087ca8791ced7d78d0efc5c

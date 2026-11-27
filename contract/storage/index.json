@@ -47,6 +47,13 @@
       "description": "conversation mode's pane leases, version 1",
       "status": "inventoried"
     },
+    "data:conversation-continuity": {
+      "kind": "data",
+      "used_in": ["crates/roamgate-conversation/src/continuity/store.rs"],
+      "format": "dir",
+      "description": "conversation mode's work sessions, kept across agent switches: <id>.json (the session, its agents' native sessions and the switch in progress, version 1) and <id>.events.jsonl (its numbered events, appended); a work session no lease names is deleted at start",
+      "status": "inventoried"
+    },
     "data:limit-resume.json": {
       "kind": "data",
       "used_in": ["server/src/limit-resume/store.ts"],

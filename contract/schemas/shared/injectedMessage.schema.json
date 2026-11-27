@@ -12,9 +12,10 @@
         "teammate",
         "task",
         "rewound",
-        "context"
+        "context",
+        "continuation"
       ],
-      "description": "Also \"rewound\": the history's notice of the user's messages a rewind cut; \"context\": what Codex says of its environment (codex-injected.ts)."
+      "description": "Also \"rewound\": the history's notice of the user's messages a rewind cut; \"context\": what Codex says of its environment (codex-injected.ts); \"continuation\": the history another agent left, given to the agent a conversation moved to."
     },
     "InjectedMessage": {
       "type": "object",
