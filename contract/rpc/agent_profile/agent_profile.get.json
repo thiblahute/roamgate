@@ -85,6 +85,10 @@
       },
       "returns_to": {
         "type": "string"
+      },
+      "pinned": {
+        "type": "boolean",
+        "description": "the account chain leaves the session on its profile (but past an account's hard cap)"
       }
     },
     "required": [

@@ -1,0 +1,47 @@
+{
+  "method": "agent_profile.pin",
+  "family": "agent_profile",
+  "scope": "connection",
+  "handler": "crates/roamgate-connections/src/agent_profiles/rpc.rs",
+  "params": {
+    "type": "object",
+    "properties": {
+      "pane_id": {
+        "type": "string"
+      },
+      "pinned": {
+        "type": "boolean"
+      }
+    },
+    "required": ["pane_id"]
+  },
+  "reply": {
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "profile": {
+        "type": "string"
+      },
+      "pinned": {
+        "type": "boolean"
+      }
+    },
+    "required": ["ok", "session_id", "profile", "pinned"]
+  },
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "status": "typed",
+  "x-typed-from": "crates/roamgate-connections/src/agent_profiles/rpc.rs"
+}

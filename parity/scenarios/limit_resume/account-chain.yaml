@@ -1,0 +1,95 @@
+name: a session a usage limit stopped goes on with the next account of the account chain
+family: limit_resume
+description: >
+  The terminal Claude of resume-after-reset, on the account profile Work
+  of an account chain [Work, Perso] that switches on its own. When the
+  limit pauses it, the chain moves the session to Perso instead of only
+  waiting for the reset. The usage readings go to the fake HTTP server,
+  never to the network.
+server:
+  env: { ROAMGATE_TEST_ACCOUNTS_URL: "${FAKE_HTTP}" }
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+  files:
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: keep going },
+          }
+        - type: assistant
+          uuid: a1
+          timestamp: "2025-12-31T23:59:30.000Z"
+          sessionId: 11111111-2222-4333-8444-555555555555
+          cwd: /work
+          isApiErrorMessage: true
+          apiError: usage_limit_reached
+          apiErrorParams:
+            {
+              rate_limit_info:
+                {
+                  status: rejected,
+                  resetsAt: 1767229200,
+                  rateLimitType: five_hour,
+                },
+            }
+          message:
+            {
+              role: assistant,
+              content: [{ type: text, text: "5-hour limit reached" }],
+            }
+    .config/roamgate/accounts/claude/work/.credentials.json:
+      mode: "0600"
+      json:
+        {
+          claudeAiOauth:
+            { accessToken: a, refreshToken: r, expiresAt: 4102444800000 },
+        }
+    .config/roamgate/accounts/claude/perso/.credentials.json:
+      mode: "0600"
+      json:
+        {
+          claudeAiOauth:
+            { accessToken: b, refreshToken: s, expiresAt: 4102444800000 },
+        }
+    .config/roamgate/settings.json:
+      mode: "0600"
+      json:
+        version: 1
+        profiles:
+          list:
+            - { name: Work, agent: claude, account: { id: work } }
+            - { name: Perso, agent: claude, account: { id: perso } }
+          default: Work
+          chain: { accounts: [Work, Perso], auto_switch: true }
+steps:
+  - login: {}
+  - connect: {}
+  - advance: 5000
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data: { pauses: [{ pane_id: p1, resets_at: 1767229200000 }] },
+      }
+  # The chain picks Perso for it; the move restarts the terminal Claude on
+  # Perso's directory, which this fake Herdr cannot (its processes are
+  # not listed): the move is logged as refused, the session left as it was.
+  - expect_log:
+      { contains: "from=Work to=Perso why=usage_limit", within_ms: 10000 }

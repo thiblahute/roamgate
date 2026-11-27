@@ -74,6 +74,21 @@ steps:
           }
         - { name: Agy, account: { $exact: true, id: second, auth: unknown } }
         - { name: Plain, account: "{{absent}}" }
+  - call: agent_profile.pin
+    params: { pane_id: p1 }
+    reply:
+      {
+        ok: true,
+        session_id: 33333333-3333-4333-8333-333333333333,
+        profile: Claude,
+        pinned: true,
+      }
+  - call: agent_profile.get
+    params: { pane_id: p1 }
+    reply: { pinned: true }
+  - call: agent_profile.pin
+    params: { pane_id: p1, pinned: false }
+    reply: { ok: true, pinned: false }
   - call: agent_profile.account.usage
     reply: { accounts: "{{array}}" }
   - call: agent_profile.account.sessions

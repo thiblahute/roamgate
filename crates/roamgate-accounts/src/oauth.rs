@@ -39,6 +39,37 @@ impl Default for Endpoints {
     }
 }
 
+/// A test server's stand-in for the sign-in and usage servers: every
+/// endpoint `https://host/path` goes to `<base>/host/path`. Honoured only
+/// by a build that honours the test clock, never by a release binary.
+pub const TEST_ACCOUNTS_URL_ENV: &str = "ROAMGATE_TEST_ACCOUNTS_URL";
+
+impl Endpoints {
+    /// The real endpoints, or a test server's ([`TEST_ACCOUNTS_URL_ENV`]).
+    pub fn from_env(var: &dyn Fn(&str) -> Option<String>) -> Self {
+        let real = Self::default();
+        let Some(base) = var(TEST_ACCOUNTS_URL_ENV)
+            .filter(|base| !base.is_empty() && roamgate_base::clock::TEST_CLOCK_HONOURED)
+        else {
+            return real;
+        };
+        let base = base.trim_end_matches('/').to_owned();
+        let moved = |url: String| {
+            let rest = url.split_once("://").map_or(url.as_str(), |(_, rest)| rest);
+            format!("{base}/{rest}")
+        };
+        Self {
+            claude_authorize: moved(real.claude_authorize),
+            claude_token: moved(real.claude_token),
+            claude_usage: moved(real.claude_usage),
+            claude_profile: moved(real.claude_profile),
+            codex_authorize: moved(real.codex_authorize),
+            codex_token: moved(real.codex_token),
+            codex_usage: moved(real.codex_usage),
+        }
+    }
+}
+
 /// `n` random bytes, base64url without padding.
 pub(crate) fn random_b64url(n: usize) -> String {
     let mut bytes = vec![0u8; n];
@@ -206,6 +237,22 @@ mod tests {
             Some("a/b")
         );
         assert_eq!(query_param("code=a", "state"), None);
+    }
+
+    #[test]
+    fn a_test_server_stands_in_for_every_endpoint() {
+        let none = |_: &str| None;
+        assert_eq!(Endpoints::from_env(&none), Endpoints::default());
+        let test = |name: &str| (name == TEST_ACCOUNTS_URL_ENV).then(|| "http://t/".to_owned());
+        let endpoints = Endpoints::from_env(&test);
+        if roamgate_base::clock::TEST_CLOCK_HONOURED {
+            assert_eq!(
+                endpoints.claude_usage,
+                "http://t/api.anthropic.com/api/oauth/usage"
+            );
+        } else {
+            assert_eq!(endpoints, Endpoints::default());
+        }
     }
 
     #[test]

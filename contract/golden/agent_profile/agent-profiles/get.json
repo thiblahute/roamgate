@@ -5,6 +5,7 @@
     "session_id": "22222222-2222-4222-8222-222222222222",
     "owner": "terminal",
     "profile": "Claude",
+    "pinned": false,
     "label": "Claude",
     "default": "Claude",
     "profiles": [

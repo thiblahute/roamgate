@@ -8,6 +8,63 @@
       "enum": ["unknown", "signed_in", "signed_out", "needs_relogin"],
       "description": "Whether an account's sign-in is there, as far as the server can tell."
     },
+    "AccountChain": {
+      "type": "object",
+      "properties": {
+        "accounts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Account profiles' names, in order."
+        },
+        "auto_switch": {
+          "type": "boolean"
+        },
+        "five_hour_line": {
+          "type": "number",
+          "description": "The 5-hour line (default 95)."
+        },
+        "weekly_line": {
+          "type": "number",
+          "description": "The weekly line, aggregate and per-model (default 98)."
+        },
+        "lines": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ChainLines"
+          },
+          "description": "Lines of their own, by account."
+        },
+        "preferred": {
+          "type": "string",
+          "description": "Taken first on its days."
+        },
+        "preferred_days": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "0 (Sunday) to 6; none: every day."
+        },
+        "last_resort": {
+          "type": "string",
+          "description": "Taken only when no other account can."
+        },
+        "walk": {
+          "$ref": "#/$defs/ChainWalk"
+        }
+      },
+      "required": [
+        "accounts",
+        "auto_switch",
+        "five_hour_line",
+        "weekly_line",
+        "walk"
+      ],
+      "additionalProperties": false,
+      "description": "The account chain: account profiles in order. The default profile moves along it when it crosses a line (with `auto_switch`), and a session stopped by a usage limit goes on with the next account."
+    },
     "AgentProfile": {
       "type": "object",
       "properties": {
@@ -43,6 +100,23 @@
       },
       "required": ["name", "agent"],
       "additionalProperties": false
+    },
+    "ChainLines": {
+      "type": "object",
+      "properties": {
+        "five_hour": {
+          "type": "number"
+        },
+        "weekly": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "description": "An account's own lines (percent used)."
+    },
+    "ChainWalk": {
+      "type": "string",
+      "enum": ["chain", "soonest_reset", "most_headroom"]
     },
     "ProfileAccount": {
       "type": "object",
@@ -111,6 +185,10 @@
         "return_after_reset": {
           "type": "boolean",
           "description": "After a usage limit sent a session to another profile, go back to the default once the limit resets."
+        },
+        "chain": {
+          "$ref": "#/$defs/AccountChain",
+          "description": "The account chain, when set: where sessions go past a limit."
         }
       },
       "required": ["list", "default", "return_after_reset"],
