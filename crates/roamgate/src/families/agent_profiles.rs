@@ -118,6 +118,7 @@ fn running_store(cx: &FamilyContext) -> Running {
                 ticks.tick().await;
                 return_due(&cx, &store, &logger).await;
                 account_upkeep(&cx, &logger).await;
+                chain_tick(&cx, &store, &logger).await;
                 notifier.flush().await;
             }
         })
@@ -165,6 +166,272 @@ async fn return_due(cx: &FamilyContext, store: &Arc<SessionProfiles>, logger: &L
         logger.info(message, Some(&fields));
     };
     return_after_reset(&settings, store, &connections, &log).await;
+}
+
+/// The sessions running now on every connection, with their profile and
+/// whether they are pinned.
+async fn live_sessions(
+    cx: &FamilyContext,
+    settings: &Value,
+    store: &Arc<SessionProfiles>,
+    logger: &Logger,
+) -> Vec<roamgate_connections::agent_profiles::chain::LiveSession> {
+    use roamgate_connections::agent_profiles::rpc::pane_session_of;
+    use roamgate_connections::agent_profiles::shared::profile_name;
+    use roamgate_connections::agent_profiles::store::profile_for_session;
+    let ids: Vec<String> = cx
+        .reverse("connections.list", json!({}))
+        .await
+        .ok()
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|status| status.get("id")?.as_str().map(str::to_owned))
+        .collect();
+    let mut sessions = Vec::new();
+    for id in ids {
+        let host = ReverseHost::new(cx, Some(id.clone()), logger.clone());
+        let panes = host
+            .op("panes", json!({}))
+            .await
+            .ok()
+            .and_then(|value| value.as_array().cloned())
+            .unwrap_or_default();
+        for pane in panes {
+            let Some(pane_id) = pane.get("paneId").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some((session_id, conversation)) = pane_session_of(&host, pane_id).await else {
+                continue;
+            };
+            let profile = profile_for_session(Some(settings), Some(&session_id), Some(store));
+            sessions.push(roamgate_connections::agent_profiles::chain::LiveSession {
+                connection_id: id.clone(),
+                pane_id: pane_id.to_owned(),
+                pinned: store.pinned(&session_id),
+                session_id,
+                conversation,
+                profile: profile_name(&profile).to_owned(),
+            });
+        }
+    }
+    sessions
+}
+
+/// Moves a live session to another account: the same agent's by the
+/// profile switch (a conversation's process restarts once idle, a
+/// terminal's Claude exits and resumes when idle, same session); another
+/// agent's by conversation mode's continuity handoff (its single-writer
+/// switch). A terminal session cannot change agent: refused, logged.
+async fn move_session(
+    cx: &FamilyContext,
+    store: &Arc<SessionProfiles>,
+    logger: &Logger,
+    movement: &roamgate_connections::agent_profiles::chain::SessionMove,
+    why: &str,
+) -> Result<(), String> {
+    let session = &movement.session;
+    let done = if !movement.cross_agent {
+        let host = ReverseHost::new(cx, Some(session.connection_id.clone()), logger.clone());
+        let params = json!({"pane_id": session.pane_id, "profile": movement.to, "session_id": session.session_id});
+        let context = rpc_context(cx, store.clone());
+        match handle_profile_rpc(
+            "agent_profile.switch",
+            params.as_object().unwrap(),
+            &host,
+            &context,
+        )
+        .await
+        {
+            Ok(result) if result.get("ok") == Some(&Value::Bool(true)) => Ok(()),
+            Ok(result) => Err(result
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("the switch was refused")
+                .to_owned()),
+            Err(error) => Err(error.0),
+        }
+    } else if session.conversation {
+        match super::standalone::call(
+            cx,
+            "internal.conversation.switch_agent",
+            json!({
+                "connection_id": session.connection_id,
+                "pane_id": session.pane_id,
+                "agent": movement.to_agent,
+                "reason": why,
+            }),
+        )
+        .await
+        {
+            Ok(result) if result.get("ok") == Some(&Value::Bool(true)) => Ok(()),
+            Ok(result) => Err(result
+                .get("error")
+                .or_else(|| result.get("reason"))
+                .and_then(Value::as_str)
+                .unwrap_or("the handoff was refused")
+                .to_owned()),
+            Err(error) => Err(error.message),
+        }
+    } else {
+        Err("a terminal session cannot change agent; move it by hand".into())
+    };
+    let crossing = movement.crossing.as_ref().map(|crossing| {
+        format!(
+            "{} at {:.1}% (line {:.0}%{})",
+            crossing.label,
+            crossing.utilization,
+            crossing.line,
+            if crossing.projected {
+                ", projected"
+            } else {
+                ""
+            }
+        )
+    });
+    let mut fields = LogFields::new();
+    fields.insert("pane".into(), json!(session.pane_id));
+    fields.insert("session".into(), json!(session.session_id));
+    fields.insert("from".into(), json!(session.profile));
+    fields.insert("to".into(), json!(movement.to));
+    fields.insert("why".into(), json!(why));
+    fields.insert("reading".into(), json!(crossing));
+    match &done {
+        Ok(()) => {
+            logger.info("accounts: session moved to another account", Some(&fields));
+            if session.conversation {
+                super::standalone::tell(
+                    cx,
+                    "internal.conversation.notice",
+                    json!({
+                        "connection_id": session.connection_id,
+                        "pane_id": session.pane_id,
+                        "kind": "account",
+                        "text": format!("Continued on {}", movement.to),
+                    }),
+                );
+            }
+        }
+        Err(error) => {
+            fields.insert("error".into(), json!(error));
+            logger.warn("accounts: session not moved", Some(&fields));
+        }
+    }
+    done
+}
+
+/// Each minute, with auto-switch on: the global default leaves an account
+/// past its lines (or goes back to the preferred account on its day),
+/// and the live sessions on that account go with it.
+async fn chain_tick(cx: &FamilyContext, store: &Arc<SessionProfiles>, logger: &Logger) {
+    use roamgate_connections::agent_profiles::chain::{chain_settings, members, proactive, today};
+    let Ok(settings) = cx.reverse("profiles.host", json!({"op": "settings"})).await else {
+        return;
+    };
+    let Some(chain) = chain_settings(Some(&settings)).filter(|chain| chain.auto_switch) else {
+        return;
+    };
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let now = cx.clock.now();
+    let members = members(&chain, &home, &USAGE);
+    let profiles = roamgate_connections::agent_profiles::store::profiles_of(Some(&settings));
+    let default = profiles
+        .get("default")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let sessions = live_sessions(cx, &settings, store, logger).await;
+    let (moved, moves) = proactive(&chain, &members, &default, &sessions, now, today(now));
+    if let Some(moved) = &moved {
+        let to = moved.to.clone();
+        let written =
+            super::settings::update_shared(cx, json!({"method": "accounts.chain"}), |current| {
+                let mut profiles = current
+                    .as_map()
+                    .get("profiles")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
+                profiles["default"] = json!(to);
+                Some(current.with("profiles", Some(profiles)))
+            })
+            .await;
+        let line = roamgate_accounts::chain::move_log(moved, "accounts: default account moved");
+        match written {
+            Ok(_) => logger.info(&line, None),
+            Err(error) => logger.warn(&format!("{line}: not written: {}", error.message), None),
+        }
+    }
+    for movement in &moves {
+        let _ = move_session(cx, store, logger, movement, "account_line").await;
+    }
+}
+
+/// `internal.agent_profiles.chain_switch {connection_id, pane_id}`, from
+/// limit_resume's `fall_back`: a session stopped by a usage limit. With
+/// an account chain switching on its own that has the session, it goes
+/// on with the chain's next account (`applies`, then `ok`, `unchanged`
+/// when no account has headroom, or `reason`); otherwise `applies: false`
+/// and limit_resume keeps the conversation's fallback agent.
+async fn chain_switch(
+    cx: &FamilyContext,
+    store: &Arc<SessionProfiles>,
+    logger: &Logger,
+    params: &Value,
+) -> Value {
+    use roamgate_connections::agent_profiles::chain::{
+        LiveSession, chain_settings, members, reactive, today,
+    };
+    use roamgate_connections::agent_profiles::rpc::pane_session_of;
+    use roamgate_connections::agent_profiles::shared::profile_name;
+    use roamgate_connections::agent_profiles::store::profile_for_session;
+    let text = |key: &str| {
+        params
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned()
+    };
+    let (connection_id, pane_id) = (text("connection_id"), text("pane_id"));
+    let host = ReverseHost::new(cx, Some(connection_id.clone()), logger.clone());
+    let Some((session_id, conversation)) = pane_session_of(&host, &pane_id).await else {
+        return json!({"applies": false});
+    };
+    if let Ok(settings) = cx.reverse("profiles.host", json!({"op": "settings"})).await
+        && let Some(chain) = chain_settings(Some(&settings)).filter(|chain| chain.auto_switch)
+    {
+        let profile = profile_for_session(Some(&settings), Some(&session_id), Some(store));
+        let home = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        let now = cx.clock.now();
+        let members = members(&chain, &home, &USAGE);
+        let session = LiveSession {
+            connection_id: connection_id.clone(),
+            pane_id: pane_id.clone(),
+            pinned: store.pinned(&session_id),
+            session_id,
+            conversation,
+            profile: profile_name(&profile).to_owned(),
+        };
+        if chain.account(&session.profile).is_some() {
+            let Some(movement) = reactive(&chain, &members, &session, now, today(now)) else {
+                logger.warn(
+                    "accounts: a usage limit, and no account of the chain has headroom",
+                    None,
+                );
+                // Nowhere to go: the pause waits for the reset.
+                return json!({"applies": true, "ok": true, "unchanged": true});
+            };
+            return match move_session(cx, store, logger, &movement, "usage_limit").await {
+                Ok(()) => json!({"applies": true, "ok": true, "to": movement.to}),
+                Err(reason) => json!({"applies": true, "ok": false, "reason": reason}),
+            };
+        }
+    }
+    // No chain for this session: limit_resume's fallback agent applies.
+    json!({"applies": false})
 }
 
 /// How often the usage scheduler looks for accounts due a reading (each
@@ -513,6 +780,11 @@ impl CoreFamily for AgentProfilesFamily {
         let cx = cx.clone();
         Box::pin(async move {
             let running = running.ok_or_else(not_owner)?;
+            if call.method == "internal.agent_profiles.chain_switch" {
+                let result = chain_switch(&cx, &running.store, &running.logger, &call.params).await;
+                running.notifier.flush().await;
+                return Ok(result);
+            }
             if call.method == "internal.agent_profiles.store" {
                 apply(&running.store, &call.params)?;
                 running.notifier.flush().await;

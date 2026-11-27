@@ -255,8 +255,9 @@ fn resumer(cx: &FamilyContext, owned: bool) -> LimitResumer {
         Arc::new(move |connection_id: &str, pauses: Vec<LimitPause>| {
             let generation = generations.lock().unwrap().get(connection_id).copied();
             for pause in &pauses {
-                if pause.owner == PaneOwner::Conversation
-                    && pause.state == LimitPauseState::Scheduled
+                // Every paused session: the account chain may move a
+                // terminal's too; the fallback agent is a conversation's.
+                if pause.state == LimitPauseState::Scheduled
                     && fallen_back.lock().unwrap().insert((
                         connection_id.to_owned(),
                         pause.pane_id.clone(),
@@ -268,6 +269,7 @@ fn resumer(cx: &FamilyContext, owned: bool) -> LimitResumer {
                         this.clone(),
                         connection_id.to_owned(),
                         pause.pane_id.clone(),
+                        pause.owner == PaneOwner::Conversation,
                     ));
                 }
             }
@@ -311,7 +313,64 @@ async fn fall_back(
     resumer: Arc<std::sync::OnceLock<WeakLimitResumer>>,
     connection_id: String,
     pane_id: String,
+    conversation: bool,
 ) {
+    // The account chain first (the agent_profiles family): when it has the
+    // session, its next account is where it goes on, retried and skipped
+    // alike; else a conversation's fallback agent, as before.
+    let mut refusal = String::new();
+    for attempt in 0..FALLBACK_ATTEMPTS {
+        if attempt > 0 {
+            tokio::time::sleep(FALLBACK_RETRY).await;
+        }
+        let answer = match super::standalone::call(
+            &cx,
+            "internal.agent_profiles.chain_switch",
+            json!({"connection_id": connection_id, "pane_id": pane_id}),
+        )
+        .await
+        {
+            Ok(answer) => answer,
+            // The family not there (not owned here): no chain applies.
+            Err(_) => {
+                refusal.clear();
+                break;
+            }
+        };
+        if answer.get("applies") != Some(&Value::Bool(true)) {
+            refusal.clear();
+            break;
+        }
+        if answer.get("ok") != Some(&Value::Bool(true)) {
+            refusal = answer
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("refused")
+                .to_owned();
+            continue;
+        }
+        if answer.get("unchanged").is_none()
+            && let Some(resumer) = resumer.get().and_then(WeakLimitResumer::upgrade)
+        {
+            let _ = resumer.set_skip(&connection_id, &pane_id, true).await;
+        }
+        return;
+    }
+    if !refusal.is_empty() {
+        let mut fields = LogFields::new();
+        fields.insert("connection".into(), json!(connection_id));
+        fields.insert("pane".into(), json!(pane_id));
+        fields.insert("reason".into(), json!(refusal));
+        logger(&cx).log(
+            LogLevel::Warn,
+            "the session did not move along the account chain",
+            Some(&fields),
+        );
+        return;
+    }
+    if !conversation {
+        return;
+    }
     let settings = super::settings::read_shared(&cx).await;
     let Some(agent) = settings.conversation_fallback_agent().map(str::to_owned) else {
         return;
