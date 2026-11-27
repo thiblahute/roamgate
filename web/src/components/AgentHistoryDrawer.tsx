@@ -2,6 +2,7 @@ import { useRenderTrace } from "../renderTrace";
 import { shellLine } from "../../../shared/bashMode";
 import {
   type AgentChatMcpRequest,
+  agentDisplayName,
   chatCapabilities,
   isConversationAgent,
 } from "../../../shared/agentChat";
@@ -1750,14 +1751,14 @@ export function AgentHistoryDrawer({
       // Conversation mode has the session: its terminal only holds the
       // pane, and what is typed there would hand it back.
       if (inConversationRef.current) {
-        // A `!` line runs, as Claude Code's bash mode: Claude reads it with
-        // the next message.
-        const command = shellLine(text);
+        const command = capabilities.shellLines ? shellLine(text) : null;
         if (command !== null) {
           await runAgentChatShell(connectionClient, pane.pane_id, command);
           return;
         }
-        const refused = conversationRefusal(text);
+        const refused = capabilities.slashCommands
+          ? conversationRefusal(text, capabilities.slashCommands)
+          : null;
         if (refused) throw new Error(refused);
         await sendConversationRef.current(text);
         return;
@@ -1799,6 +1800,8 @@ export function AgentHistoryDrawer({
       refresh(1000);
     },
     [
+      capabilities.shellLines,
+      capabilities.slashCommands,
       connectionClient,
       loadHistory,
       pane.agent,
@@ -1957,7 +1960,7 @@ export function AgentHistoryDrawer({
     async (text: string, replacing?: string) => {
       const handingOver = ownsRef.current && !inConversationRef.current;
       if (handingOver || inConversationRef.current) {
-        const command = shellLine(text);
+        const command = capabilities.shellLines ? shellLine(text) : null;
         if (command !== null) {
           if (handingOver)
             throw new Error(
@@ -1966,7 +1969,9 @@ export function AgentHistoryDrawer({
           await runAgentChatShell(connectionClient, pane.pane_id, command);
           return;
         }
-        const refused = conversationRefusal(text);
+        const refused = capabilities.slashCommands
+          ? conversationRefusal(text, capabilities.slashCommands)
+          : null;
         if (refused) throw new Error(refused);
         // Commands are not the user's words: no bubble on its way.
         if (/^\s*\//.test(text)) {
@@ -2039,6 +2044,8 @@ export function AgentHistoryDrawer({
       }
     },
     [
+      capabilities.shellLines,
+      capabilities.slashCommands,
       connectionClient,
       deliverConversation,
       outboxKey,
@@ -2956,6 +2963,7 @@ export function AgentHistoryDrawer({
     [
       connectionClient,
       loadHistory,
+      pane.agent,
       pane.pane_id,
       restoreDraft,
       rewindConversation,
@@ -3053,7 +3061,11 @@ export function AgentHistoryDrawer({
       }
       onUploadFile={(file) => uploadTerminalFile(connectionClient, file)}
       commands={
-        inConversation ? conversationCommands(agentCommands) : agentCommands
+        inConversation
+          ? capabilities.slashCommands
+            ? conversationCommands(agentCommands, capabilities.slashCommands)
+            : []
+          : agentCommands
       }
       onError={notifyComposerError}
       voice={
@@ -3951,7 +3963,7 @@ export function AgentHistoryDrawer({
           >
             {paneChat ? (
               <>
-                <AgentIcon agent={pane.agent} />
+                <AgentIcon agent={conversationState?.agent ?? pane.agent} />
                 {/* The workspace names it until its title is read. */}
                 <span
                   className={`agent-chat-title${sessionTitle ? "" : " is-placeholder"}`}
@@ -3962,7 +3974,7 @@ export function AgentHistoryDrawer({
               </>
             ) : (
               <div className="agent-history-identity">
-                <AgentIcon agent={pane.agent} />
+                <AgentIcon agent={conversationState?.agent ?? pane.agent} />
                 <div className="agent-history-title">
                   <strong>
                     {sessionTitle ?? "Session"}
@@ -4059,7 +4071,7 @@ export function AgentHistoryDrawer({
                       }
                       title={
                         paneChat.modeBound
-                          ? "Open in terminal: hand the session back to Claude in the terminal"
+                          ? `Open in terminal: hand the session back to ${agentDisplayName(conversationState?.agent ?? pane.agent)} in the terminal`
                           : "Show the terminal"
                       }
                       disabled={paneChat.modeBound && !inConversation}

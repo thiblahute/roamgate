@@ -308,21 +308,20 @@ impl Inner {
             .lease(&spawn.pane_id)
             .map(|lease| crate::shared::lease_terminal_args(&lease))
             .unwrap_or_default();
+        let driver = self.driver_of(&spawn.pane_id);
+        let agent = driver.protocol.agent();
         let model = self
-            .resume_profile(&spawn.session_id)
+            .resume_profile_for(&spawn.session_id, agent)
             .and_then(|command| command.model.clone());
-        let profile = self.profile_of(&spawn.session_id)?;
-        let command = self
-            .driver_of(&spawn.pane_id)
-            .protocol
-            .start_command(&StartOptions {
-                session_id: spawn.session_id.clone(),
-                pane_id: Some(spawn.pane_id.clone()),
-                cwd: spawn.cwd.clone(),
-                flags: Some(with_model(&terminal_args, model.as_deref())),
-                api_key_answer: spawn.api_key_answer,
-                profile,
-            });
+        let profile = self.profile_of_for(&spawn.session_id, agent)?;
+        let command = driver.protocol.start_command(&StartOptions {
+            session_id: spawn.session_id.clone(),
+            pane_id: Some(spawn.pane_id.clone()),
+            cwd: spawn.cwd.clone(),
+            flags: Some(with_model(&terminal_args, model.as_deref())),
+            api_key_answer: spawn.api_key_answer,
+            profile,
+        });
         channel
             .spawn(HolderSpawn {
                 command,

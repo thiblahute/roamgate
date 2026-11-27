@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import type {
-  AgentChatApiKeyChoice,
-  AgentChatEvent,
-  AgentChatHandoverResult,
-  AgentChatOtherWriter,
-  AgentChatMcp,
-  AgentChatMcpRequest,
-  AgentChatMcpResult,
-  AgentChatModelResult,
-  AgentChatModels,
-  AgentChatOwner,
-  AgentChatQueued,
-  AgentChatRewindCheck,
-  AgentChatRewindMode,
-  AgentChatRewindResult,
-  AgentChatState,
-  AgentChatStuck,
-  AgentChatVoiceAction,
+import {
+  type AgentChatApiKeyChoice,
+  type AgentChatEvent,
+  type AgentChatHandoverResult,
+  type AgentChatOtherWriter,
+  type AgentChatMcp,
+  type AgentChatMcpRequest,
+  type AgentChatMcpResult,
+  type AgentChatModelResult,
+  type AgentChatModels,
+  type AgentChatOwner,
+  type AgentChatQueued,
+  type AgentChatRewindCheck,
+  type AgentChatRewindMode,
+  type AgentChatRewindResult,
+  type AgentChatState,
+  type AgentChatStuck,
+  type AgentChatVoiceAction,
+  agentDisplayName,
 } from "../../shared/agentChat";
 import { bridge, type ConnectionClient, type HerdrEventMsg } from "./api";
 import { parseInjectedMessage } from "../../shared/injectedMessage";
@@ -314,7 +315,7 @@ export function cutOffNotice(state: AgentChatState | null): string | null {
     return null;
   return interrupted.reason === "restart"
     ? "Cut off by a Roamgate restart"
-    : "Claude stopped unexpectedly";
+    : `${agentDisplayName(state.agent)} stopped unexpectedly`;
 }
 
 /**
@@ -376,10 +377,11 @@ export function deliveryNotice(
       text: "Lost the conversation process",
       detail: [state.lost.reason, queued].filter(Boolean).join("; "),
     };
+  const name = agentDisplayName(state.agent);
   if (state.stuck)
     return state.stuck.reason === "stop_unanswered"
       ? {
-          text: "Claude did not answer Stop",
+          text: `${name} did not answer Stop`,
           detail: [
             `Nothing came from it since ${clockTime(state.stuck.since)}; restarting it resumes the session in a new process`,
             queued,
@@ -389,7 +391,7 @@ export function deliveryNotice(
           stuck: "stop_unanswered",
         }
       : {
-          text: `Claude seems stuck since ${clockTime(state.stuck.since)}`,
+          text: `${name} seems stuck since ${clockTime(state.stuck.since)}`,
           detail: ["Nothing came from it since then", queued]
             .filter(Boolean)
             .join("; "),
@@ -403,8 +405,8 @@ export function deliveryNotice(
         : "The queued messages are not going out",
     detail:
       state.status === "starting"
-        ? "Claude has not started"
-        : "Claude is not taking them",
+        ? `${name} has not started`
+        : `${name} is not taking them`,
   };
 }
 

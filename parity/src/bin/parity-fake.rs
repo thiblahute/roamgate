@@ -1,6 +1,6 @@
 //! The command fakes of the parity suite, one multi-call binary: the run's
 //! `bin/` directory links it under each program's name (ssh, glab, gh,
-//! claude, systemctl, ...), and it acts as the program its name says. It
+//! claude, agy, systemctl, ...), and it acts as the program its name says. It
 //! can also be run as `parity-fake <program> [args...]`.
 //!
 //! Every call is logged and answered from the run's scripts
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use roamgate_parity::fakes::script::{self, Call, Script};
-use roamgate_parity::fakes::{claude, forge, respond, ssh, voice};
+use roamgate_parity::fakes::{agy, claude, forge, respond, ssh, voice};
 
 fn program_name() -> (String, Vec<String>) {
     let mut args = std::env::args();
@@ -96,7 +96,10 @@ fn main() -> ExitCode {
 
     // Protocol fakes read their stdin as a stream; the others read it
     // only when a rule looks at it.
-    let streaming = matches!(program.as_str(), "claude" | "roamgate-voice" | "ssh");
+    let streaming = matches!(
+        program.as_str(),
+        "claude" | "agy" | "roamgate-voice" | "ssh"
+    );
     let stdin = if !streaming && script.rules.iter().any(|rule| rule.needs_stdin()) {
         Some(read_stdin())
     } else {
@@ -123,6 +126,7 @@ fn main() -> ExitCode {
     let code = match program.as_str() {
         "ssh" => ssh::run(&args, picked, &fakes),
         "claude" => claude::run(&args, &script, picked),
+        "agy" => agy::run(&args, &script, picked),
         "roamgate-voice" => voice::run(&script),
         "glab" | "gh" => match picked.or_else(|| script.default.clone()) {
             Some(found) => forge::run(&args, &found, &cwd),

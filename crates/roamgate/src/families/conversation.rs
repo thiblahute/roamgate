@@ -473,7 +473,10 @@ async fn build_connection(
     let generation = info["generation"].as_u64();
     let slot: Arc<Mutex<Option<ConversationService>>> = Arc::new(Mutex::new(None));
     let teller = Teller::new(cx.clone(), id.clone(), slot.clone());
-    let drivers: Drivers = roamgate_claude::conversation::drivers();
+    let drivers: Drivers = Drivers::new(vec![
+        roamgate_claude::conversation::claude_driver(),
+        roamgate_agy::agy_driver(),
+    ]);
     let calls = Arc::new(ReverseCalls {
         cx: cx.clone(),
         connection_id: id.clone(),
@@ -497,6 +500,8 @@ async fn build_connection(
     let push_id = id.clone();
     let ask_cx = cx.clone();
     let ask_id = id.clone();
+    let ask_slot = slot.clone();
+    let ask_drivers = drivers.clone();
     let local = info
         .get("local_holder")
         .filter(|local| !local.is_null())
@@ -514,11 +519,28 @@ async fn build_connection(
         Arc::new(move |pane: String, prompt: ConversationPrompt| {
             let cx = ask_cx.clone();
             let connection_id = ask_id.clone();
+            let agent_name = ask_slot
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|svc| svc.lease(&pane))
+                .and_then(|lease| {
+                    lease
+                        .get("agent")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                });
+            let display_name = ask_drivers
+                .of(agent_name.as_deref())
+                .protocol
+                .display_name()
+                .to_owned();
             Box::pin(async move {
                 let mut args = json!({
                     "op": "ask",
                     "connection_id": connection_id,
                     "pane_id": pane,
+                    "agent": display_name,
                     "tool": prompt.tool,
                     "input": prompt.input,
                     "can_always": prompt.can_always,

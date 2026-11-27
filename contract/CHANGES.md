@@ -6,6 +6,20 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.47
+
+inventory: 049bad51aebad7406098bf2d0ce214d4bce2dba32087ca8791ced7d78d0efc5c
+
+Conversation mode drives the Antigravity CLI (`agy`) as well as Claude
+Code: an agy pane is taken over (the holder runs `agy acp --stdio`, ACP's
+JSON-RPC) and handed back (`agy --conversation <id>`).
+
+- types: `ConversationAgent` is `claude` or `agy`; `AgentChatCapabilities`'
+  `slashCommands` may be `agy`. Family: agent_chat.
+- exec: `program agy` (the pane holder's ACP child, the resumed TUI, and
+  `agy -p /usage --output-format json` for the chat's /usage). Family:
+  agent_chat.
+
 ## 1.46
 
 inventory: 0cbf4749be847bf8ab63d58c516a6b1588c42ac164ad0f697ad6308f0cefa09a

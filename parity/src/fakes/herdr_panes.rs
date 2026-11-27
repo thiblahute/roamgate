@@ -9,7 +9,8 @@
 //! ```
 //!
 //! - A Claude TUI runs in it from the start (`tui: false` for a bare
-//!   shell): a real process, the `claude` fake with `PARITY_CLAUDE_TUI=1`,
+//!   shell; `program: agy` for AGY's): a real process, the `claude` (or
+//!   `agy`) fake with `PARITY_CLAUDE_TUI=1`,
 //!   which stays until killed, so pids, `pane.process_info` and a pid check
 //!   on the host all see it.
 //! - `agent.read` gives the TUI's screen (`screen`, default an idle Claude
@@ -42,6 +43,9 @@ pub const IDLE_CLAUDE_SCREEN: &str = "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u
 pub struct TerminalSeed {
     #[serde(default = "yes")]
     pub tui: bool,
+    /// The TUI's program: `claude` (default) or `agy`.
+    #[serde(default)]
+    pub program: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
@@ -110,8 +114,9 @@ impl Panes {
                 }
             };
             let cwd = self.cwd(model, id, &seed);
+            let program = seed.program.clone().unwrap_or_else(|| "claude".into());
             let tui = seed.tui.then(|| {
-                Command::new(shell.bin.join(super::exe("claude")))
+                Command::new(shell.bin.join(super::exe(&program)))
                     .args(&seed.args)
                     .env_clear()
                     .envs(&shell.env)
@@ -192,12 +197,13 @@ impl Panes {
                 };
                 let mut processes = Vec::new();
                 if let Some(pid) = tui_pid {
-                    let mut argv = vec!["claude".to_owned()];
+                    let program = pane.seed.program.clone().unwrap_or_else(|| "claude".into());
+                    let mut argv = vec![program.clone()];
                     argv.extend(pane.seed.args.iter().cloned());
                     processes.push(PaneProcessInfoProcess {
                         pid,
-                        name: "claude".into(),
-                        argv0: Some("claude".into()),
+                        name: program.clone(),
+                        argv0: Some(program),
                         cmdline: Some(argv.join(" ")),
                         argv: Some(argv),
                         cwd: pane.seed.cwd.clone().or_else(|| {

@@ -235,6 +235,7 @@ pub fn recorded_env_keys(program: &str) -> Vec<String> {
             "HERDR_WORKSPACE_ID",
             "ROAMGATE_REVIEW_SOCKET",
         ],
+        "agy" => &["HERDR_PANE_ID", "ROAMGATE_AGY_SESSION"],
         "glab" | "gh" => &["GITLAB_HOST", "GH_HOST", "GLAB_CONFIG_DIR", "GH_CONFIG_DIR"],
         "ssh" => &["SSH_AUTH_SOCK"],
         _ => &[],

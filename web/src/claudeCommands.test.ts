@@ -66,6 +66,25 @@ test("conversation mode refuses TUI-only commands, not shell lines", () => {
   expect(conversationRefusal("Hello")).toBeNull();
 });
 
+test("an AGY conversation offers and refuses AGY's own commands", () => {
+  const offered = conversationCommands(
+    [
+      { name: "usage", description: "" },
+      { name: "config", description: "" },
+      { name: "mode", description: "" },
+      { name: "my-skill", description: "" },
+    ],
+    "agy",
+  ).map((c) => c.name);
+  expect(offered).toEqual(["usage", "mode", "my-skill"]);
+  expect(conversationRefusal("/config", "agy")).toContain("/config");
+  expect(conversationRefusal("/usage", "agy")).toBeNull();
+  expect(conversationRefusal("/mode plan", "agy")).toBeNull();
+  // Claude's own TUI command is AGY's to say.
+  expect(conversationRefusal("/vim", "agy")).toBeNull();
+  expect(conversationRefusal("Hello", "agy")).toBeNull();
+});
+
 test("/mcp opens the sheet, with or without Claude Code's arguments", () => {
   expect(isMcpCommand("/mcp")).toBe(true);
   expect(isMcpCommand("  /mcp \n")).toBe(true);

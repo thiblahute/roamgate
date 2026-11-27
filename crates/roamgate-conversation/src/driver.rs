@@ -26,8 +26,12 @@ pub type Object = Map<String, Value>;
 /// `StreamItem`, `{kind: ...}`).
 pub type DriverEvent = Object;
 
+/// The session id of a native session its agent has not named yet (ACP's
+/// `session/new` names it once the process started).
+pub const UNNAMED_SESSION_ID: &str = "new";
+
 /// The agents conversation mode drives (`ConversationAgent`).
-pub const CONVERSATION_AGENTS: &[&str] = &["claude"];
+pub const CONVERSATION_AGENTS: &[&str] = &["claude", "agy"];
 
 /// What the browser is asked for a prompt request.
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +129,16 @@ pub trait DriverCodec: Send {
     fn answer(&mut self, request: &DriverEvent, answer: Option<&Value>) -> Vec<String>;
     /// A request of the agent's own (rewind steps...); None: not supported.
     fn request(&mut self, kind: &str, params: &Object, request_id: &str) -> Option<Vec<String>>;
+    /// Lines to write right after a fresh headless process starts (not on
+    /// reattach), such as ACP's `initialize` handshake.
+    fn on_start(&mut self, _session_id: &str, _cwd: &str) -> Vec<String> {
+        Vec::new()
+    }
+    /// Protocol follow-up lines queued while decoding stdout (such as ACP
+    /// `session/resume` / `session/new` or buffered prompts after handshake).
+    fn pending_writes(&mut self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// A control request's answer (`ControlAnswer`); `None` where it is used
@@ -255,6 +269,42 @@ pub trait ModelContext: Send + Sync {
 /// when it does not say), or why not.
 pub type ModelSet = Result<Option<String>, String>;
 
+/// A command line's end, run on the pane's host for a driver's command.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CommandOutput {
+    /// None when it was stopped or killed by a signal.
+    pub code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// What a driver's own slash command needs of the session it runs in.
+pub trait CommandContext: Send + Sync {
+    /// Asks the running process over its control protocol, starting it
+    /// when it is not up; None when no answer came in time.
+    fn control(&self, kind: &str, params: Object) -> BoxFuture<'_, Option<ControlAnswer>>;
+    /// Runs a command line on the pane's host, in the session's
+    /// directory; an error when it could not run or did not end in time.
+    fn run<'a>(
+        &'a self,
+        command: &'a str,
+        timeout_ms: u64,
+    ) -> BoxFuture<'a, Result<CommandOutput, String>>;
+    /// The context window the process last reported: tokens used, and its
+    /// size.
+    fn context_usage(&self) -> Option<(u64, u64)>;
+    /// The model the process runs, as it last said.
+    fn model(&self) -> Option<String>;
+}
+
+/// What a driver's slash command says, under the composer as /model's
+/// answer is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommandNotice {
+    pub ok: bool,
+    pub text: String,
+}
+
 pub trait ModelDriver: Send + Sync {
     /// The models the running process offers (`AgentChatModel[]`); None
     /// when it cannot say.
@@ -315,6 +365,21 @@ pub trait ProtocolDriver: Send + Sync {
     }
     /// Present when the capabilities say mcp.
     fn mcp(&self) -> Option<&dyn McpDriver> {
+        None
+    }
+    /// The session id a new native session starts with: one Roamgate
+    /// picks (Claude's `--session-id`), or [`UNNAMED_SESSION_ID`] where
+    /// the agent names it once it started (ACP's `session/new`).
+    fn new_session_id(&self) -> String {
+        roamgate_base::paths::random_uuid()
+    }
+    /// A slash command the driver answers itself instead of the agent
+    /// (AGY's /usage); None: the line goes to the agent.
+    fn command<'a>(
+        &'a self,
+        _text: &'a str,
+        _context: &'a dyn CommandContext,
+    ) -> Option<BoxFuture<'a, CommandNotice>> {
         None
     }
 }

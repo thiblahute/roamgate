@@ -7,6 +7,7 @@
 //! services, model downloads, an OpenAI-style endpoint, update mirrors).
 
 pub mod agent_socket;
+pub mod agy;
 pub mod claude;
 pub mod forge;
 pub mod herdr;
@@ -28,6 +29,7 @@ pub const COMMAND_FAKES: &[(&str, &[&str])] = &[
     ("fake-glab", &["glab"]),
     ("fake-gh", &["gh"]),
     ("fake-claude", &["claude"]),
+    ("fake-agy", &["agy"]),
     ("fake-voice-helper", &["roamgate-voice"]),
     ("fake-provider", &["time-report-provider"]),
     (

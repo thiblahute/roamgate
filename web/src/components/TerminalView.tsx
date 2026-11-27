@@ -623,16 +623,18 @@ export function TerminalView({
     selectedPaneInLayout ?? s.layout?.focused_pane_id ?? null;
   const isActivePane =
     s.shown && !!pane && (!paneId || pane.pane_id === activePaneId);
-  // Between Claude's /exit and the holder's report (and between the
-  // holder's exit and claude --resume), Herdr knows no agent in the pane:
-  // it stays a Claude pane while a handover runs or conversation mode holds
-  // it, so the chat (its outbox, its voice) is not torn down meanwhile.
-  const heldClaudeRef = useRef<string | null>(null);
-  const heldClaude =
-    !!pane && !pane.agent && heldClaudeRef.current === pane.pane_id;
+  // Between the TUI's /exit and the holder's report (and between the
+  // holder's exit and resuming the TUI), Herdr knows no agent in the pane:
+  // keep the previous conversation agent while a handover runs or
+  // conversation mode holds it, so the chat is not torn down meanwhile.
+  const heldAgentRef = useRef<{ paneId: string; agent: string } | null>(null);
+  const heldAgent =
+    !!pane && !pane.agent && heldAgentRef.current?.paneId === pane.pane_id
+      ? heldAgentRef.current.agent
+      : null;
   const agentPane = useMemo(
-    () => (pane && heldClaude ? { ...pane, agent: "claude" } : pane),
-    [pane, heldClaude],
+    () => (pane && heldAgent ? { ...pane, agent: heldAgent } : pane),
+    [pane, heldAgent],
   );
   const canShowAgentHistory = isActivePane && paneHasAgentHistory(agentPane);
   // An agent pane can show its conversation as a chat instead of its
@@ -674,13 +676,14 @@ export function TerminalView({
   // later: the chat stays a while for it.
   const heldUntilRef = useRef(0);
   if (conversationOwnsPane) heldUntilRef.current = Date.now() + 20_000;
-  heldClaudeRef.current =
-    pane &&
-    (isConversationAgent(pane.agent) ||
-      (heldClaude &&
-        (conversationOwnsPane || Date.now() < heldUntilRef.current)))
-      ? pane.pane_id
-      : null;
+  heldAgentRef.current =
+    pane && isConversationAgent(pane.agent)
+      ? { paneId: pane.pane_id, agent: pane.agent }
+      : pane &&
+          heldAgent &&
+          (conversationOwnsPane || Date.now() < heldUntilRef.current)
+        ? { paneId: pane.pane_id, agent: heldAgent }
+        : null;
   const conversationOwnsRef = useRef(conversationOwnsPane);
   conversationOwnsRef.current = conversationOwnsPane;
   const chatState = conversation?.state ?? null;

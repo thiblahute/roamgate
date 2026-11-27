@@ -91,7 +91,7 @@
         },
         "slashCommands": {
           "type": ["string", "null"],
-          "enum": ["claude", null],
+          "enum": ["claude", "agy", null],
           "description": "Which slash command palette the composer offers."
         },
         "models": {
@@ -2235,7 +2235,7 @@
     },
     "ConversationAgent": {
       "type": "string",
-      "const": "claude",
+      "enum": ["claude", "agy"],
       "description": "The agents conversation mode drives (Herdr's agent names): each has a driver on the server, a headless protocol and its terminal side."
     }
   }

@@ -2904,6 +2904,7 @@ dependencies = [
  "roamgate-activity",
  "roamgate-agent-client",
  "roamgate-agents",
+ "roamgate-agy",
  "roamgate-archive",
  "roamgate-assistant",
  "roamgate-base",
@@ -3000,6 +3001,16 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "roamgate-agy"
+version = "0.0.0"
+dependencies = [
+ "regex",
+ "roamgate-agents",
+ "roamgate-conversation",
+ "serde_json",
 ]
 
 [[package]]
@@ -3206,6 +3217,7 @@ dependencies = [
  "regex",
  "roamgate-agent-client",
  "roamgate-agents",
+ "roamgate-agy",
  "roamgate-base",
  "roamgate-claude",
  "rustix",

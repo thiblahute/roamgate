@@ -512,13 +512,17 @@ impl Inner {
         }
     }
 
-    /// The session's profile, for a start (`profileOf`).
-    pub(crate) fn profile_of(&self, session_id: &str) -> Result<Option<StartProfile>, String> {
+    /// The session's profile, for a start (`profileOf`), restricted to `agent`.
+    pub(crate) fn profile_of_for(
+        &self,
+        session_id: &str,
+        agent: &str,
+    ) -> Result<Option<StartProfile>, String> {
         let Some(command_for) = &self.options.command_for else {
             return Ok(None);
         };
         let command = command_for(session_id)?;
-        if command.plain {
+        if command.plain || (!command.agent.is_empty() && command.agent != agent) {
             return Ok(None);
         }
         self.log(
@@ -545,6 +549,12 @@ impl Inner {
                 None
             }
         }
+    }
+
+    /// The profile a session resumes with, only when it targets `agent`.
+    pub(crate) fn resume_profile_for(&self, session_id: &str, agent: &str) -> Option<AgentCommand> {
+        self.resume_profile(session_id)
+            .filter(|command| command.agent.is_empty() || command.agent == agent)
     }
 
     fn restart_refusal_of(&self, pane_id: &str, session: &ConversationSession) -> Option<String> {
@@ -1645,6 +1655,21 @@ impl ConversationService {
             && inner.driver_of(pane_id).protocol.models().is_some()
         {
             self.set_model(pane_id, &model).await;
+            return Ok(json!({"status": "sent", "id": uuid.unwrap_or_else(random_uuid)}));
+        }
+        if images.is_empty()
+            && let Some(notice) = session.command(text, inner.command_runner(pane_id)).await
+        {
+            inner.set_model_notice(
+                pane_id,
+                Some(obj_of(json!({
+                    "at": inner.iso_now(),
+                    "ok": notice.ok,
+                    "requested": js::trim(text),
+                    "model": session.model(),
+                    "text": notice.text,
+                }))),
+            );
             return Ok(json!({"status": "sent", "id": uuid.unwrap_or_else(random_uuid)}));
         }
         inner.clear_interrupted(pane_id);

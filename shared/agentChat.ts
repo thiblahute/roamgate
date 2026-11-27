@@ -39,15 +39,28 @@ export type AgentChatPhase =
  * The agents conversation mode drives (Herdr's agent names): each has a
  * driver on the server, a headless protocol and its terminal side.
  */
-export type ConversationAgent = "claude";
+export type ConversationAgent = "claude" | "agy";
 
-const CONVERSATION_AGENTS: readonly string[] = ["claude"];
+export const CONVERSATION_AGENTS: readonly ConversationAgent[] = [
+  "claude",
+  "agy",
+];
 
 /** Whether conversation mode can drive this pane's agent. */
 export function isConversationAgent(
   agent: unknown,
 ): agent is ConversationAgent {
-  return typeof agent === "string" && CONVERSATION_AGENTS.includes(agent);
+  return (
+    typeof agent === "string" &&
+    (CONVERSATION_AGENTS as readonly string[]).includes(agent)
+  );
+}
+
+/** An agent's name in what the user reads ("Claude", "AGY"). */
+export function agentDisplayName(agent: string | null | undefined): string {
+  if (agent === "agy") return "AGY";
+  if (agent === "claude" || !agent) return "Claude";
+  return agent;
 }
 
 /** What a conversation's agent can do; the chat hides what it cannot. */
@@ -72,7 +85,7 @@ export type AgentChatCapabilities = {
   /** Images go inline ("base64") or as the uploaded file's host path. */
   images: "base64" | "path";
   /** Which slash command palette the composer offers. */
-  slashCommands: "claude" | null;
+  slashCommands: "claude" | "agy" | null;
   /** The running agent's model is listed and switched (/model). */
   models: boolean;
   /** The running agent's MCP servers are listed and acted on (/mcp). */

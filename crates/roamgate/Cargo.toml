@@ -30,6 +30,7 @@ roamgate-agent-client = { path = "../roamgate-agent-client" }
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-archive = { path = "../roamgate-archive" }
 roamgate-base = { path = "../roamgate-base" }
+roamgate-agy = { path = "../roamgate-agy" }
 roamgate-claude = { path = "../roamgate-claude" }
 roamgate-cli = { path = "../roamgate-cli" }
 roamgate-assistant = { path = "../roamgate-assistant" }
