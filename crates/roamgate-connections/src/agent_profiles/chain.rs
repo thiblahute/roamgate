@@ -5,7 +5,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use roamgate_accounts::chain::{Chain, Lines, Member, WalkOrder, walk, weekday};
+use roamgate_accounts::chain::{
+    Chain, Crossing, Lines, Member, Move, WalkOrder, crossing, default_move, limit_move, walk,
+    weekday,
+};
 use roamgate_accounts::{AuthState, UsagePoller};
 use serde_json::Value;
 
@@ -179,6 +182,112 @@ pub fn command_for_agent(
     command_for_session(Some(session_id), settings, store, home)
 }
 
+/// A session running now, as the chain sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LiveSession {
+    pub connection_id: String,
+    pub pane_id: String,
+    pub session_id: String,
+    /// Conversation mode runs it (else a terminal).
+    pub conversation: bool,
+    /// Its profile now.
+    pub profile: String,
+    pub pinned: bool,
+}
+
+/// A session the chain moves, and why.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SessionMove {
+    pub session: LiveSession,
+    pub to: String,
+    pub to_agent: String,
+    /// The account it leaves is another agent's.
+    pub cross_agent: bool,
+    pub crossing: Option<Crossing>,
+}
+
+fn agent_of<'m>(members: &'m [Member], name: &str) -> Option<&'m str> {
+    members
+        .iter()
+        .find(|member| member.name == name)
+        .map(|member| member.agent.as_str())
+}
+
+/// What the chain does now: where the global default goes, and which live
+/// sessions move. An unpinned session leaves an account past its lines
+/// (with the default when it moves); a pinned one only past the hard cap.
+pub fn proactive(
+    settings: &ChainSettings,
+    members: &[Member],
+    default: &str,
+    sessions: &[LiveSession],
+    now_ms: i64,
+    today: u8,
+) -> (Option<Move>, Vec<SessionMove>) {
+    let chain = &settings.chain;
+    let default_moved = members
+        .iter()
+        .any(|member| member.name == default)
+        .then(|| default_move(chain, members, default, now_ms, today))
+        .flatten();
+    let mut moves = Vec::new();
+    for session in sessions {
+        let Some(member) = members.iter().find(|member| member.name == session.profile) else {
+            continue;
+        };
+        let crossed = crossing(member, chain, now_ms, session.pinned);
+        let to = match (&default_moved, &crossed) {
+            // The default leaves for its preferred account: unpinned
+            // sessions on it follow.
+            (Some(moved), _) if !session.pinned && moved.from == session.profile => {
+                Some(moved.to.clone())
+            }
+            (_, Some(_)) => walk(chain, members, Some(&member.name), None, now_ms, today)
+                .first()
+                .map(|next| next.name.clone()),
+            _ => None,
+        };
+        let Some(to) = to.filter(|to| *to != session.profile) else {
+            continue;
+        };
+        let to_agent = agent_of(members, &to).unwrap_or("claude").to_owned();
+        moves.push(SessionMove {
+            cross_agent: to_agent != member.agent,
+            to_agent,
+            to,
+            crossing: crossed.or_else(|| {
+                default_moved
+                    .as_ref()
+                    .and_then(|moved| moved.crossing.clone())
+            }),
+            session: session.clone(),
+        });
+    }
+    (default_moved, moves)
+}
+
+/// Where a session stopped by a usage limit goes: the chain's next account
+/// (the limited one left out, pinned or not: a limit is the hard cap).
+pub fn reactive(
+    settings: &ChainSettings,
+    members: &[Member],
+    session: &LiveSession,
+    now_ms: i64,
+    today: u8,
+) -> Option<SessionMove> {
+    let member = members
+        .iter()
+        .find(|member| member.name == session.profile)?;
+    let next = limit_move(&settings.chain, members, &session.profile, now_ms, today)?;
+    Some(SessionMove {
+        session: session.clone(),
+        to: next.name.clone(),
+        to_agent: next.agent.clone(),
+        cross_agent: next.agent != member.agent,
+        crossing: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,5 +336,86 @@ mod tests {
         let command =
             command_for_agent("s", "claude", Some(&settings), None, home, Some(&usage), 0).unwrap();
         assert_eq!(command.profile, "Work");
+    }
+
+    fn window(label: &str, utilization: f64) -> roamgate_accounts::UsageWindow {
+        roamgate_accounts::UsageWindow {
+            label: label.into(),
+            utilization,
+            resets_at: Some(roamgate_base::log::iso_millis(3_600_000)),
+        }
+    }
+
+    fn member(name: &str, agent: &str, five: f64) -> Member {
+        Member {
+            name: name.into(),
+            agent: agent.into(),
+            signed_in: true,
+            windows: vec![window("5h", five)],
+            ..Member::default()
+        }
+    }
+
+    fn session(pane: &str, profile: &str, pinned: bool) -> LiveSession {
+        LiveSession {
+            connection_id: "c".into(),
+            pane_id: pane.into(),
+            session_id: format!("s-{pane}"),
+            conversation: true,
+            profile: profile.into(),
+            pinned,
+        }
+    }
+
+    #[test]
+    fn crossing_a_line_moves_the_default_and_unpinned_sessions_only() {
+        let chain = chain_settings(Some(&settings())).unwrap();
+        let mut members = vec![
+            member("Work", "claude", 85.0),
+            member("Agy 2", "agy", 10.0),
+            member("Agy", "agy", 10.0),
+        ];
+        members[0].lines = chain.lines.get("Work").copied();
+        let sessions = vec![
+            session("p1", "Work", false),
+            session("p2", "Work", true),
+            session("p3", "Agy", false),
+        ];
+        // Work's own line is 80.
+        let (moved, moves) = proactive(&chain, &members, "Work", &sessions, 0, 0);
+        let moved = moved.unwrap();
+        assert_eq!((moved.from.as_str(), moved.to.as_str()), ("Work", "Agy 2"));
+        assert_eq!(moves.len(), 1);
+        assert_eq!(moves[0].session.pane_id, "p1");
+        assert_eq!(moves[0].to, "Agy 2");
+        assert!(moves[0].cross_agent);
+        assert_eq!(moves[0].crossing.as_ref().unwrap().label, "5h");
+        // Past the hard cap the pinned session moves too.
+        let capped = vec![
+            member("Work", "claude", 100.0),
+            member("Agy 2", "agy", 10.0),
+            member("Agy", "agy", 10.0),
+        ];
+        let (_, moves) = proactive(&chain, &capped, "Work", &sessions, 0, 0);
+        let panes: Vec<_> = moves.iter().map(|m| m.session.pane_id.as_str()).collect();
+        assert_eq!(panes, ["p1", "p2"]);
+        // Nothing crossed: nothing moves.
+        let calm = vec![member("Work", "claude", 10.0), member("Agy 2", "agy", 10.0)];
+        let (moved, moves) = proactive(&chain, &calm, "Work", &sessions, 0, 0);
+        assert!(moved.is_none() && moves.is_empty());
+    }
+
+    #[test]
+    fn a_limited_session_goes_to_the_next_account_even_pinned() {
+        let chain = chain_settings(Some(&settings())).unwrap();
+        let members = vec![
+            member("Work", "claude", 10.0),
+            member("Agy 2", "agy", 99.0),
+            member("Agy", "agy", 10.0),
+        ];
+        let moved = reactive(&chain, &members, &session("p", "Work", true), 0, 0).unwrap();
+        assert_eq!(moved.to, "Agy");
+        assert!(moved.cross_agent);
+        assert!(reactive(&chain, &members, &session("p", "Other", false), 0, 0).is_none());
     }
 }
