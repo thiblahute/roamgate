@@ -62,6 +62,10 @@
       },
       "return_after_reset": {
         "type": "boolean"
+      },
+      "chain": {
+        "type": "object",
+        "description": "the account chain (shared/agentProfiles.ts AccountChain)"
       }
     },
     "required": ["default", "profiles", "return_after_reset"]

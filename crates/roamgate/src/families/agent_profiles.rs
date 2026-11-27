@@ -569,14 +569,19 @@ pub(crate) static USAGE: std::sync::LazyLock<Arc<roamgate_accounts::UsagePoller>
             .unwrap_or_default();
         Arc::new(roamgate_accounts::UsagePoller::new(
             &roamgate_connections::agent_profiles::store::data_root_for(&home),
-            roamgate_accounts::Endpoints::default(),
+            roamgate_accounts::Endpoints::from_env(&|name| std::env::var(name).ok()),
             "agy",
         ))
     });
 
 /// The account sign-ins in progress, one set for the process.
 static LOGINS: std::sync::LazyLock<Arc<roamgate_accounts::Logins>> =
-    std::sync::LazyLock::new(Arc::default);
+    std::sync::LazyLock::new(|| {
+        Arc::new(roamgate_accounts::Logins::new(
+            roamgate_accounts::Endpoints::from_env(&|name| std::env::var(name).ok()),
+            "agy",
+        ))
+    });
 
 /// What the RPCs ask of Bun, by `profiles.host` reverse calls.
 struct ReverseHost {

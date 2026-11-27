@@ -6,6 +6,30 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.54
+
+inventory: 91f572a7a364cb6f8336b0f1ee55b966554e5c724f54fc42c127f19ef9b5c491
+
+Account profiles form a chain that moves sessions along it: the global
+default (`profiles.default`) leaves an account past its lines, the live
+sessions on it follow (pinned ones only past the hard cap), and a session
+stopped by a usage limit goes on with the next account. limit_resume
+hands every scheduled pause to the agent_profiles family, which keeps the
+conversation's fallback agent when no chain applies.
+
+- types: `ProfilesSettings.chain` (`AccountChain`: `accounts`,
+  `auto_switch`, `five_hour_line`, `weekly_line`, `lines`, `preferred`,
+  `preferred_days`, `last_resort`, `walk`). Family: settings.
+- rpc: `settings.profiles.get` and `.update` carry `chain`; `.update`'s
+  refusal of other keys names it. Family: settings.
+- rpc: `agent_profile.pin` (`pane_id`, `pinned`); `agent_profile.switch`
+  takes `pin`; `agent_profile.get` says `pinned`. Family: agent_profile.
+- env: `ROAMGATE_TEST_ACCOUNTS_URL` (from source only): a base URL for the
+  account sign-in and usage servers. Family: agent_profile.
+- wire: `internal.agent_profiles.chain_switch` (`connection_id`,
+  `pane_id`), from limit_resume; `internal.conversation.notice`
+  (`pane_id`, `kind`, `text`). Family: agent_profiles, conversation.
+
 ## 1.53
 
 inventory: b81d7ccb7746834f8fa021ba0cfb5b92d910a2052547ce4353736c0bd3429fee
