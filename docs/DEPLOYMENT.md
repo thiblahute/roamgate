@@ -1137,6 +1137,41 @@ Account profiles can form a chain under `profiles.chain`:
 - Roamgate never touches `~/.claude/.credentials.json`: a plain `claude`
   outside Roamgate is not moved.
 
+#### Moving from clauth
+
+When `~/.clauth` is there, **Configuration > Integrations > Agent
+profiles** offers its accounts (`agent_profile.import.scan`): "clauth
+accounts found: import them?", a checklist of its Claude and Codex
+profiles (API key profiles are not accounts and are left out), and your
+own agy when `~/.gemini/antigravity-cli` is there. **Import**
+(`agent_profile.import.apply`):
+
+- makes each chosen profile an account profile of the same name (Codex
+  ones as Codex accounts), and your own agy a plain `agy` profile, which
+  runs as it does now (its home and sign-in untouched);
+- carries clauth's chain over: `fallback_chain` (Claude's, then Codex's)
+  as the account chain's order with auto-switch on, each profile's
+  `fallback_threshold` and `weekly_threshold` as its 5-hour and weekly
+  lines, the `preferred` profile and its `preferred_days`, the
+  `last_resort` profile and `walk_order`; clauth's `active_profile`
+  becomes the default profile. An existing chain keeps its own settings
+  and gains the new accounts at its end; a profile already named so is
+  left as it is.
+
+Two managers must never refresh one sign-in: an imported account's
+sign-in stays clauth's. Its `.credentials.json` (Codex: `auth.json`) is a
+link to clauth's own file: Claude Code and Codex use it, Roamgate reads
+its usage with it, but never refreshes it, signs it out, shares MCP logins
+into it or rewrites it; the settings say "clauth manages this sign-in".
+Once clauth no longer manages that profile (remove it from clauth, or
+stop clauth), **Take over** (`agent_profile.import.take_over`) makes the
+sign-in Roamgate's own: the link becomes a copy of what clauth's file
+holds then, and Roamgate refreshes it from then on. Where no link can be
+made (Windows without the right to make one) the profile is not imported:
+sign it in from Roamgate instead. Nothing under `~/.clauth` is ever
+written, moved or removed, and Roamgate never touches
+`~/.claude/.credentials.json`.
+
 On macOS Claude Code keeps its sign-in in the Keychain, not in the file:
 a Claude account signed in from Roamgate is not seen by Claude Code
 there yet (sign in with `/login` in a session on the profile instead),
