@@ -265,11 +265,17 @@ mod tests {
                 .await
                 .is_err()
         );
+        // Claude Code keeps a macOS sign-in in the Keychain: unknown there.
+        let (signed_in, signed_out) = if cfg!(target_os = "macos") {
+            (AuthState::Unknown, AuthState::Unknown)
+        } else {
+            (AuthState::SignedIn, AuthState::SignedOut)
+        };
         assert_eq!(
             logins
                 .complete(AccountAgent::Claude, &work, Some(&login), &pasted, 0)
                 .await,
-            Ok(AuthState::SignedIn)
+            Ok(signed_in)
         );
         assert!(
             logins
@@ -279,10 +285,7 @@ mod tests {
         );
         assert_eq!(logins.start(AccountAgent::Agy, &work), Started::Terminal);
         assert!(logins.logout(AccountAgent::Agy, &work).is_err());
-        assert_eq!(
-            logins.logout(AccountAgent::Claude, &work),
-            Ok(AuthState::SignedOut)
-        );
+        assert_eq!(logins.logout(AccountAgent::Claude, &work), Ok(signed_out));
     }
 
     #[tokio::test]

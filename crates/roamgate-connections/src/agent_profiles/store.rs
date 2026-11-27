@@ -152,8 +152,20 @@ pub fn read_secret_file(path: &str, home: &Path) -> Result<String, String> {
 }
 
 /// Roamgate's data root for the user of `home`, as this process sees it.
+///
+/// `APPDATA` (Windows) is this process's user's: for another home (a test's,
+/// a sandbox's) the data root is that home's own `AppData/Roaming/roamgate`.
 pub fn data_root_for(home: &Path) -> PathBuf {
-    roamgate_accounts::data_root_of(home, &|name| std::env::var(name).ok())
+    let own_home = ["USERPROFILE", "HOME"]
+        .iter()
+        .filter_map(std::env::var_os)
+        .any(|own| Path::new(&own) == home);
+    roamgate_accounts::data_root_of(home, &|name| {
+        if name == "APPDATA" && !own_home {
+            return None;
+        }
+        std::env::var(name).ok()
+    })
 }
 
 /// An account profile's directory: `<data>/accounts/<agent>/<id>`; None

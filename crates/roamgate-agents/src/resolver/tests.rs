@@ -741,7 +741,9 @@ async fn finds_a_codex_session_in_an_account_home() {
         roamgate_accounts::account_dir(&data, roamgate_accounts::AccountAgent::Codex, "perso")
             .join("sessions");
     let kept = sessions
-        .join("2026/11/26")
+        .join("2026")
+        .join("11")
+        .join("26")
         .join(format!("rollout-2026-11-26T10-00-00-{id}.jsonl"));
     write(&kept, "{}\n");
     let files = LocalSessionFiles {
