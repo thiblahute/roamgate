@@ -131,6 +131,40 @@ export function ProfileChip({
           },
         ]
       : []),
+    ...(data.profiles.some((each) => each.account)
+      ? [
+          {
+            label: data.pinned
+              ? `Account: pinned to ${current}`
+              : `Account: ${current}`,
+            items: [
+              {
+                key: "pin",
+                label: data.pinned ? "Unpin" : `Pin to ${current}`,
+                detail: data.pinned
+                  ? "Let the account chain move it"
+                  : "The account chain leaves it here but at the hard cap",
+                action: () => {
+                  setMenu(null);
+                  void profile.pin(!data.pinned).then(report);
+                },
+              },
+              ...data.profiles
+                .filter((each) => each.account && each.name !== current)
+                .map((each) => ({
+                  key: `move-${each.name}`,
+                  label: `Move to ${each.name}`,
+                  detail: each.account?.auth.replace("_", " "),
+                  disabled: !!profile.switching,
+                  action: () => {
+                    setMenu(null);
+                    void profile.switchTo(each.name, null, true).then(report);
+                  },
+                })),
+            ],
+          },
+        ]
+      : []),
     {
       label: "Run with",
       items: data.profiles.map((each) => ({

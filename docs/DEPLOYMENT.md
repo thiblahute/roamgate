@@ -1081,6 +1081,62 @@ starts or finds the session there until it moves to another profile
 the tokens their transcripts record while they ran there. The quota
 itself is the account's: sessions on one account share its windows.
 
+#### The account chain
+
+Account profiles can form a chain under `profiles.chain`:
+
+```json
+{
+  "profiles": {
+    "default": "Work",
+    "chain": {
+      "accounts": ["Work", "Perso", "Codex", "Agy 2"],
+      "auto_switch": true,
+      "five_hour_line": 95,
+      "weekly_line": 98,
+      "lines": { "Perso": { "five_hour": 90 } },
+      "preferred": "Perso",
+      "preferred_days": [0],
+      "last_resort": "Agy 2",
+      "walk": "chain"
+    }
+  }
+}
+```
+
+- An account is past its lines when a live window (its reset still
+  ahead) reaches the 5-hour line (5-hour windows) or the weekly line (the
+  week, each per-model week and agy's group weeks), or when its recent
+  readings say it will within about two readings. An account's own
+  `lines` win over the chain's; no account is used past 100 %.
+- The next account is the first of `accounts` with headroom (`walk`:
+  `chain`), the one whose weekly window resets first (`soonest_reset`),
+  or the one with the most headroom (`most_headroom`); `preferred` comes
+  first on its `preferred_days` (0 is Sunday; none: every day), and
+  `last_resort` only when no other account has headroom. Signed-out
+  accounts are skipped.
+- The global default account is `profiles.default` (the default radio in
+  the settings): new sessions that do not pick a profile run on it.
+  With `auto_switch`, each minute it moves to the next account when its
+  account crosses a line (and back to the preferred account on its days),
+  and the live sessions on the account it leaves move with it. A session
+  pinned to its account (**Pin to** in its profile menu, or **Move to**
+  an account) stays there until the account reaches 100 %.
+- With `auto_switch`, a session a usage limit stops goes on with the next
+  account instead of only waiting for the reset. Without a chain for it,
+  a conversation goes on with `conversation.fallback_agent`, as before.
+- A move to an account of the same agent resumes the same session there
+  (its transcripts are shared): a conversation's process restarts on the
+  new account once idle, a terminal's Claude exits and resumes when idle
+  (a busy one is left, and tried again at the next minute). A move to
+  another agent goes through conversation mode's handoff to that agent,
+  on the chain's first account of it with headroom; a terminal session
+  cannot change agent and is left as it is. A conversation's chat says
+  "Continued on <account>", and every move is logged with the reading
+  that caused it.
+- Roamgate never touches `~/.claude/.credentials.json`: a plain `claude`
+  outside Roamgate is not moved.
+
 On macOS Claude Code keeps its sign-in in the Keychain, not in the file:
 a Claude account signed in from Roamgate is not seen by Claude Code
 there yet (sign in with `/login` in a session on the profile instead),

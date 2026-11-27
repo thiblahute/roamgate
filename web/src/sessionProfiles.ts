@@ -9,6 +9,8 @@ export type OfferedProfile = {
   /** The model it runs ("GLM 5p3"), else its name. */
   label: string;
   default: boolean;
+  /** An account profile's id and sign-in. */
+  account?: { id: string; auth: string };
 };
 
 /** A pane session's profile (agent_profile.get). */
@@ -17,6 +19,8 @@ export type SessionProfile = {
   owner?: "terminal" | "conversation";
   profile?: string;
   label?: string;
+  /** The account chain leaves the session on its profile. */
+  pinned?: boolean;
   default: string;
   profiles: OfferedProfile[];
   limit?: UsageLimit | null;
@@ -180,6 +184,7 @@ export async function switchSessionProfile(
   paneId: string,
   profile: string,
   resetsAt?: number | null,
+  pin = false,
 ): Promise<{ ok: boolean; reason?: string }> {
   const key = keyOf(client.connectionId, paneId);
   const current = sessionProfileOf(client.connectionId, paneId);
@@ -193,6 +198,7 @@ export async function switchSessionProfile(
         ? { session_id: current.data.session_id }
         : {}),
       ...(resetsAt ? { resets_at: resetsAt } : {}),
+      ...(pin ? { pin: true } : {}),
     })) as { ok?: boolean; reason?: string };
     const ok = result?.ok === true;
     await refreshSessionProfile(client, paneId);
@@ -203,6 +209,22 @@ export async function switchSessionProfile(
     return ok ? { ok } : { ok, reason: result?.reason };
   } catch (error) {
     update(key, { switching: null, error: (error as Error).message });
+    return { ok: false, reason: (error as Error).message };
+  }
+}
+
+/** Pins the pane's session to its profile (the account chain leaves it
+ * there but past an account's hard cap), or unpins it. */
+export async function pinSession(
+  client: ConnectionClient,
+  paneId: string,
+  pinned: boolean,
+): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    await client.call("agent_profile.pin", { pane_id: paneId, pinned });
+    await refreshSessionProfile(client, paneId);
+    return { ok: true };
+  } catch (error) {
     return { ok: false, reason: (error as Error).message };
   }
 }
@@ -230,11 +252,15 @@ export function useSessionProfile(
     return () => clearInterval(timer);
   }, [client, paneId, enabled, agentStatus, everyMs]);
   const switchTo = useCallback(
-    (profile: string, resetsAt?: number | null) =>
-      switchSessionProfile(client, paneId, profile, resetsAt),
+    (profile: string, resetsAt?: number | null, pin = false) =>
+      switchSessionProfile(client, paneId, profile, resetsAt, pin),
     [client, paneId],
   );
-  return { ...entry, switchTo };
+  const pin = useCallback(
+    (pinned: boolean) => pinSession(client, paneId, pinned),
+    [client, paneId],
+  );
+  return { ...entry, switchTo, pin };
 }
 
 /** This browser's time zone. */
