@@ -530,6 +530,41 @@ impl SessionProfiles {
         });
     }
 
+    /// Whether the session is pinned to its profile: the account chain
+    /// never moves it on its own (only past an account's hard cap).
+    pub fn pinned(&self, session_id: &str) -> bool {
+        self.get(Some(session_id))
+            .is_some_and(|choice| choice.get("pinned") == Some(&Value::Bool(true)))
+    }
+
+    /// Pins the session (to its choice, else to `profile`) or unpins it.
+    pub fn set_pinned(&self, session_id: &str, profile: &str, pinned: bool) {
+        let at = self.iso_now();
+        self.with(|sessions| {
+            match sessions.get_mut(session_id) {
+                Some(choice) => {
+                    if pinned {
+                        if !choice.get("profile").is_some_and(Value::is_string) {
+                            choice.insert("profile".into(), json!(profile));
+                        }
+                        choice.insert("pinned".into(), json!(true));
+                    } else {
+                        choice.shift_remove("pinned");
+                    }
+                }
+                None if pinned => {
+                    let mut choice = Map::new();
+                    choice.insert("profile".into(), json!(profile));
+                    choice.insert("at".into(), json!(at));
+                    choice.insert("pinned".into(), json!(true));
+                    sessions.insert(session_id.to_owned(), choice);
+                }
+                None => return,
+            }
+            self.save(sessions);
+        });
+    }
+
     /// Sessions due back on their default profile.
     pub fn due(&self) -> Vec<DueReturn> {
         let at = (self.now)();

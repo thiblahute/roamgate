@@ -295,7 +295,7 @@ fn rpc_context(cx: &FamilyContext, store: Arc<SessionProfiles>) -> ProfileRpcCon
 }
 
 /// The accounts' usage readings, one scheduler for the process.
-static USAGE: std::sync::LazyLock<Arc<roamgate_accounts::UsagePoller>> =
+pub(crate) static USAGE: std::sync::LazyLock<Arc<roamgate_accounts::UsagePoller>> =
     std::sync::LazyLock::new(|| {
         let home = std::env::var_os("HOME")
             .map(std::path::PathBuf::from)

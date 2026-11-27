@@ -64,6 +64,11 @@ pub type TranscriptStat = Arc<dyn Fn(String) -> BoxFuture<'static, Option<f64>> 
 /// used (a secret file gone).
 pub type CommandFor = Arc<dyn Fn(&str) -> Result<AgentCommand, String> + Send + Sync>;
 
+/// A session's command for a given agent (its session id, the agent): an
+/// account chain's account of that agent when the session's own profile
+/// is another agent's.
+pub type CommandForAgent = Arc<dyn Fn(&str, &str) -> Result<AgentCommand, String> + Send + Sync>;
+
 /// /model's list and memory (`options.models`).
 #[allow(clippy::type_complexity)]
 #[derive(Clone)]
@@ -100,6 +105,8 @@ pub struct ServiceOptions {
     pub holder_command: Arc<dyn Fn(&str) -> String + Send + Sync>,
     pub resume_command: Option<ResumeCommand>,
     pub command_for: Option<CommandFor>,
+    /// When set, a start's profile for its agent (see [`CommandForAgent`]).
+    pub command_for_agent: Option<CommandForAgent>,
     pub launch_command: Option<LaunchCommand>,
     pub models: Option<ModelsDeps>,
     pub log: Option<LogFn>,
@@ -165,6 +172,7 @@ impl ServiceOptions {
             holder_command,
             resume_command: None,
             command_for: None,
+            command_for_agent: None,
             launch_command: None,
             models: None,
             log: None,
@@ -524,10 +532,11 @@ impl Inner {
         session_id: &str,
         agent: &str,
     ) -> Result<Option<StartProfile>, String> {
-        let Some(command_for) = &self.options.command_for else {
-            return Ok(None);
+        let command = match (&self.options.command_for_agent, &self.options.command_for) {
+            (Some(command_for_agent), _) => command_for_agent(session_id, agent)?,
+            (None, Some(command_for)) => command_for(session_id)?,
+            (None, None) => return Ok(None),
         };
-        let command = command_for(session_id)?;
         if command.plain || (!command.agent.is_empty() && command.agent != agent) {
             return Ok(None);
         }
@@ -1575,6 +1584,16 @@ impl ConversationService {
     }
 
     /// Starts the pane's process again with the session's profile now.
+    /// Tells the pane's chat something happened to its session (`agent_chat.
+    /// notice`): `kind` names it (`account` for a move to another account).
+    pub fn notice(&self, pane_id: &str, kind: &str, text: &str) {
+        let mut event = Obj::new();
+        event.insert("type".into(), json!("notice"));
+        event.insert("kind".into(), json!(kind));
+        event.insert("text".into(), json!(text));
+        self.inner.emit(pane_id, event);
+    }
+
     pub async fn restart_process(&self, pane_id: &str) -> Value {
         let inner = &self.inner;
         if !inner.owns(pane_id) || inner.handover.running(pane_id) {
