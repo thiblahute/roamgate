@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use roamgate_accounts::sessions::{SessionRun, SessionRuns};
+use roamgate_accounts::sessions::{RunPane, SessionRun, SessionRuns};
 use roamgate_accounts::{AccountAgent, session_roots};
 use roamgate_agents::files::{AgentEnv, LocalSessionFiles, SessionFiles};
 use roamgate_agents::token_usage::{TokenUsage, summarize_token_usage};
@@ -20,6 +20,75 @@ pub fn record_session(home: &Path, session_id: &str, profile: &Value, now_ms: i6
     let on =
         profile_account_id(profile).map(|id| (profile_agent(profile), id, profile_name(profile)));
     let _ = runs.record(session_id, on, now_ms);
+}
+
+/// [`record_session`], with the pane it runs in (connection, pane).
+pub fn record_session_in(
+    home: &Path,
+    session_id: &str,
+    profile: &Value,
+    pane: Option<(&str, &str)>,
+    now_ms: i64,
+) {
+    let runs = SessionRuns::new(&data_root_for(home));
+    let on =
+        profile_account_id(profile).map(|id| (profile_agent(profile), id, profile_name(profile)));
+    let pane = pane.map(|(connection_id, pane_id)| RunPane {
+        connection_id: connection_id.to_owned(),
+        pane_id: pane_id.to_owned(),
+    });
+    let _ = runs.record_in(session_id, on, pane, now_ms);
+}
+
+/// What a transcript says of its session: a title (Claude's summary, else
+/// the first thing the user asked) and its working directory.
+pub fn transcript_facts(text: &str) -> (Option<String>, Option<String>) {
+    let mut summary = None;
+    let mut first_ask = None;
+    let mut cwd = None;
+    for line in text.lines() {
+        let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if cwd.is_none() {
+            cwd = record
+                .get("cwd")
+                .or_else(|| record.get("payload").and_then(|payload| payload.get("cwd")))
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+        }
+        match record.get("type").and_then(Value::as_str) {
+            Some("summary") => {
+                summary = record
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+            }
+            Some("user") if first_ask.is_none() => {
+                let content = record
+                    .get("message")
+                    .and_then(|message| message.get("content"));
+                first_ask = match content {
+                    Some(Value::String(text)) => Some(text.clone()),
+                    Some(Value::Array(parts)) => parts
+                        .iter()
+                        .find_map(|part| part.get("text").and_then(Value::as_str))
+                        .map(str::to_owned),
+                    _ => None,
+                };
+            }
+            _ => {}
+        }
+    }
+    let title = summary.or(first_ask).map(|title| {
+        let line = title.lines().next().unwrap_or("").trim().to_owned();
+        if line.chars().count() > 80 {
+            format!("{}...", line.chars().take(77).collect::<String>())
+        } else {
+            line
+        }
+    });
+    (title.filter(|title| !title.is_empty()), cwd)
 }
 
 /// A Claude session's transcript: `<projects>/*/<id>.jsonl` under the
@@ -116,18 +185,23 @@ pub async fn sessions_report(home: &Path, profile: &Value, from: i64, to: i64) -
     for run in runs {
         let start = run.started_at.max(from);
         let end = run.ended_at.unwrap_or(to).min(to);
-        let tokens = match transcript(home, &data_root, &run).await {
-            Some(path) => std::fs::read_to_string(path)
-                .ok()
-                .and_then(|text| tokens_between(&text, start, end)),
+        let text = match transcript(home, &data_root, &run).await {
+            Some(path) => std::fs::read_to_string(path).ok(),
             None => None,
         };
+        let tokens = text
+            .as_deref()
+            .and_then(|text| tokens_between(text, start, end));
+        let (title, cwd) = text.as_deref().map(transcript_facts).unwrap_or_default();
         sessions.push(json!({
             "session_id": run.session_id,
             "profile": run.profile,
             "started_at": run.started_at,
             "ended_at": run.ended_at,
             "tokens": tokens,
+            "title": title,
+            "cwd": cwd,
+            "pane": run.pane,
         }));
     }
     json!({"sessions": sessions})
@@ -198,5 +272,27 @@ mod tests {
         assert_eq!(session["profile"], "Work");
         assert_eq!(session["tokens"]["input_tokens"], 7);
         assert_eq!(session["ended_at"], Value::Null);
+        assert_eq!(session["pane"], Value::Null);
+    }
+
+    #[test]
+    fn a_transcript_names_its_session() {
+        let text = [
+            json!({"type": "user", "cwd": "/repo", "message": {"content": "fix the build\nplease"}}).to_string(),
+            line("2026-11-26T10:00:00.000Z", 1, 1),
+        ]
+        .join("\n");
+        assert_eq!(
+            transcript_facts(&text),
+            (Some("fix the build".into()), Some("/repo".into()))
+        );
+        let summarized = format!(
+            "{text}\n{}",
+            json!({"type": "summary", "summary": "Build fixed"})
+        );
+        assert_eq!(
+            transcript_facts(&summarized).0.as_deref(),
+            Some("Build fixed")
+        );
     }
 }

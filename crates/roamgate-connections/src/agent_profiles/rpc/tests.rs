@@ -180,6 +180,7 @@ fn context(store: Arc<SessionProfiles>) -> ProfileRpcContext {
         home: PathBuf::from("/nonexistent-home"),
         logins: Arc::default(),
         usage: None,
+        connection_id: None,
     }
 }
 

@@ -119,6 +119,8 @@ pub struct ProfileRpcContext {
     pub logins: Arc<roamgate_accounts::Logins>,
     /// The accounts' usage readings.
     pub usage: Option<Arc<roamgate_accounts::UsagePoller>>,
+    /// The connection the call came on, when known.
+    pub connection_id: Option<String>,
 }
 
 /// An RPC refused with a message (`ProfileRpcError`).
@@ -148,6 +150,7 @@ pub const PROFILE_RPC_METHODS: &[&str] = &[
     "agent_profile.account.logout",
     "agent_profile.account.usage",
     "agent_profile.account.sessions",
+    "agent_profile.account.switches",
     "agent_profile.import.scan",
     "agent_profile.import.apply",
     "agent_profile.import.take_over",
@@ -351,7 +354,16 @@ pub async fn handle_profile_rpc(
             return Ok(Value::Object(result));
         };
         let profile = profile_for_session(Some(&settings), Some(&pane.session_id), Some(store));
-        super::account_usage::record_session(&context.home, &pane.session_id, &profile, now());
+        super::account_usage::record_session_in(
+            &context.home,
+            &pane.session_id,
+            &profile,
+            context
+                .connection_id
+                .as_deref()
+                .map(|connection| (connection, pane_id.as_str())),
+            now(),
+        );
         let mut limit = Value::Null;
         if params.get("limit") != Some(&Value::Bool(false)) {
             limit = tail
@@ -589,6 +601,19 @@ async fn account_rpc(
     list: &[Value],
     context: &ProfileRpcContext,
 ) -> Result<Value, ProfileRpcError> {
+    if action == "switches" {
+        // The chain's last moves, newest first.
+        let limit = params
+            .get("limit")
+            .and_then(Value::as_u64)
+            .unwrap_or(20)
+            .min(200) as usize;
+        let entries = roamgate_accounts::sessions::SwitchLog::new(&super::store::data_root_for(
+            &context.home,
+        ))
+        .recent(limit);
+        return Ok(json!({ "switches": entries }));
+    }
     if action == "usage" {
         // Every account's last reading: the same snapshot for every client.
         let accounts = context
