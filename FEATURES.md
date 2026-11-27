@@ -1191,7 +1191,15 @@ Inspector state is scoped to each checkout; see
   Claude...** in the chat, then goes to it once. Never while Claude works,
   asks you something, runs background work, during a voice call or a
   companion job on it, or within 10 minutes of another session's message.
-  In an AGY conversation Roamgate answers
+  **Switch agent** (the agent's icon in a conversation's header): the
+  conversation goes on with the other agent, in the same chat. The outgoing
+  agent's turn is stopped (a tool call it cut off is named to the incoming
+  agent as one whose outcome is unknown), and the incoming agent is given
+  the conversation in one message, shown in the chat as one **Continued
+  from Claude** (or AGY) line: all of it the first time, and only what
+  happened since when that agent had the conversation before, its own
+  session resumed. Messages sent meanwhile go to it after; each agent keeps
+  its own terminal flags. In an AGY conversation Roamgate answers
   /usage (the account's quota, from `agy`), /context and /mode itself.
   A Claude chat rewinds as /rewind does: the arrow beside one of your
   messages restores the code and the conversation, or either, to before

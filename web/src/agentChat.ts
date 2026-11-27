@@ -16,7 +16,9 @@ import {
   type AgentChatRewindResult,
   type AgentChatState,
   type AgentChatStuck,
+  type AgentChatSwitchResult,
   type AgentChatVoiceAction,
+  type ConversationAgent,
   agentDisplayName,
 } from "../../shared/agentChat";
 import { bridge, type ConnectionClient, type HerdrEventMsg } from "./api";
@@ -276,6 +278,18 @@ export function applyStateEvent(
       return { ...state, api_key_question: event.api_key_question };
     case "model_notice":
       return { ...state, model_notice: event.model_notice };
+    // The chat shows the switch where it happened: the history block the
+    // incoming agent was given is its notice.
+    case "backend_switched":
+      return {
+        ...state,
+        agent: event.to_agent,
+        capabilities: event.capabilities,
+        session_id: event.session_id,
+        work_session_id: event.work_session_id,
+        handoff_phase: undefined,
+        next_prompt: null,
+      };
     case "shell": {
       // A `!` line's progress; once Claude has it, the transcript shows it,
       // and the last few sent stay here for how they ended (the transcript
@@ -1035,6 +1049,39 @@ export function dismissAgentChatInterrupted(
   paneId: string,
 ): Promise<{ ok: boolean }> {
   return client.call("agent_chat.interrupted.dismiss", { pane_id: paneId });
+}
+
+/**
+ * Moves a conversation-mode pane's conversation to another agent, in the
+ * same chat: the agent is given what it has not seen of it.
+ */
+export async function switchAgentChat(
+  client: ConnectionClient,
+  paneId: string,
+  agent: ConversationAgent,
+  options?: { reason?: string; freshSession?: boolean },
+): Promise<AgentChatSwitchResult> {
+  const result = (await client.call(
+    "agent_chat.switch_agent",
+    {
+      pane_id: paneId,
+      agent,
+      ...(options?.reason ? { reason: options.reason } : {}),
+      ...(options?.freshSession ? { fresh_session: true } : {}),
+    },
+    90_000,
+  )) as AgentChatSwitchResult;
+  if (result.ok) {
+    const entry = entryFor(client.connectionId, paneId);
+    if (entry) {
+      const fresh = (await client.call("agent_chat.state", {
+        pane_id: paneId,
+      })) as AgentChatState;
+      entry.snapshot = { ...entry.snapshot, state: fresh };
+      notify(entry);
+    }
+  }
+  return result;
 }
 
 /**

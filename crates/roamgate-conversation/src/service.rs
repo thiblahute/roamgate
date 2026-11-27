@@ -9,6 +9,7 @@
 //! `AgentChatEventEnvelope` values in Bun's order.
 
 mod auxiliary;
+mod continuity;
 mod holders;
 mod recover;
 
@@ -117,6 +118,8 @@ pub struct ServiceOptions {
     /// A report to Herdr of an owned agent went out (`withStatusReports`).
     pub on_owned_status: Option<PaneFn>,
     pub suspended_file: Option<PathBuf>,
+    /// Directory for durable cross-agent work session files; None keeps them in memory.
+    pub continuity_dir: Option<PathBuf>,
     pub data: Option<DataContext>,
     pub suspended_watch_ms: u64,
     pub recover_wait_ms: u64,
@@ -178,6 +181,7 @@ impl ServiceOptions {
             on_lease_changed: None,
             on_owned_status: None,
             suspended_file: None,
+            continuity_dir: None,
             data: None,
             suspended_watch_ms: 30_000,
             recover_wait_ms: 15_000,
@@ -223,6 +227,8 @@ pub(crate) struct Inner {
     /// the handover made).
     known: Mutex<HashMap<String, (String, String)>>,
     pub(crate) aux: auxiliary::AuxState,
+    pub(crate) continuity: crate::continuity::WorkSessionStore,
+    pub(crate) continuity_rt: continuity::ContinuityRuntime,
     pub(crate) holder_side: holders::HolderSideState,
     pub(crate) recovery: recover::RecoveryState,
     timers: Mutex<Vec<JoinHandle<()>>>,
@@ -743,6 +749,7 @@ impl Inner {
             }),
             Arc::new(move |event: Obj| {
                 if let Some(me) = emit_me.upgrade() {
+                    me.observe_session_event(&emit_pane, &event);
                     me.emit(&emit_pane, event);
                 }
             }),
@@ -774,13 +781,19 @@ impl Inner {
                 if me.closed() {
                     return;
                 }
-                {
+                let work_session = {
                     let _guard = me.lease_lock.lock().unwrap();
                     let Some(mut current) = me.lease(&pane) else {
                         return;
                     };
                     current.insert("session_id".into(), json!(session_id));
+                    let work_session = lease_str(&current, "work_session_id").map(str::to_owned);
                     me.set_lease(current);
+                    work_session
+                };
+                if let Some(work_session) = work_session {
+                    me.continuity
+                        .set_active_native_session(&work_session, session_id);
                 }
                 me.holders.send(&pane, &hold_reply(session_id));
                 me.report(&pane, "idle");
@@ -968,6 +981,7 @@ impl Inner {
                 Value::Array(shells.into_iter().map(Value::Object).collect()),
             );
         }
+        self.populate_continuity_state(pane_id, &mut state);
         state
     }
 
@@ -1091,6 +1105,13 @@ impl Inner {
         confirm: Option<bool>,
         suspend: Option<Option<String>>,
     ) -> Obj {
+        // One writer at a time: the switch to another agent ends first.
+        if self
+            .lease(pane_id)
+            .is_some_and(|lease| lease.contains_key("handoff_phase"))
+        {
+            return refuse("The conversation is moving to another agent; try again once it has");
+        }
         self.settle_api_key(
             pane_id,
             None,
@@ -1350,6 +1371,12 @@ impl ConversationService {
                 options.suspended_file.clone(),
                 options.data.clone(),
             );
+            let continuity = crate::continuity::WorkSessionStore::new(
+                &options.connection_id,
+                options.continuity_dir.clone(),
+                options.data.clone(),
+                options.clock.clone(),
+            );
             let unread: IndexSet<String> = options
                 .leases
                 .all()
@@ -1371,12 +1398,16 @@ impl ConversationService {
                 lease_lock,
                 known: Mutex::new(HashMap::new()),
                 aux: auxiliary::AuxState::default(),
+                continuity,
+                continuity_rt: continuity::ContinuityRuntime::default(),
                 holder_side: holders::HolderSideState::default(),
                 recovery: recover::RecoveryState::new(unread, options.reattach_limit),
                 timers: Mutex::new(Vec::new()),
                 options,
             }
         });
+        // A switch to another agent cut short: one agent writes.
+        inner.recover_switches();
         // A handover cut short (a restart, or the runtime replaced).
         for lease in inner.options.leases.all() {
             let pane = lease_str(&lease, "pane_id").unwrap_or("").to_owned();
@@ -1478,6 +1509,25 @@ impl ConversationService {
 
     pub fn lease(&self, pane_id: &str) -> Option<Lease> {
         self.inner.lease(pane_id)
+    }
+
+    /// The durable cross-agent work session store for this connection.
+    pub fn continuity(&self) -> &crate::continuity::WorkSessionStore {
+        &self.inner.continuity
+    }
+
+    /// Switches an owned conversation pane to another backend (`claude` <-> `agy`)
+    /// using the crash-safe single-writer handoff state machine.
+    pub async fn switch_agent(
+        &self,
+        pane_id: &str,
+        target_agent: &str,
+        reason: &str,
+        fresh_session: bool,
+    ) -> Value {
+        self.inner
+            .switch_agent(pane_id, target_agent, reason, fresh_session)
+            .await
     }
 
     /// Puts another session in a conversation-mode pane (`switchSession`).
@@ -1645,6 +1695,9 @@ impl ConversationService {
         uuid: Option<String>,
     ) -> Result<Value, String> {
         let inner = &self.inner;
+        if let Some(queued) = inner.queue_during_switch(pane_id, text, &images, uuid.clone()) {
+            return Ok(queued);
+        }
         let session = inner.session_for(pane_id)?;
         let command = if images.is_empty() {
             crate::service::auxiliary::parse_model_command(text)
@@ -1674,13 +1727,15 @@ impl ConversationService {
         }
         inner.clear_interrupted(pane_id);
         inner.set_model_notice(pane_id, None);
-        match session.send(text, images.clone(), uuid.clone()).await {
+        // Its id now: its images are kept for its record under it.
+        let id = uuid.unwrap_or_else(random_uuid);
+        inner.remember_images(&id, &images);
+        match session.send(text, images.clone(), Some(id.clone())).await {
             Ok((status, id)) => Ok(json!({"status": status, "id": id})),
             Err(error) => {
                 if error != holders::HOLDER_MISSING || !inner.recover_later(pane_id).await {
                     return Err(error);
                 }
-                let id = uuid.unwrap_or_else(random_uuid);
                 if inner.owns(pane_id) {
                     let session = inner.session_for(pane_id)?;
                     let (status, id) = session.send(text, images, Some(id)).await?;

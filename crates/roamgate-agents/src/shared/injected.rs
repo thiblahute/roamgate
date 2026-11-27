@@ -30,9 +30,13 @@ pub struct InjectedMessage {
     pub rest: String,
 }
 
+/// The block that starts the message an agent gets when a conversation
+/// moves to it from another agent (roamgate-conversation's continuity).
+pub const CONTINUATION_TAG: &str = "roamgate-continuation";
+
 fn tags() -> String {
     format!(
-        "agent-message|teammate-message|cross-session-message|{AGENT_MESSAGE_TAG}|task-notification|system-reminder"
+        "agent-message|teammate-message|cross-session-message|{AGENT_MESSAGE_TAG}|{CONTINUATION_TAG}|task-notification|system-reminder"
     )
 }
 
@@ -138,6 +142,18 @@ fn notice(tag: &str, attrs: &[(String, String)], body: &str) -> Option<InjectedN
             make(
                 "agent",
                 format!("Message from {from}"),
+                js::trim(body).to_owned(),
+            )
+        }
+        CONTINUATION_TAG => {
+            let from = [attr(attrs, "from-name"), attr(attrs, "from")]
+                .into_iter()
+                .flatten()
+                .find(|value| !value.is_empty())
+                .unwrap_or("another agent");
+            make(
+                "continuation",
+                format!("Continued from {from}"),
                 js::trim(body).to_owned(),
             )
         }

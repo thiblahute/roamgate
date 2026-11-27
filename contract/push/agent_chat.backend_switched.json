@@ -1,0 +1,18 @@
+{
+  "x-inventory": "event:agent_chat.backend_switched",
+  "x-kind": "event",
+  "x-sent-by": ["crates/roamgate-conversation/src/service/continuity.rs"],
+  "x-status": "typed",
+  "allOf": [
+    {
+      "$ref": "../schemas/shared/agentChat.schema.json#/$defs/AgentChatEventEnvelope"
+    },
+    {
+      "properties": {
+        "event": {
+          "const": "agent_chat.backend_switched"
+        }
+      }
+    }
+  ]
+}

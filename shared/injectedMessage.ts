@@ -15,7 +15,9 @@ import {
 
 /**
  * Also "rewound": the history's notice of the user's messages a rewind cut;
- * "context": what Codex says of its environment (codex-injected.ts).
+ * "context": what Codex says of its environment (codex-injected.ts);
+ * "continuation": the history another agent left, given to the agent a
+ * conversation moved to.
  */
 export type InjectedKind =
   | "report"
@@ -24,7 +26,8 @@ export type InjectedKind =
   | "teammate"
   | "task"
   | "rewound"
-  | "context";
+  | "context"
+  | "continuation";
 
 export type InjectedNotice = {
   kind: InjectedKind;
@@ -40,7 +43,10 @@ export type InjectedMessage = {
   rest: string;
 };
 
-const TAGS = `agent-message|teammate-message|cross-session-message|${AGENT_MESSAGE_TAG}|task-notification|system-reminder`;
+/** The block that starts what an agent is given when a conversation moves to it. */
+export const CONTINUATION_TAG = "roamgate-continuation";
+
+const TAGS = `agent-message|teammate-message|cross-session-message|${AGENT_MESSAGE_TAG}|${CONTINUATION_TAG}|task-notification|system-reminder`;
 // A block closes at a closing tag on a line of its own when it has one
 // (the harness indents a report's lines, so one inside it never is), else
 // at the first.
@@ -116,6 +122,12 @@ function notice(
       return {
         kind: "session",
         label: `From ${attrs["from-name"] || attrs.from || "another session"}`,
+        body: body.trim(),
+      };
+    case CONTINUATION_TAG:
+      return {
+        kind: "continuation",
+        label: `Continued from ${attrs["from-name"] || attrs.from || "another agent"}`,
         body: body.trim(),
       };
     case "cross-session-message":

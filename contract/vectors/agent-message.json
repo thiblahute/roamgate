@@ -267,6 +267,43 @@
           }
         }
       ]
+    },
+    {
+      "name": "the history given to the agent a conversation moved to reads as a notice, never the user's",
+      "calls": [
+        {
+          "fn": "injectedMessage.parseInjectedMessage",
+          "args": [
+            "<roamgate-continuation from=\"claude\" from-name=\"Claude\">\nThis conversation continues here from Claude.\n[#1] User: Fix the test\n</roamgate-continuation>"
+          ],
+          "result": {
+            "notices": [
+              {
+                "kind": "continuation",
+                "label": "Continued from Claude",
+                "body": "This conversation continues here from Claude.\n[#1] User: Fix the test"
+              }
+            ],
+            "rest": ""
+          }
+        },
+        {
+          "fn": "injectedMessage.parseInjectedMessage",
+          "args": [
+            "<roamgate-continuation from=\"agy\">\nhistory\n</roamgate-continuation>\nand mine"
+          ],
+          "result": {
+            "notices": [
+              {
+                "kind": "continuation",
+                "label": "Continued from agy",
+                "body": "history"
+              }
+            ],
+            "rest": "and mine"
+          }
+        }
+      ]
     }
   ]
 }

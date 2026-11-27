@@ -586,6 +586,9 @@ async fn build_connection(
         }),
     );
     options.data = Some(data.clone());
+    options.continuity_dir = Some(roamgate_conversation::continuity::default_continuity_dir(
+        &data,
+    ));
     options.suspended_file = lease_file
         .parent()
         .map(|dir| dir.join("conversation-suspended.json"));
@@ -1050,6 +1053,16 @@ async fn internal(
             service
                 .switch_session(pane, str_of(params, "session_id"))
                 .await
+        }
+        "switch_agent" => {
+            let target = str_of(params, "agent");
+            let reason = params
+                .get("reason")
+                .and_then(Value::as_str)
+                .filter(|r| !r.is_empty())
+                .unwrap_or("manual");
+            let fresh = params.get("fresh_session") == Some(&Value::Bool(true));
+            service.switch_agent(pane, target, reason, fresh).await
         }
         "restart_process" => service.restart_process(pane).await,
         "restart_terminal" => {

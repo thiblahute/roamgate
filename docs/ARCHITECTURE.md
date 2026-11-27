@@ -2846,7 +2846,7 @@ is lost (every 4 seconds from a bridge that cannot push). Local files are
 watched; an SSH connection runs one stat loop for all its watched files.
 
 Conversation mode's core (`crates/roamgate-conversation`: session, service,
-handover, holder) is the same for every agent; it reaches the
+handover, holder, continuity) is the same for every agent; it reaches the
 agent only through its drivers: Claude Code's in
 `crates/roamgate-claude/src/conversation`, the Antigravity CLI's (`agy`) in
 `crates/roamgate-agy`; the server composes them, Claude's first. The
@@ -2873,6 +2873,40 @@ by path, slash commands); the browser gates conversation mode on
 state without them (an older bridge) as Claude's. The holder's resume reply
 carries the TUI's whole `argv`, and `args` (Claude's arguments alone) for a
 holder from before drivers, which always runs `claude`.
+
+### Work sessions across agents
+
+A conversation-mode conversation is a work session
+(`crates/roamgate-conversation/src/continuity`), named on its lease
+(`work_session_id`) from its first event and kept apart from each agent's
+native session ids, in `<data>/conversation-continuity/`: `<id>.json` (the
+session: each agent's native sessions with the last event each has seen,
+the last checkpoint, the switch in progress), rewritten at each step of a
+switch, and `<id>.events.jsonl`, its numbered events appended as they come:
+the user's messages once the agent has them (with their images), each
+turn's answer, each tool call once it ended (a summary of its input and
+result), the switches, and the tool calls a switch cut off. A work session
+no lease names is deleted when the service starts.
+
+`agent_chat.switch_agent` moves the conversation to another agent, one
+writer at a time, each step saved before the next (the lease says it in
+`handoff_phase` meanwhile, and a hand-back to the terminal waits): the
+outgoing agent's turn is interrupted, its queue kept, its process stopped
+(`quiescing`); its native session is marked as having seen every event, or
+as not to be resumed when its turn would not end, and the `!` lines'
+state is recorded (`checkpointed`); the lease names the incoming agent and a
+native session, the switch event is recorded, and the incoming agent's
+first message is a `<roamgate-continuation>` block (a one-line notice in
+the chat) with the first request, the `!` lines, what was cut off and the
+events its native session has not seen: all of them for a new one, those
+since it last ran for its earlier session, resumed
+(`starting_replacement`); then the messages sent meanwhile follow, once,
+and browsers get `backend_switched` with the new agent's capabilities. The
+lease keeps each agent's terminal flags apart (`agent_terminal_args`). A
+switch that fails before the incoming agent started gives the conversation
+back to the outgoing one. A restart mid-switch, before any process starts,
+gives it to the agent the lease names: undone before the lease moved,
+finished after (that agent is given the history again, first).
 
 ### Idle stop
 

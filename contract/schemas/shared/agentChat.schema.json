@@ -580,6 +580,48 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "backend_switched"
+            },
+            "from_agent": {
+              "$ref": "#/$defs/ConversationAgent"
+            },
+            "to_agent": {
+              "$ref": "#/$defs/ConversationAgent"
+            },
+            "work_session_id": {
+              "type": "string"
+            },
+            "session_id": {
+              "type": ["string", "null"]
+            },
+            "reason": {
+              "type": "string",
+              "description": "\"manual\", \"usage_limit\"."
+            },
+            "capabilities": {
+              "$ref": "#/$defs/AgentChatCapabilities"
+            },
+            "at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "from_agent",
+            "to_agent",
+            "work_session_id",
+            "session_id",
+            "reason",
+            "capabilities",
+            "at"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "notice"
             },
             "kind": {
@@ -629,6 +671,7 @@
             "agent_chat.session",
             "agent_chat.rewound",
             "agent_chat.lease",
+            "agent_chat.backend_switched",
             "agent_chat.notice"
           ]
         },
@@ -1273,6 +1316,52 @@
                 },
                 "type": {
                   "type": "string",
+                  "const": "backend_switched"
+                },
+                "from_agent": {
+                  "$ref": "#/$defs/ConversationAgent"
+                },
+                "to_agent": {
+                  "$ref": "#/$defs/ConversationAgent"
+                },
+                "work_session_id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "description": "\"manual\", \"usage_limit\"."
+                },
+                "capabilities": {
+                  "$ref": "#/$defs/AgentChatCapabilities"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "at",
+                "capabilities",
+                "from_agent",
+                "pane_id",
+                "reason",
+                "session_id",
+                "to_agent",
+                "type",
+                "work_session_id"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
                   "const": "notice"
                 },
                 "kind": {
@@ -1296,6 +1385,11 @@
       },
       "required": ["event", "data"],
       "additionalProperties": false
+    },
+    "AgentChatHandoffPhase": {
+      "type": "string",
+      "enum": ["quiescing", "checkpointed", "starting_replacement"],
+      "description": "Where a switch to another agent is (`agent_chat.switch_agent`): the outgoing agent being stopped, stopped and recorded, the incoming one being given the history. One agent writes at a time."
     },
     "AgentChatHandoverResult": {
       "anyOf": [
@@ -1392,6 +1486,14 @@
           "$ref": "#/$defs/ConversationAgent",
           "description": "The agent conversation mode drives here; absent: claude."
         },
+        "work_session_id": {
+          "type": "string",
+          "description": "The conversation's work session, kept across agent switches."
+        },
+        "handoff_phase": {
+          "$ref": "#/$defs/AgentChatHandoffPhase",
+          "description": "While the conversation moves to another agent."
+        },
         "terminal_pid": {
           "type": "number",
           "description": "The interactive claude's pid while it is being stopped."
@@ -1413,6 +1515,16 @@
             "type": "string"
           },
           "description": "The flags the pane's claude ran with (--model, --permission-mode...): handing back resumes the session with them."
+        },
+        "agent_terminal_args": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": "Each other agent's terminal flags, kept while the conversation runs on another agent (`agent_chat.switch_agent`): back on that agent, they are its `terminal_args` again."
         },
         "queue": {
           "type": "array",
@@ -2049,6 +2161,14 @@
         "capabilities": {
           "$ref": "#/$defs/AgentChatCapabilities"
         },
+        "work_session_id": {
+          "type": "string",
+          "description": "The conversation's work session, kept across agent switches."
+        },
+        "handoff_phase": {
+          "$ref": "#/$defs/AgentChatHandoffPhase",
+          "description": "While the conversation moves to another agent."
+        },
         "tools_running": {
           "type": "boolean",
           "description": "A tool call is running: speech steers the turn instead of stopping it."
@@ -2216,6 +2336,63 @@
       },
       "required": ["since", "reason"],
       "additionalProperties": false
+    },
+    "AgentChatSwitchResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            },
+            "unchanged": {
+              "type": "boolean"
+            },
+            "work_session_id": {
+              "type": "string"
+            },
+            "from_agent": {
+              "$ref": "#/$defs/ConversationAgent"
+            },
+            "agent": {
+              "$ref": "#/$defs/ConversationAgent"
+            },
+            "session_id": {
+              "type": ["string", "null"]
+            },
+            "checkpoint_version": {
+              "type": "number"
+            },
+            "from_seq": {
+              "type": "number"
+            },
+            "through_seq": {
+              "type": "number"
+            },
+            "reused_session": {
+              "type": "boolean"
+            }
+          },
+          "required": ["ok", "work_session_id", "agent", "session_id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": false
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": ["ok", "reason"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "What `agent_chat.switch_agent` did: the conversation now runs on `agent`, in the same work session; `unchanged` when it already did. `from_seq`..`through_seq`: the events the agent was given; `reused_session`: its earlier native session was resumed."
     },
     "AgentChatVoiceAction": {
       "type": "string",

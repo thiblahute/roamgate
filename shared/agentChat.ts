@@ -63,6 +63,37 @@ export function agentDisplayName(agent: string | null | undefined): string {
   return agent;
 }
 
+/**
+ * Where a switch to another agent is (`agent_chat.switch_agent`): the
+ * outgoing agent being stopped, stopped and recorded, the incoming one
+ * being given the history. One agent writes at a time.
+ */
+export type AgentChatHandoffPhase =
+  | "quiescing"
+  | "checkpointed"
+  | "starting_replacement";
+
+/**
+ * What `agent_chat.switch_agent` did: the conversation now runs on
+ * `agent`, in the same work session; `unchanged` when it already did.
+ * `from_seq`..`through_seq`: the events the agent was given;
+ * `reused_session`: its earlier native session was resumed.
+ */
+export type AgentChatSwitchResult =
+  | {
+      ok: true;
+      unchanged?: boolean;
+      work_session_id: string;
+      from_agent?: ConversationAgent;
+      agent: ConversationAgent;
+      session_id: string | null;
+      checkpoint_version?: number;
+      from_seq?: number;
+      through_seq?: number;
+      reused_session?: boolean;
+    }
+  | { ok: false; reason: string };
+
 /** What a conversation's agent can do; the chat hides what it cannot. */
 export type AgentChatCapabilities = {
   /** A message written mid-turn steers it. */
@@ -131,6 +162,10 @@ export type AgentChatLease = {
   phase: AgentChatPhase;
   /** The agent conversation mode drives here; absent: claude. */
   agent?: ConversationAgent;
+  /** The conversation's work session, kept across agent switches. */
+  work_session_id?: string;
+  /** While the conversation moves to another agent. */
+  handoff_phase?: AgentChatHandoffPhase;
   /** The interactive claude's pid while it is being stopped. */
   terminal_pid?: number;
   /** The headless claude's pid while it runs (local connections). */
@@ -146,6 +181,12 @@ export type AgentChatLease = {
    * handing back resumes the session with them.
    */
   terminal_args?: string[];
+  /**
+   * Each other agent's terminal flags, kept while the conversation runs on
+   * another agent (`agent_chat.switch_agent`): back on that agent, they
+   * are its `terminal_args` again.
+   */
+  agent_terminal_args?: Record<string, string[]>;
   /**
    * Roamgate's queue of messages typed while a turn ran, kept here while
    * no process holds it (the connection was replaced, Roamgate restarted).
@@ -285,6 +326,10 @@ export type AgentChatState = {
    */
   agent?: ConversationAgent;
   capabilities?: AgentChatCapabilities;
+  /** The conversation's work session, kept across agent switches. */
+  work_session_id?: string;
+  /** While the conversation moves to another agent. */
+  handoff_phase?: AgentChatHandoffPhase;
   /** A tool call is running: speech steers the turn instead of stopping it. */
   tools_running: boolean;
   /** The tool calls that run, by tool_use id; absent from older servers. */
@@ -695,6 +740,18 @@ export type AgentChatEvent =
       owner: AgentChatOwner;
       phase: AgentChatPhase;
       session_id: string | null;
+    }
+  /** The conversation moved to another agent (`agent_chat.switch_agent`). */
+  | {
+      type: "backend_switched";
+      from_agent: ConversationAgent;
+      to_agent: ConversationAgent;
+      work_session_id: string;
+      session_id: string | null;
+      /** "manual", "usage_limit". */
+      reason: string;
+      capabilities: AgentChatCapabilities;
+      at: string;
     }
   | {
       type: "notice";

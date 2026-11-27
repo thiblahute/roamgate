@@ -1,0 +1,195 @@
+name: a conversation moves from Claude to AGY and back, each agent given the events it missed
+family: agent_chat
+description: >
+  agent_chat.switch_agent stops the pane's Claude, starts agy acp in the
+  same holder on a new ACP session and gives it the conversation so far in
+  a roamgate-continuation block; the browsers get backend_switched with the
+  new agent's capabilities. Back to Claude, its own session resumes and is
+  given only what happened since. A switch to the agent already running
+  changes nothing; one while no conversation owns the pane is refused.
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/work" }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        cwd: "${ROOT}/work"
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+    terminals:
+      p1: { args: [--model, opus] }
+  files:
+    "${ROOT}/work/.keep": ""
+  fakes:
+    claude:
+      default_turn:
+        - { $echo_user: true }
+        - {
+            type: system,
+            subtype: init,
+            session_id: "{{session_id}}",
+            cwd: /work,
+            model: claude-opus,
+          }
+        - {
+            type: result,
+            subtype: success,
+            is_error: false,
+            result: Claude answered,
+            session_id: "{{session_id}}",
+          }
+    agy:
+      session_id: 22222222-3333-4444-8555-666666666666
+      default_turn:
+        - {
+            jsonrpc: "2.0",
+            method: session/update,
+            params:
+              {
+                sessionId: "{{session_id}}",
+                update:
+                  {
+                    sessionUpdate: agent_message_chunk,
+                    content: { type: text, text: AGY answered },
+                  },
+              },
+          }
+steps:
+  - login: {}
+  - connect: {}
+  - expect_log:
+      { contains: "agent socket listening key=@local", within_ms: 10000 }
+  - call: agent_chat.switch_agent
+    params: { pane_id: p1, agent: agy }
+    reply: { ok: false, reason: Conversation mode does not own this pane }
+  - call: agent_chat.handover
+    id: handover
+    no_wait: true
+    params: { pane_id: p1, to: conversation }
+  - await: handover
+    advance_every: 200
+    within_ms: 30000
+    reply: { ok: true, owner: conversation }
+  - call: agent_chat.subscribe
+    params: { pane_id: p1 }
+  - call: agent_chat.send
+    params: { pane_id: p1, text: fix the parser, uuid: u-1 }
+    within_ms: 20000
+  - expect_push: "event:agent_chat.result"
+    within_ms: 20000
+    message: { data: { text: Claude answered } }
+  - expect_push: "event:agent_chat.status"
+    message: { data: { status: idle } }
+  - call: agent_chat.switch_agent
+    params: { pane_id: p1, agent: claude }
+    reply: { ok: true, unchanged: true, agent: claude }
+  - call: agent_chat.switch_agent
+    id: to-agy
+    no_wait: true
+    params: { pane_id: p1, agent: agy, reason: manual }
+  - await: to-agy
+    advance_every: 200
+    within_ms: 30000
+    reply:
+      {
+        ok: true,
+        from_agent: claude,
+        agent: agy,
+        session_id: null,
+        reused_session: false,
+        from_seq: 1,
+      }
+    save: { work_session: /result/work_session_id }
+  - expect_push: "event:agent_chat.backend_switched"
+    within_ms: 20000
+    message:
+      {
+        data:
+          {
+            from_agent: claude,
+            to_agent: agy,
+            work_session_id: "${work_session}",
+            reason: manual,
+            capabilities: { slashCommands: agy, rewind: null },
+          },
+      }
+  # AGY was given the history as its first prompt, as a notice block.
+  - expect_push: "event:agent_chat.user"
+    within_ms: 20000
+    message:
+      {
+        data:
+          {
+            text: "{{re:^<roamgate-continuation from=\"claude\" from-name=\"Claude\">\\nThis conversation continues here from Claude[\\s\\S]*\\[#1\\] User: fix the parser[\\s\\S]*\\[#2\\] Claude \\(claude-opus\\): Claude answered[\\s\\S]*</roamgate-continuation>$}}",
+          },
+      }
+  - expect_push: "event:agent_chat.result"
+    within_ms: 20000
+    message: { data: { text: AGY answered } }
+  - call: agent_chat.state
+    params: { pane_id: p1 }
+    reply:
+      {
+        agent: agy,
+        work_session_id: "${work_session}",
+        session_id: 22222222-3333-4444-8555-666666666666,
+      }
+  - call: agent_chat.send
+    params: { pane_id: p1, text: add a test, uuid: u-2 }
+    within_ms: 20000
+  - expect_push: "event:agent_chat.result"
+    within_ms: 20000
+    message: { data: { text: AGY answered } }
+  - expect_push: "event:agent_chat.status"
+    message: { data: { status: idle } }
+  # Back to Claude: its session resumes, given what it missed only.
+  - call: agent_chat.switch_agent
+    id: to-claude
+    no_wait: true
+    params: { pane_id: p1, agent: claude }
+  - await: to-claude
+    advance_every: 200
+    within_ms: 30000
+    reply:
+      {
+        ok: true,
+        from_agent: agy,
+        agent: claude,
+        session_id: 11111111-2222-4333-8444-555555555555,
+        reused_session: true,
+        work_session_id: "${work_session}",
+      }
+  - expect_push: "event:agent_chat.user"
+    within_ms: 20000
+    message:
+      {
+        data:
+          {
+            text: "{{re:^<roamgate-continuation from=\"agy\" from-name=\"AGY\">[\\s\\S]*What happened since you last had this conversation:\\n\\[#3\\] Switched from Claude to AGY \\(manual\\)\\n\\[#4\\] AGY \\(gemini-fake\\): AGY answered\\n\\[#5\\] User: add a test\\n\\[#6\\] AGY \\(gemini-fake\\): AGY answered\\n</roamgate-continuation>$}}",
+          },
+      }
+  - expect_push: "event:agent_chat.result"
+    within_ms: 20000
+    message: { data: { text: Claude answered } }
+  - fake_calls: { program: agy, argv_match: "^acp --stdio$", count: 1 }
+  # Claude came back with its own flags (its session had no transcript
+  # yet: --session-id instead of --resume).
+  - fake_calls:
+      {
+        program: claude,
+        argv_match: "^--model opus -p --session-id 11111111-2222-4333-8444-555555555555 --input-format stream-json",
+        count: 2,
+      }
+  - call: agent_chat.unsubscribe
+    params: { pane_id: p1 }
+    reply: { ok: true, $exact: true }

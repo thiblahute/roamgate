@@ -232,6 +232,7 @@ shared/agentMessage.test.ts	a framed message reads as another session's in the c
 shared/agentMessage.test.ts	the sender's message is read back from its Roamgate tool call	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
 shared/agentMessage.test.ts	the note keeps the safety clause in every message, short, and names the receiver's way to reply	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
 shared/agentMessage.test.ts	the chat leaves out today's note and the older, longer one	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
+shared/agentMessage.test.ts	the history given to the agent a conversation moved to reads as a notice, never the user's	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
 shared/agentModels.test.ts	alone opens the picker, with a name switches	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
 shared/agentModels.test.ts	anything else is not the command	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
 shared/agentModels.test.ts	a model name is what Claude Code takes, nothing a flag or a shell would read	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
