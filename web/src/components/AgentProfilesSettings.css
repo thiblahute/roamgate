@@ -216,3 +216,7 @@
   align-items: center;
   gap: 2px;
 }
+
+.agent-profiles-chain-line {
+  width: 56px;
+}

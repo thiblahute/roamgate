@@ -402,6 +402,19 @@ function ChainEditor({
     next.splice(index + by, 0, item!);
     set({ accounts: next });
   };
+  /** An account's own line; empty: the chain's. */
+  const ownLine = (name: string, key: "five_hour" | "weekly", raw: string) => {
+    const lines = { ...(chain.lines ?? {}) };
+    const own = { ...(lines[name] ?? {}) };
+    const value = Number(raw);
+    if (raw.trim() && value >= 1 && value <= 100) own[key] = value;
+    else delete own[key];
+    if (Object.keys(own).length) lines[name] = own;
+    else delete lines[name];
+    const next: AccountChain = { ...chain, lines };
+    if (!Object.keys(lines).length) next.lines = undefined;
+    onSave(next);
+  };
   const choice = (key: "preferred" | "last_resort", value: string) => {
     const next = { ...chain };
     if (value) next[key] = value;
@@ -425,6 +438,28 @@ function ChainEditor({
         {chain.accounts.map((name, index) => (
           <li key={name}>
             <span>{name}</span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              className="agent-profiles-chain-line"
+              aria-label={`${name}: 5-hour line %`}
+              title="Its own 5-hour line (empty: the chain's)"
+              placeholder={String(chain.five_hour_line)}
+              defaultValue={chain.lines?.[name]?.five_hour ?? ""}
+              onBlur={(event) => ownLine(name, "five_hour", event.target.value)}
+            />
+            <input
+              type="number"
+              min={1}
+              max={100}
+              className="agent-profiles-chain-line"
+              aria-label={`${name}: weekly line %`}
+              title="Its own weekly line (empty: the chain's)"
+              placeholder={String(chain.weekly_line)}
+              defaultValue={chain.lines?.[name]?.weekly ?? ""}
+              onBlur={(event) => ownLine(name, "weekly", event.target.value)}
+            />
             <button
               type="button"
               className="ghost"
