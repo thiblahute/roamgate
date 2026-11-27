@@ -675,6 +675,10 @@ pub fn profiles_reply(settings: &Settings, home: &std::path::Path) -> Value {
                         "auth".into(),
                         json!(roamgate_accounts::auth_state(agent, &dir).as_str()),
                     );
+                    // A sign-in clauth still manages (an import), by its profile.
+                    if let Some(profile) = roamgate_accounts::clauth::managed_by_clauth(&dir) {
+                        account.insert("clauth".into(), json!(profile));
+                    }
                 }
             }
             view

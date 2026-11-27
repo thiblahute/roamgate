@@ -434,6 +434,72 @@ async fn chain_switch(
     json!({"applies": false})
 }
 
+/// `agent_profile.import.*`: moving from clauth. `scan` says what
+/// `~/.clauth` (and the user's own agy) holds, no secret; `apply
+/// {accounts, agy_default}` imports the chosen profiles as account
+/// profiles whose sign-ins stay clauth's; `take_over {profile}` makes an
+/// imported account's sign-in Roamgate's own.
+async fn import_rpc(cx: &FamilyContext, action: &str, params: &Value) -> Result<Value, RpcError> {
+    use roamgate_connections::agent_profiles::clauth_import;
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let scan = roamgate_accounts::clauth::scan(&home);
+    let settings = Value::Object(super::settings::read_shared(cx).await.as_map().clone());
+    match action {
+        "scan" => Ok(clauth_import::scan_reply(scan.as_ref(), &home, &settings)),
+        "apply" => {
+            let names: Vec<String> = params
+                .get("accounts")
+                .and_then(Value::as_array)
+                .map(|names| {
+                    names
+                        .iter()
+                        .filter_map(|name| name.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let agy = params.get("agy_default") == Some(&Value::Bool(true));
+            let data_root = roamgate_connections::agent_profiles::store::data_root_for(&home);
+            let done = clauth_import::apply(scan.as_ref(), &names, agy, &settings, &data_root);
+            let profiles = done.profiles.clone();
+            super::settings::update_shared(
+                cx,
+                json!({"method": "agent_profile.import.apply"}),
+                |current| Some(current.with("profiles", Some(profiles))),
+            )
+            .await?;
+            let skipped: Vec<Value> = done
+                .skipped
+                .iter()
+                .map(|(name, why)| json!({"name": name, "reason": why}))
+                .collect();
+            Ok(json!({"imported": done.imported, "skipped": skipped}))
+        }
+        "take_over" => {
+            use roamgate_connections::agent_profiles::shared::profile_named;
+            use roamgate_connections::agent_profiles::store::{
+                account_dir_of, profiles_list, profiles_of,
+            };
+            let wanted = params.get("profile").and_then(Value::as_str).unwrap_or("");
+            let list = profiles_list(&profiles_of(Some(&settings)));
+            let (agent, dir) = profile_named(&list, Some(wanted))
+                .and_then(|profile| account_dir_of(&profile, &home))
+                .ok_or_else(|| RpcError::new(format!("{wanted} is not an account profile")))?;
+            roamgate_accounts::clauth::take_over(&dir, agent).map_err(|error| {
+                RpcError::new(format!("The sign-in could not be taken over: {error}"))
+            })?;
+            Ok(json!({
+                "profile": wanted,
+                "auth": roamgate_accounts::auth_state(agent, &dir).as_str(),
+            }))
+        }
+        _ => Err(RpcError::new(format!(
+            "unknown method agent_profile.import.{action}"
+        ))),
+    }
+}
+
 /// How often the usage scheduler looks for accounts due a reading (each
 /// account is read about every 90 s, see roamgate_accounts::usage).
 const USAGE_CHECK: Duration = Duration::from_secs(15);
@@ -785,6 +851,9 @@ impl CoreFamily for AgentProfilesFamily {
         let cx = cx.clone();
         Box::pin(async move {
             let running = running.ok_or_else(not_owner)?;
+            if let Some(action) = call.method.strip_prefix("agent_profile.import.") {
+                return import_rpc(&cx, action, &call.params).await;
+            }
             if call.method == "internal.agent_profiles.chain_switch" {
                 let result = chain_switch(&cx, &running.store, &running.logger, &call.params).await;
                 running.notifier.flush().await;

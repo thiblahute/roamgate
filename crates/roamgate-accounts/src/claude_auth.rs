@@ -268,6 +268,11 @@ pub async fn refresh_if_due(
     dir: &Path,
     now_ms: i64,
 ) -> Refresh {
+    // clauth's own sign-in (an import it still manages): never refreshed
+    // here, so one manager only refreshes the chain.
+    if crate::clauth::managed_by_clauth(dir).is_some() {
+        return Refresh::Idle;
+    }
     let due = |oauth: &Map<String, Value>| {
         let refresh = oauth.get("refreshToken").and_then(Value::as_str)?;
         let expires = oauth.get("expiresAt").and_then(Value::as_i64).unwrap_or(0);

@@ -1,0 +1,97 @@
+name: clauth's profiles import as account profiles whose sign-ins stay clauth's
+family: agent_profile
+description: >
+  A ~/.clauth as clauth leaves it (two Claude profiles in a chain, an API
+  key profile, a Codex profile) and the user's own agy. The scan lists
+  them without a secret; the import makes account profiles of the same
+  names, their chain and default from clauth's, each sign-in a link to
+  clauth's own file (settings.profiles.get says clauth manages it), and
+  clauth's files are left as they were; taking one over makes its
+  sign-in Roamgate's own.
+server:
+  files:
+    .clauth/profiles.toml:
+      text: "active_profile = \"work\"\nprofiles = [\"work\", \"perso\", \"glm\"]\nfallback_chain = [\"perso\", \"work\"]\nwrap_off = false\n"
+    .clauth/codex-profiles.toml:
+      text: "profiles = [\"codex\"]\nfallback_chain = []\n"
+    .clauth/profiles/work/config.toml:
+      text: "fallback_threshold = 90\npreferred = true\n"
+    .clauth/profiles/work/credentials.json:
+      mode: "0600"
+      json: { claudeAiOauth: { accessToken: a, refreshToken: r, expiresAt: 1 } }
+    .clauth/profiles/perso/config.toml:
+      text: "weekly_threshold = 97\n"
+    .clauth/profiles/glm/config.toml:
+      text: "base_url = \"https://gw.example\"\n"
+    .clauth/profiles/codex/config.toml:
+      text: "harness = \"codex\"\n"
+    .clauth/profiles/codex/auth.json:
+      mode: "0600"
+      json: { auth_mode: chatgpt, tokens: { refresh_token: r } }
+    .gemini/antigravity-cli/settings.json:
+      json: {}
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_profile.import.scan
+    reply:
+      found: true
+      active: work
+      chain: [perso, work]
+      agy_default: { found: true, imported: false }
+      accounts:
+        - {
+            name: work,
+            agent: claude,
+            signed_in: true,
+            importable: true,
+            imported: false,
+            in_chain: true,
+          }
+        - { name: perso, signed_in: false }
+        - { name: glm, importable: false }
+        - { name: codex, agent: codex, signed_in: true }
+  - call: agent_profile.import.apply
+    params: { accounts: [work, perso, glm, codex], agy_default: true }
+    reply:
+      imported: [work, perso, codex, Agy]
+      skipped: [{ name: glm, reason: "{{string}}" }]
+  - call: settings.profiles.get
+    reply:
+      default: work
+      chain:
+        {
+          accounts: [perso, work, codex],
+          auto_switch: true,
+          lines: { work: { five_hour: 90 }, perso: { weekly: 97 } },
+          preferred: work,
+        }
+      profiles:
+        - { name: Claude }
+        - { name: work, account: { id: work, clauth: work } }
+        - { name: perso, account: { id: perso, clauth: perso } }
+        - { name: codex, agent: codex, account: { id: codex, clauth: codex } }
+        - { name: Agy, agent: agy }
+  - assert_file:
+      path: .clauth/profiles/work/credentials.json
+      json: { claudeAiOauth: { refreshToken: r } }
+      mode: "0600"
+  - call: agent_profile.import.take_over
+    params: { profile: work }
+    reply: { profile: work, auth: "{{string}}" }
+  - call: settings.profiles.get
+    reply:
+      profiles:
+        - { name: Claude }
+        - {
+            name: work,
+            account:
+              { $exact: true, id: work, dir: "{{string}}", auth: "{{string}}" },
+          }
+        - { name: perso }
+        - { name: codex }
+        - { name: Agy }
+  - assert_file:
+      path: .config/roamgate/accounts/claude/work/.credentials.json
+      json: { claudeAiOauth: { refreshToken: r } }
+      mode: "0600"

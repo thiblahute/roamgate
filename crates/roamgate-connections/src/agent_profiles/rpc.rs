@@ -148,6 +148,9 @@ pub const PROFILE_RPC_METHODS: &[&str] = &[
     "agent_profile.account.logout",
     "agent_profile.account.usage",
     "agent_profile.account.sessions",
+    "agent_profile.import.scan",
+    "agent_profile.import.apply",
+    "agent_profile.import.take_over",
 ];
 
 /// A refusal said of the agent, not of its program; commands stay.

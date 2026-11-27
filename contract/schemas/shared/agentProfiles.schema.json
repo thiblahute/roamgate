@@ -142,6 +142,10 @@
         "auth": {
           "$ref": "#/$defs/AccountAuthState",
           "description": "Its sign-in (`settings.profiles.get` only)."
+        },
+        "clauth": {
+          "type": "string",
+          "description": "The clauth profile whose sign-in it reads, while clauth manages it."
         }
       },
       "required": ["id"],
