@@ -1175,7 +1175,9 @@ Inspector state is scoped to each checkout; see
   agent's through the conversation handoff, "Continued on <account>" in
   its chat), and a session pinned to its account stays there until 100 %;
   each session's profile menu offers **Pin to**, **Unpin** and **Move
-  to** an account. See [Agent
+  to** an account. Coming from clauth, the settings offer to import its
+  accounts, chain and lines; their sign-ins stay clauth's until you
+  **Take over** each. See [Agent
   profiles](docs/DEPLOYMENT.md#agent-profiles) and [Account
   profiles](docs/DEPLOYMENT.md#account-profiles).
   With Roamgate's Claude Code mod the chip's title and menu also show the

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { ConnectionClient } from "./api";
-import { profilesUpdate } from "./components/AgentProfilesSettings";
+import {
+  importOffer,
+  profilesUpdate,
+} from "./components/AgentProfilesSettings";
 import { profileParts } from "./components/ProfileChip";
 import {
   activeLimit,
@@ -223,4 +226,40 @@ test("a Claude mod's usage reads as one short line", () => {
       ],
     }),
   ).toBe("Context 34% · 5-hour 61% · weekly 15% · spend limit 3%");
+});
+
+test("an import offers clauth's accounts not imported yet, and the own agy", () => {
+  const offer = importOffer({
+    found: true,
+    accounts: [
+      {
+        name: "work",
+        agent: "claude",
+        signed_in: true,
+        importable: true,
+        imported: false,
+        in_chain: true,
+      },
+      {
+        name: "glm",
+        agent: "claude",
+        signed_in: false,
+        importable: false,
+        imported: false,
+        in_chain: false,
+      },
+      {
+        name: "perso",
+        agent: "claude",
+        signed_in: true,
+        importable: true,
+        imported: true,
+        in_chain: true,
+      },
+    ],
+    agy_default: { found: true, imported: false },
+  });
+  expect(offer.accounts.map((each) => each.name)).toEqual(["work"]);
+  expect(offer.agy).toBe(true);
+  expect(importOffer(null)).toEqual({ accounts: [], agy: false });
 });

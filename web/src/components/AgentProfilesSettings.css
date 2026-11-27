@@ -220,3 +220,23 @@
 .agent-profiles-chain-line {
   width: 56px;
 }
+
+.agent-profiles-import {
+  display: grid;
+  gap: 6px;
+  margin-left: 30px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.agent-profiles-import label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-profiles-import small {
+  color: var(--muted);
+}

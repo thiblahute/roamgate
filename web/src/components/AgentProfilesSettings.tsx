@@ -194,6 +194,7 @@ export function AgentProfilesSettings() {
           <Plus size={14} aria-hidden="true" /> Add
         </button>
       </div>
+      <ClauthImport onImported={() => void load()} />
       <ul className="agent-profiles-list">
         {state.profiles.map((profile, index) => (
           <li key={profile.name}>
@@ -240,7 +241,38 @@ export function AgentProfilesSettings() {
             >
               <Pencil size={14} aria-hidden="true" />
             </button>
-            {profile.account ? (
+            {profile.account?.clauth ? (
+              <span className="agent-profiles-account">
+                <small
+                  title={`Its sign-in is clauth's profile ${profile.account.clauth}: clauth refreshes it, Roamgate only reads it`}
+                >
+                  clauth manages this sign-in
+                </small>
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={saving}
+                  onClick={async () => {
+                    if (
+                      !window.confirm(
+                        `Take ${profile.name}'s sign-in over from clauth? Roamgate then refreshes it itself: first remove the profile ${profile.account?.clauth} from clauth (or stop clauth), or both will refresh it and sign it out.`,
+                      )
+                    )
+                      return;
+                    try {
+                      await client.call("agent_profile.import.take_over", {
+                        profile: profile.name,
+                      });
+                      await load();
+                    } catch (e) {
+                      if (client.isCurrent()) setError((e as Error).message);
+                    }
+                  }}
+                >
+                  Take over
+                </button>
+              </span>
+            ) : profile.account ? (
               <span className="agent-profiles-account">
                 <small data-auth={profile.account.auth ?? "unknown"}>
                   {AUTH_WORDS[profile.account.auth ?? "unknown"]}
@@ -367,6 +399,177 @@ export function AgentProfilesSettings() {
 }
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** What agent_profile.import.scan answers. */
+export type ImportScan = {
+  found: boolean;
+  daemon_running?: boolean;
+  accounts: {
+    name: string;
+    agent: string;
+    signed_in: boolean;
+    importable: boolean;
+    imported: boolean;
+    in_chain: boolean;
+  }[];
+  agy_default: { found: boolean; imported: boolean };
+};
+
+/** The accounts an import offers: importable, not there yet. */
+export function importOffer(scan: ImportScan | null) {
+  const accounts = (scan?.accounts ?? []).filter(
+    (each) => each.importable && !each.imported,
+  );
+  const agy = !!scan?.agy_default.found && !scan.agy_default.imported;
+  return { accounts, agy };
+}
+
+/** "clauth accounts found: import?": a checklist of clauth's profiles
+ * (and the user's own agy), imported with their chain. */
+function ClauthImport({ onImported }: { onImported: () => void }) {
+  const client = useConnectionClient();
+  const ready = useConnectionReady(client);
+  const [scan, setScan] = useState<ImportScan | null>(null);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [agy, setAgy] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!ready) return;
+    let live = true;
+    client
+      .call("agent_profile.import.scan")
+      .then((result) => {
+        if (!live || !client.isCurrent()) return;
+        const found = result as ImportScan;
+        setScan(found);
+        setChosen(
+          new Set(importOffer(found).accounts.map((each) => each.name)),
+        );
+      })
+      .catch(() => {
+        // An older server: nothing to offer.
+      });
+    return () => {
+      live = false;
+    };
+  }, [client, ready]);
+
+  const offer = importOffer(scan);
+  if (dismissed || (!offer.accounts.length && !offer.agy && !note)) return null;
+  const toggle = (name: string) =>
+    setChosen((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const result = (await client.call("agent_profile.import.apply", {
+        accounts: [...chosen],
+        agy_default: offer.agy && agy,
+      })) as {
+        imported: string[];
+        skipped: { name: string; reason: string }[];
+      };
+      if (!client.isCurrent()) return;
+      setNote(
+        [
+          result.imported.length
+            ? `Imported ${result.imported.join(", ")}.`
+            : "Nothing imported.",
+          ...result.skipped.map((each) => `${each.name}: ${each.reason}.`),
+        ].join(" "),
+      );
+      setScan(null);
+      onImported();
+    } catch (e) {
+      if (client.isCurrent()) setNote((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (note)
+    return (
+      <div className="agent-profiles-import" role="status">
+        <span>{note}</span>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setDismissed(true)}
+        >
+          Close
+        </button>
+      </div>
+    );
+  return (
+    <form
+      className="agent-profiles-import"
+      aria-label="Import clauth accounts"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void apply();
+      }}
+    >
+      <strong>
+        {offer.accounts.length
+          ? "clauth accounts found: import them?"
+          : "Your own agy found: add it?"}
+      </strong>
+      {offer.accounts.length ? (
+        <span>
+          Each becomes an account profile of the same name, in clauth's chain
+          order. {scan?.daemon_running ? "clauth runs: its" : "Their"} sign-ins
+          stay clauth's (Roamgate only reads them) until you take each over.
+        </span>
+      ) : null}
+      {offer.accounts.map((each) => (
+        <label key={each.name}>
+          <input
+            type="checkbox"
+            checked={chosen.has(each.name)}
+            onChange={() => toggle(each.name)}
+          />
+          {each.name}{" "}
+          <small>
+            {each.agent === "codex" ? "Codex" : "Claude"}
+            {each.signed_in ? "" : ", not signed in"}
+            {each.in_chain ? ", in its chain" : ""}
+          </small>
+        </label>
+      ))}
+      {offer.agy ? (
+        <label>
+          <input
+            type="checkbox"
+            checked={agy}
+            onChange={(event) => setAgy(event.target.checked)}
+          />
+          Your own agy <small>(as it runs now, its sign-in untouched)</small>
+        </label>
+      ) : null}
+      <div className="agent-profiles-editor-actions">
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setDismissed(true)}
+        >
+          Not now
+        </button>
+        <button
+          type="submit"
+          disabled={busy || (!chosen.size && !(offer.agy && agy))}
+        >
+          Import
+        </button>
+      </div>
+    </form>
+  );
+}
 
 function blankChain(): AccountChain {
   return {
