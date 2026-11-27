@@ -28,7 +28,6 @@
 }
 
 .agent-history-composer-send,
-.agent-history-composer-attach,
 .agent-history-composer-escape,
 .agent-history-composer-voice {
   flex: 0 0 auto;
@@ -40,7 +39,6 @@
   font-size: 11px;
 }
 
-.agent-history-composer-attach,
 .agent-history-composer-escape,
 .agent-history-composer-voice {
   min-width: 36px;
@@ -51,18 +49,25 @@
   opacity: 0.45;
 }
 
-/* Attach: one button, and over it a small menu (Take photo, Photos,
-   Files). */
+/* Attach: one button on the box, first of its buttons, and over it a
+   small menu (Take photo, Photos, Files), opening toward the box. */
 .agent-history-composer-attach-menu {
   position: relative;
   flex: 0 0 auto;
   display: flex;
 }
 
+.agent-history-composer-attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
 .agent-history-composer-attach-options {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
+  right: 0;
   z-index: 6;
   display: grid;
   min-width: 160px;
@@ -411,16 +416,35 @@
   flex: 1 1 auto;
 }
 
-/* The buttons on the box (the @ of Ranger's mention picker, the call,
-   the microphone), 30px each, counted in --composer-inline-buttons. */
-.agent-history-composer-field:is(.has-mention, .has-voice, .has-call)
+/* The buttons on the box (Attach, the @ of Ranger's mention picker, the
+   call, the microphone), 30px each: Attach in --composer-attach (a phone
+   too narrow for it at rest sets it to 0), the others counted in
+   --composer-inline-buttons. */
+.agent-history-composer-field.has-attach {
+  --composer-attach: 1;
+}
+
+.agent-history-composer-field:is(
+    .has-attach,
+    .has-mention,
+    .has-voice,
+    .has-call
+  )
   :is(textarea, .cm-content) {
-  padding-right: calc(var(--composer-inline-buttons, 1) * 30px + 6px);
+  padding-right: calc(
+    (var(--composer-inline-buttons, 1) + var(--composer-attach, 0)) *
+    30px +
+    6px
+  );
 }
 
 /* A predicted next message: grey text in the empty box, Tab takes it. */
 .agent-history-composer-field.has-next-prompt :is(textarea, .cm-content) {
-  padding-right: calc(var(--composer-inline-buttons, 0) * 30px + 44px);
+  padding-right: calc(
+    (var(--composer-inline-buttons, 0) + var(--composer-attach, 0)) *
+    30px +
+    44px
+  );
 }
 
 .agent-history-composer-next-key {
@@ -463,7 +487,11 @@
 }
 
 .agent-history-composer-inline
-  :is(.agent-history-composer-voice, .agent-history-composer-mute) {
+  :is(
+    .agent-history-composer-voice,
+    .agent-history-composer-mute,
+    .agent-history-composer-attach
+  ) {
   min-width: 28px;
   height: 28px;
   border-color: transparent;
@@ -491,9 +519,9 @@
 
 /*
  * A narrow box (Ranger docked on the side, a small pane): the message box
- * keeps the whole width of its own line, with a few lines of height, and
- * the buttons (attach, call, Esc, then Stop, Queue and Send) make a
- * toolbar under it that wraps. The box is measured, not the screen: the
+ * takes a few lines of height and keeps Stop, Queue and Send beside it
+ * while it has 200px; below that it takes its own line and they (and Esc)
+ * make a toolbar under it. The box is measured, not the screen: the
  * same panel is wide when maximised. A phone's bottom bar docks the box
  * with its own layout (`.is-mobile`).
  */
@@ -511,14 +539,14 @@
     .agent-history-composer-row
     > .agent-history-composer-field {
     order: -1;
-    flex: 1 0 100%;
+    flex: 1 1 200px;
   }
 
   .agent-history-composer:not(.is-mobile)
     .agent-history-composer-row
     > textarea {
     order: -1;
-    flex: 1 0 100%;
+    flex: 1 1 200px;
   }
 
   .agent-history-composer:not(.is-mobile)

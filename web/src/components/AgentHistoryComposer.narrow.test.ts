@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 
 // CSS contract tests for a narrow message box (Ranger docked at ~640px or
-// 420px, a small pane): the box keeps its own full-width line and the
-// buttons wrap into a toolbar under it. Painted layout is checked in
+// 420px, a small pane): the box keeps Send beside it while it has 200px,
+// and only below that do the buttons wrap into a toolbar under it. Painted layout is checked in
 // Chrome; happy-dom has no layout.
 const css = await Bun.file(
   new URL("./AgentHistoryComposer.css", import.meta.url),
@@ -35,7 +35,7 @@ test("the box is a container, so its own width decides, not the screen", () => {
   expect(css).toContain("container: agent-composer / inline-size;");
 });
 
-test("below 720px the editor takes a whole line and the row wraps", () => {
+test("below 720px the editor keeps Send beside it until it would go under 200px", () => {
   const narrow = block(719);
   expect(
     rule(
@@ -47,8 +47,8 @@ test("below 720px the editor takes a whole line and the row wraps", () => {
     narrow.indexOf("> .agent-history-composer-field {"),
   );
   const body = field.slice(0, field.indexOf("}"));
-  // The full line is more than the 60% the editor may never go under.
-  expect(body).toContain("flex: 1 0 100%;");
+  // No line under the box for Send alone; the box wraps above when narrow.
+  expect(body).toContain("flex: 1 1 200px;");
   expect(body).toContain("order: -1;");
 });
 

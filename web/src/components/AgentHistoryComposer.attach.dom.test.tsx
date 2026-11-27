@@ -102,12 +102,16 @@ if (process.env.ROAMGATE_COMPOSER_ATTACH_DOM_TEST !== "1") {
     const draftNow = () => squeeze(readTerminalComposerDraft(draftKey));
     const shown = () => squeeze(textarea().value);
     try {
-      // A phone: one Attach button, before the box, and its menu.
+      // A phone: one Attach button, on the box first of its buttons (no
+      // line of its own under it), and its menu.
       await render();
       expect(attach()).not.toBeNull();
       expect(
-        attach()!.closest(".agent-history-composer-row")?.firstElementChild,
+        attach()!.closest(".agent-history-composer-inline")?.firstElementChild,
       ).toBe(attach()!.parentElement);
+      expect(
+        attach()!.closest(".agent-history-composer-field")?.className,
+      ).toContain("has-attach");
       expect(container.querySelector('[role="menu"]')).toBeNull();
       await openMenu();
       expect(attach()!.getAttribute("aria-expanded")).toBe("true");
@@ -249,7 +253,7 @@ if (process.env.ROAMGATE_COMPOSER_ATTACH_DOM_TEST !== "1") {
   });
 }
 
-test("on a phone, Attach stays beside the box at rest; only Esc and a disabled Send hide", async () => {
+test("on a phone, Attach stays on the box at rest; only Esc and a disabled Send hide", async () => {
   const css = await Bun.file(
     new URL("../styles/layout/mobile-nav.css", import.meta.url),
   ).text();

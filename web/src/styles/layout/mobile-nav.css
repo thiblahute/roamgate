@@ -402,7 +402,6 @@
     font-size: 16px;
   }
 
-  .mobile-bottom-input > .agent-history-composer .agent-history-composer-attach,
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-escape,
   .mobile-bottom-input > .agent-history-composer .agent-history-composer-send {
     height: max(44px, calc(44px / var(--ui-scale, 1)));
@@ -454,17 +453,13 @@
       :focus-within,
       :has(.agent-history-composer-send:not(:disabled))
     )
-    :is(
-      .agent-history-composer-attach,
-      .agent-history-composer-escape,
-      .agent-history-composer-send
-    ) {
+    :is(.agent-history-composer-escape, .agent-history-composer-send) {
     height: 36px;
     min-width: 36px;
   }
 
-  /* Not writing, and nothing in the box: the box beside the navigation,
-     with Attach before it; the call is on the box, with the microphone. */
+  /* Not writing, and nothing in the box: the box beside the navigation;
+     Attach, the call and the microphone are on the box. */
   .mobile-bottom-input
     > .agent-history-composer:not(
       :focus-within,
@@ -547,9 +542,18 @@
   /* The call and the microphone on the box: the text keeps clear. */
   .mobile-bottom-input
     > .agent-history-composer
-    .agent-history-composer-field:is(.has-mention, .has-voice, .has-call)
+    .agent-history-composer-field:is(
+      .has-attach,
+      .has-mention,
+      .has-voice,
+      .has-call
+    )
     :is(textarea, .cm-content) {
-    padding-right: calc(var(--composer-inline-buttons, 1) * 30px + 10px);
+    padding-right: calc(
+      (var(--composer-inline-buttons, 1) + var(--composer-attach, 0)) *
+      30px +
+      10px
+    );
   }
 
   /* Not writing while the agent works: Stop takes the call's place, so the
@@ -571,7 +575,11 @@
     ):has(.agent-history-composer-stop)
     .agent-history-composer-field.has-call
     :is(textarea, .cm-content) {
-    padding-right: calc((var(--composer-inline-buttons, 1) - 1) * 30px + 10px);
+    padding-right: calc(
+      (var(--composer-inline-buttons, 1) + var(--composer-attach, 0) - 1) *
+      30px +
+      10px
+    );
   }
 
   /* Its width beside the navigation, for the rules below. */
@@ -580,7 +588,8 @@
   }
 
   /* Too narrow for Attach as well (360px screens, or 412px with Stop):
-     Attach is on the line below the box once it has the focus. */
+     Attach is back on the box once it has the focus, and the words keep
+     its room meanwhile. */
   @container phone-composer (max-width: 199px) {
     .agent-history-composer:not(
         :focus-within,
@@ -588,6 +597,14 @@
       )
       .agent-history-composer-attach-menu {
       display: none;
+    }
+
+    .agent-history-composer:not(
+        :focus-within,
+        :has(.agent-history-composer-send:not(:disabled))
+      )
+      .agent-history-composer-field.has-attach {
+      --composer-attach: 0;
     }
   }
 
@@ -598,6 +615,14 @@
       ):has(.agent-history-composer-stop)
       .agent-history-composer-attach-menu {
       display: none;
+    }
+
+    .agent-history-composer:not(
+        :focus-within,
+        :has(.agent-history-composer-send:not(:disabled))
+      ):has(.agent-history-composer-stop)
+      .agent-history-composer-field.has-attach {
+      --composer-attach: 0;
     }
   }
 

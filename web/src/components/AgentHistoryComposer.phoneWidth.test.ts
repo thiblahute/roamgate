@@ -36,7 +36,11 @@ test("a phone's chat box keeps room for its words while the agent works", () => 
     `.mobile-bottom-input > ${notWriting}:has(.agent-history-composer-stop) .agent-history-composer-call { display: none; }`,
   );
   expect(css).toContain(
-    "padding-right: calc((var(--composer-inline-buttons, 1) - 1) * 30px + 10px);",
+    "(var(--composer-inline-buttons, 1) + var(--composer-attach, 0) - 1) * 30px + 10px",
+  );
+  // Hidden at rest, Attach gives its room back to the words.
+  expect(css).toContain(
+    ".agent-history-composer-field.has-attach { --composer-attach: 0; }",
   );
   const idleAttach = threshold(false);
   const workingAttach = threshold(true);
@@ -51,11 +55,11 @@ test("a phone's chat box keeps room for its words while the agent works", () => 
     // The bar's 8px sides, the navigation's slots and 4px.
     const composer = screen - 16 - (slots * control + 4);
     for (const working of [false, true]) {
-      const attach =
-        composer > (working ? workingAttach : idleAttach) ? control + gap : 0;
+      // Attach is on the box, one more of its buttons, while it fits.
+      const attach = composer > (working ? workingAttach : idleAttach) ? 1 : 0;
       // The microphone, and the call unless Stop shows.
-      const buttons = working ? 1 : 2;
-      const field = composer - attach - (working ? stop + gap : 0);
+      const buttons = (working ? 1 : 2) + attach;
+      const field = composer - (working ? stop + gap : 0);
       const words = field - textPadding - buttons * inline;
       expect(words).toBeGreaterThanOrEqual(60);
     }

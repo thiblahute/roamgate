@@ -1047,65 +1047,6 @@ export function AgentHistoryComposer({
         </div>
       ) : null}
       <div className="agent-history-composer-row">
-        {canAttach ? (
-          // One button, a small menu: the camera, photos, any file.
-          <div className="agent-history-composer-attach-menu" ref={attachRef}>
-            <button
-              type="button"
-              className="agent-history-composer-attach"
-              aria-label="Attach"
-              title={onUploadFile ? "Attach photos or files" : "Attach photos"}
-              aria-haspopup="menu"
-              aria-expanded={attachOpen}
-              disabled={busy || composing}
-              onMouseDown={keepTextareaFocus}
-              onClick={() => setAttachOpen((open) => !open)}
-            >
-              <Paperclip size={17} aria-hidden="true" />
-            </button>
-            {attachOpen ? (
-              <div
-                className="agent-history-composer-attach-options"
-                role="menu"
-                aria-label="Attach"
-              >
-                {touch && onUploadImage ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onMouseDown={keepTextareaFocus}
-                    onClick={() => pick(cameraInputRef)}
-                  >
-                    <Camera size={16} aria-hidden="true" />
-                    Take photo
-                  </button>
-                ) : null}
-                {onUploadImage ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onMouseDown={keepTextareaFocus}
-                    onClick={() => pick(fileInputRef)}
-                  >
-                    <Images size={16} aria-hidden="true" />
-                    Photos
-                  </button>
-                ) : null}
-                {onUploadFile ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onMouseDown={keepTextareaFocus}
-                    onClick={() => pick(anyFileInputRef)}
-                  >
-                    <FileText size={16} aria-hidden="true" />
-                    Files
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
         {vimKeys && touch ? (
           // Phone keyboards have no Esc key, and Vim needs one.
           <button
@@ -1120,11 +1061,12 @@ export function AgentHistoryComposer({
             Esc
           </button>
         ) : null}
-        {/* The box, with Dictate's microphone on it, at its right edge. */}
+        {/* The box, with Attach and Dictate's microphone on it, at its right
+            edge. */}
         <div
           // Its own Dictate: the page's (FieldDictation) stays off it.
           data-dictation={voice ? "own" : undefined}
-          className={`agent-history-composer-field${mentions ? " has-mention" : ""}${dictateHere ? " has-voice" : ""}${voice?.state === "off" ? " has-call" : ""}${ghost ? " has-next-prompt" : ""}`}
+          className={`agent-history-composer-field${canAttach ? " has-attach" : ""}${mentions ? " has-mention" : ""}${dictateHere ? " has-voice" : ""}${voice?.state === "off" ? " has-call" : ""}${ghost ? " has-next-prompt" : ""}`}
           style={
             {
               "--composer-inline-buttons":
@@ -1389,6 +1331,71 @@ export function AgentHistoryComposer({
             />
           )}
           <div className="agent-history-composer-inline">
+            {canAttach ? (
+              // On the box, first of its buttons: a small menu over it, the
+              // camera, photos, any file.
+              <div
+                className="agent-history-composer-attach-menu"
+                ref={attachRef}
+              >
+                <button
+                  type="button"
+                  className="agent-history-composer-attach"
+                  aria-label="Attach"
+                  title={
+                    onUploadFile ? "Attach photos or files" : "Attach photos"
+                  }
+                  aria-haspopup="menu"
+                  aria-expanded={attachOpen}
+                  disabled={busy || composing}
+                  onMouseDown={keepTextareaFocus}
+                  onClick={() => setAttachOpen((open) => !open)}
+                >
+                  <Paperclip size={17} aria-hidden="true" />
+                </button>
+                {attachOpen ? (
+                  <div
+                    className="agent-history-composer-attach-options"
+                    role="menu"
+                    aria-label="Attach"
+                  >
+                    {touch && onUploadImage ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onMouseDown={keepTextareaFocus}
+                        onClick={() => pick(cameraInputRef)}
+                      >
+                        <Camera size={16} aria-hidden="true" />
+                        Take photo
+                      </button>
+                    ) : null}
+                    {onUploadImage ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onMouseDown={keepTextareaFocus}
+                        onClick={() => pick(fileInputRef)}
+                      >
+                        <Images size={16} aria-hidden="true" />
+                        Photos
+                      </button>
+                    ) : null}
+                    {onUploadFile ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onMouseDown={keepTextareaFocus}
+                        onClick={() => pick(anyFileInputRef)}
+                      >
+                        <FileText size={16} aria-hidden="true" />
+                        Files
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {mentions ? (
               <button
                 type="button"
