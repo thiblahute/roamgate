@@ -8,7 +8,7 @@ Rust owner of that family can take it over.
 
 ## 1.56
 
-inventory: ab0c05858e379a60d9f6f108c4754b64217d347539ecadc812441871a8c82b19
+inventory: 5482ddde05209b65350da9deb353fea9d3c5f7073f51a1e51493c37adfb2c4c3
 
 The Usage view reads the account chain's moves and names the sessions that
 spent an account.
@@ -46,9 +46,9 @@ inventory: 91f572a7a364cb6f8336b0f1ee55b966554e5c724f54fc42c127f19ef9b5c491
 Account profiles form a chain that moves sessions along it: the global
 default (`profiles.default`) leaves an account past its lines, the live
 sessions on it follow (pinned ones only past the hard cap), and a session
-stopped by a usage limit goes on with the next account. limit_resume
-hands every scheduled pause to the agent_profiles family, which keeps the
-conversation's fallback agent when no chain applies.
+stopped by a usage limit goes on with the next account. limit_resume's
+fallback first asks the agent_profiles family; when no chain has the
+session it keeps the conversation's fallback agent as before.
 
 - types: `ProfilesSettings.chain` (`AccountChain`: `accounts`,
   `auto_switch`, `five_hour_line`, `weekly_line`, `lines`, `preferred`,
@@ -60,7 +60,9 @@ conversation's fallback agent when no chain applies.
 - env: `ROAMGATE_TEST_ACCOUNTS_URL` (from source only): a base URL for the
   account sign-in and usage servers. Family: agent_profile.
 - wire: `internal.agent_profiles.chain_switch` (`connection_id`,
-  `pane_id`), from limit_resume; `internal.conversation.notice`
+  `pane_id`; answers `applies`, `ok`, `unchanged`, `reason`), from
+  limit_resume's fallback, retried and skipped as it;
+  `internal.conversation.notice`
   (`pane_id`, `kind`, `text`). Family: agent_profiles, conversation.
 
 ## 1.53
