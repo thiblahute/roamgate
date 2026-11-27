@@ -54,6 +54,8 @@ import {
 import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
 import { askCompanion, callCompanion } from "./companionCallOpen";
 import { handleActivityShortcut } from "./activityTimelineOpen";
+import { handleUsageShortcut } from "./usageViewOpen";
+import { UsageChip } from "./components/UsageChip";
 import {
   BOARD_INSPECTOR_EVENT,
   type BoardInspectorRequest,
@@ -5385,6 +5387,13 @@ export default function App() {
         return;
       }
       if (
+        shortcutMatches(e, "usage.open") &&
+        !blocksNavigationShortcuts(e.target, e)
+      ) {
+        handleUsageShortcut(e);
+        return;
+      }
+      if (
         shortcutMatches(e, "reviews.inbox") &&
         !blocksNavigationShortcuts(e.target, e)
       ) {
@@ -6234,6 +6243,7 @@ export default function App() {
         </div>
         <div className="topbar-actions">
           <NodeHomeStatus />
+          <UsageChip compact={mobile} />
           {needsYouCount ? (
             <button
               type="button"

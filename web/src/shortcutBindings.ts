@@ -31,6 +31,7 @@ const base = {
   "companion.call": ["Ctrl+Alt+V"],
   "companion.ask": ["Ctrl+Alt+Shift+V"],
   "activity.open": ["Alt+A"],
+  "usage.open": ["Alt+U"],
   "reviews.inbox": ["Alt+M"],
   "work.board": ["Alt+W"],
   "zen.toggle": ["Ctrl+Alt+Z"],

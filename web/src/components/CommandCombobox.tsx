@@ -11,6 +11,7 @@ import {
   useShortcutPreferences,
 } from "../shortcutPreferences";
 import { appKeyInMessageBox } from "../messageBoxKeys";
+import { USAGE_ENTRY, openUsageView } from "../usageViewOpen";
 import {
   ACTIVITY_ENTRY,
   activityViewForSearch,
@@ -1146,6 +1147,15 @@ export function CommandCombobox({
       keywords: ACTIVITY_ENTRY.keywords,
       // One entry: a search for the hours opens it on its Hours tab.
       run: () => openActivityTimeline(activityViewForSearch(search)),
+    },
+    {
+      key: "usage-view",
+      icon: <Gauge size={15} />,
+      title: USAGE_ENTRY.title,
+      detail: USAGE_ENTRY.detail,
+      shortcut: shortcutLabel("usage.open"),
+      keywords: USAGE_ENTRY.keywords,
+      run: () => openUsageView(),
     },
     {
       key: "archive-search",

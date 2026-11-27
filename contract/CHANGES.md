@@ -18,8 +18,8 @@ spent an account.
   `session_id`, `ok`, `error`), kept in `accounts/switches.jsonl`. Family:
   agent_profile.
 - rpc: `agent_profile.account.sessions` gives each session's `title`
-  (its transcript's summary, else the first thing asked), `cwd` and the
-  `pane` it last ran in. Family: agent_profile.
+  (its transcript's summary, else the first thing asked), `cwd`, the
+  `pane` it last ran in and whether it is `pinned`. Family: agent_profile.
 
 ## 1.55
 
