@@ -142,6 +142,7 @@ pub const PROFILE_RPC_METHODS: &[&str] = &[
     "agent_profile.switch",
     "agent_profile.launch",
     "agent_profile.retry",
+    "agent_profile.pin",
     "agent_profile.account.login.start",
     "agent_profile.account.login.complete",
     "agent_profile.account.logout",
@@ -217,6 +218,14 @@ async fn pane_session(host: &dyn ProfileRpcHost, pane_id: &str) -> Option<PaneSe
             .unwrap_or("")
             .to_owned(),
     })
+}
+
+/// The session in a pane and whether conversation mode runs it: None when
+/// none runs (a terminal's agent other than Claude included).
+pub async fn pane_session_of(host: &dyn ProfileRpcHost, pane_id: &str) -> Option<(String, bool)> {
+    pane_session(host, pane_id)
+        .await
+        .map(|pane| (pane.session_id, pane.owner == Owner::Conversation))
 }
 
 /// The model a Claude session runs now, the surest first.
@@ -404,6 +413,7 @@ pub async fn handle_profile_rpc(
         result.insert("session_id".into(), json!(pane.session_id));
         result.insert("owner".into(), json!(pane.owner.as_str()));
         result.insert("profile".into(), json!(profile_name(&profile)));
+        result.insert("pinned".into(), json!(store.pinned(&pane.session_id)));
         result.insert("label".into(), json!(profile_model_label(&profile)));
         if let Some(model) = model {
             result.insert("model".into(), json!(model));
@@ -428,6 +438,28 @@ pub async fn handle_profile_rpc(
             );
         }
         return Ok(Value::Object(result));
+    }
+
+    if method == "agent_profile.pin" {
+        // Pinned: the account chain leaves the session on its profile.
+        let pane = pane.ok_or_else(|| err("No agent session runs in this pane"))?;
+        let pinned = params.get("pinned") != Some(&Value::Bool(false));
+        let profile = profile_for_session(Some(&settings), Some(&pane.session_id), Some(store));
+        store.set_pinned(&pane.session_id, profile_name(&profile), pinned);
+        host.log(
+            if pinned {
+                "session pinned"
+            } else {
+                "session unpinned"
+            },
+            json!({"pane": pane_id, "session": pane.session_id, "profile": profile_name(&profile)}),
+        );
+        return Ok(json!({
+            "ok": true,
+            "session_id": pane.session_id,
+            "profile": profile_name(&profile),
+            "pinned": pinned,
+        }));
     }
 
     if method == "agent_profile.retry" {
@@ -528,6 +560,10 @@ pub async fn handle_profile_rpc(
             fields["returns_at"] = json!(iso_millis(*at));
         }
         host.log("session switched profile", fields);
+        // "Move to": the user's move pins it there.
+        if params.get("pin") == Some(&Value::Bool(true)) {
+            store.set_pinned(&pane.session_id, &name, true);
+        }
         return Ok(json!({
             "ok": true,
             "session_id": pane.session_id,

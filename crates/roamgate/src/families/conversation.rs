@@ -426,6 +426,35 @@ fn command_for(session_id: &str) -> Result<AgentCommand, String> {
     })
 }
 
+/// A session's command for `agent`: its own profile, else the account
+/// chain's first account of that agent with headroom.
+fn command_for_agent(session_id: &str, agent: &str) -> Result<AgentCommand, String> {
+    let settings = read_settings();
+    let store = session_profiles();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or(0);
+    let command = roamgate_connections::agent_profiles::chain::command_for_agent(
+        session_id,
+        agent,
+        settings.as_ref(),
+        Some(&store),
+        &home(),
+        Some(&super::agent_profiles::USAGE),
+        now,
+    )?;
+    Ok(AgentCommand {
+        profile: command.profile,
+        agent: command.agent,
+        program: command.program,
+        env: command.env.into_iter().collect(),
+        unset: command.unset,
+        plain: command.plain,
+        model: command.model,
+    })
+}
+
 async fn read_tail(
     readers: &AgentSessionHandlers,
     files: &dyn SessionFiles,
@@ -735,6 +764,7 @@ async fn build_connection(
         }));
     }
     options.command_for = Some(Arc::new(command_for));
+    options.command_for_agent = Some(Arc::new(command_for_agent));
     {
         let teller = teller.clone();
         let launch_local = local_of(&info);
@@ -1081,6 +1111,10 @@ async fn internal(
                 .unwrap_or("manual");
             let fresh = params.get("fresh_session") == Some(&Value::Bool(true));
             service.switch_agent(pane, target, reason, fresh).await
+        }
+        "notice" => {
+            service.notice(pane, str_of(params, "kind"), str_of(params, "text"));
+            json!({"ok": true})
         }
         "restart_process" => service.restart_process(pane).await,
         "restart_terminal" => {
