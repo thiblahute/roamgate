@@ -1237,8 +1237,10 @@ state; sends are never replayed.
 ## Reviews
 
 Review sessions and their threads live in `reviews.sqlite` in the data
-directory (`ROAMGATE_REVIEW_DIR` overrides), written through on every change
-and pushed to every browser as `review` messages; browsers call
+directory (`ROAMGATE_REVIEW_DIR` overrides; when it does not open, as on a
+full disk, it is tried again after 1 s, doubling up to 30 s, since the agent
+socket the pane holders and review clients use listens only once it is open),
+written through on every change and pushed to every browser as `review` messages; browsers call
 connection-scoped `review.*` methods and always write as the user. A page
 lists summaries (`review.list` with `summaries: 1`: each session without its
 reviewed marks, with counts of its threads, `ReviewSummary` in

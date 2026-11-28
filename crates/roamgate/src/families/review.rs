@@ -59,6 +59,11 @@ pub const FAMILY: &str = "review";
 /// How long a call waits for reviews.sqlite to be opened after a flip.
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How soon reviews.sqlite is tried again when it did not open, doubling
+/// up to the most.
+const OPEN_RETRY_FIRST: Duration = Duration::from_secs(1);
+const OPEN_RETRY_MAX: Duration = Duration::from_secs(30);
+
 /// The review a Ranger chat's threads are in names it `ranger:<id>`
 /// (shared/rangerChat.ts).
 const RANGER_PREFIX: &str = "ranger:";
@@ -971,22 +976,42 @@ impl CoreFamily for ReviewFamily {
         let cx = cx.clone();
         let this = self.clone();
         tokio::spawn(async move {
-            if this.slot.lock().unwrap().epoch != epoch {
-                return;
-            }
-            match this.open_service(&cx) {
-                Ok(service) => {
-                    if this.slot.lock().unwrap().epoch != epoch {
-                        service.close();
+            // A database that does not open (a core before this one still
+            // holding it, a disk that stalled) is tried again: without the
+            // service no agent socket listens, and no pane holder reaches
+            // conversation mode.
+            let mut delay = OPEN_RETRY_FIRST;
+            let mut failures = 0u32;
+            loop {
+                if this.slot.lock().unwrap().epoch != epoch {
+                    return;
+                }
+                match this.open_service(&cx) {
+                    Ok(service) => {
+                        if this.slot.lock().unwrap().epoch != epoch {
+                            service.close();
+                            return;
+                        }
+                        if failures > 0 {
+                            tracing::info!(scope = "review", failures, "reviews.sqlite opened");
+                        }
+                        // The agents' requests come here.
+                        this.sockets.lock().unwrap().start(&cx, service.clone());
+                        let _ = ready.send(Some(service));
                         return;
                     }
-                    // The agents' requests come here.
-                    this.sockets.lock().unwrap().start(&cx, service.clone());
-                    let _ = ready.send(Some(service));
+                    Err(error) => {
+                        failures += 1;
+                        tracing::warn!(
+                            scope = "review",
+                            error = %error,
+                            retry_ms = delay.as_millis() as u64,
+                            "reviews.sqlite not opened",
+                        );
+                    }
                 }
-                Err(error) => {
-                    tracing::warn!(scope = "review", error = %error, "reviews.sqlite not opened");
-                }
+                cx.clock.sleep(delay).await;
+                delay = (delay * 2).min(OPEN_RETRY_MAX);
             }
         });
     }

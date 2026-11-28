@@ -1,0 +1,28 @@
+name: the agent socket listens once reviews.sqlite opens after failing
+family: review
+description: >
+  reviews.sqlite does not open at first (a directory stands where it goes,
+  as a full disk or a core before this one would leave it): the review
+  family tries it again on the server's clock instead of giving up, and once
+  it opens, its agent socket listens, so a pane holder's request reaches the
+  server again instead of every conversation send failing for a holder that
+  cannot connect.
+server:
+  start: false
+  herdr:
+    workspaces: [{ workspace_id: w1 }]
+    panes: [{ pane_id: "w1:p1", workspace_id: w1, cwd: / }]
+steps:
+  - sh: mkdir -p "${HOME}/.config/roamgate/reviews/reviews.sqlite"
+  - start: {}
+  - expect_log: { contains: "reviews.sqlite not opened", within_ms: 10000 }
+  - sh: rmdir "${HOME}/.config/roamgate/reviews/reviews.sqlite"
+  - advance: 1000
+  - expect_log: { contains: "reviews.sqlite opened", within_ms: 10000 }
+  - expect_log:
+      { contains: "agent socket listening key=@local", within_ms: 10000 }
+  - login: {}
+  - connect: {}
+  - agent: hold_output
+    body: { pane: "w1:p1", holder_id: h1, offset: "0", end: "5", data: hello }
+    expect: { status: 200, json: { $exact: true } }
