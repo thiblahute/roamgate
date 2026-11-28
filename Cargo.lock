@@ -3025,7 +3025,6 @@ dependencies = [
  "roamgate-agents",
  "roamgate-base",
  "rusqlite",
- "rustix",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3535,7 +3534,6 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "unicode-normalization",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

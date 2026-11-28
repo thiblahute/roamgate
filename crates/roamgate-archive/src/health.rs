@@ -92,16 +92,9 @@ fn js_round(value: f64) -> f64 {
     (value + 0.5).floor()
 }
 
-#[cfg(unix)]
 fn free_gb(archive_dir: &Path) -> Option<f64> {
-    let stat = rustix::fs::statvfs(archive_dir).ok()?;
-    let bytes = stat.f_bavail as f64 * stat.f_bsize as f64;
+    let bytes = roamgate_base::paths::disk_free(archive_dir)?;
     Some(js_round(bytes / 1e8) / 10.0)
-}
-
-#[cfg(not(unix))]
-fn free_gb(_archive_dir: &Path) -> Option<f64> {
-    None
 }
 
 pub fn archive_health(

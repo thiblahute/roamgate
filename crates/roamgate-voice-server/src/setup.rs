@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use roamgate_base::clock::{SharedClock, SystemClock};
 use roamgate_base::json::js_value;
-use roamgate_base::paths::{dirname, resolve};
+use roamgate_base::paths::{dirname, disk_free, resolve};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::watch;
@@ -161,49 +161,6 @@ pub fn raw_voice_config(path: &Path) -> Map<String, Value> {
             _ => None,
         })
         .unwrap_or_default()
-}
-
-/// Free bytes on the disk of `dir`, or of its nearest existing parent (the
-/// models directory may not exist yet).
-pub fn disk_free(dir: &Path) -> Option<f64> {
-    let mut at = resolve(dir);
-    while !at.exists() && dirname(&at) != at {
-        at = dirname(&at);
-    }
-    free_at(&at)
-}
-
-#[cfg(unix)]
-fn free_at(path: &Path) -> Option<f64> {
-    let stats = rustix::fs::statvfs(path).ok()?;
-    Some(stats.f_bavail as f64 * stats.f_bsize as f64)
-}
-
-// The one Win32 call the voice setup makes; the workspace denies unsafe
-// code everywhere else.
-#[cfg(windows)]
-#[allow(unsafe_code)]
-fn free_at(path: &Path) -> Option<f64> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    let mut available = 0u64;
-    // SAFETY: a NUL-terminated path and a u64 to write; the other outputs
-    // are optional and left null.
-    let ok = unsafe {
-        GetDiskFreeSpaceExW(
-            wide.as_ptr(),
-            &mut available,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    (ok != 0).then_some(available as f64)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn free_at(_path: &Path) -> Option<f64> {
-    None
 }
 
 fn size_at(path: &Path) -> Option<f64> {

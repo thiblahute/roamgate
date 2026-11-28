@@ -64,6 +64,10 @@ const READY_TIMEOUT: Duration = Duration::from_secs(10);
 const OPEN_RETRY_FIRST: Duration = Duration::from_secs(1);
 const OPEN_RETRY_MAX: Duration = Duration::from_secs(30);
 
+/// Less free space than this on the reviews' disk is said to be a full disk
+/// when reviews.sqlite does not open.
+const DISK_FULL_BYTES: f64 = 64e6;
+
 /// The review a Ranger chat's threads are in names it `ranger:<id>`
 /// (shared/rangerChat.ts).
 const RANGER_PREFIX: &str = "ranger:";
@@ -1002,12 +1006,25 @@ impl CoreFamily for ReviewFamily {
                     }
                     Err(error) => {
                         failures += 1;
-                        tracing::warn!(
-                            scope = "review",
-                            error = %error,
-                            retry_ms = delay.as_millis() as u64,
-                            "reviews.sqlite not opened",
-                        );
+                        let free = roamgate_base::paths::disk_free(&review_directory(&ProcessEnv));
+                        let free_mb = free.map(|bytes| (bytes / 1e6).round() as u64);
+                        if free.is_some_and(|bytes| bytes < DISK_FULL_BYTES) {
+                            tracing::error!(
+                                scope = "review",
+                                error = %error,
+                                free_mb,
+                                retry_ms = delay.as_millis() as u64,
+                                "reviews.sqlite not opened: the disk is full; pane holders and review clients cannot connect until space is freed",
+                            );
+                        } else {
+                            tracing::warn!(
+                                scope = "review",
+                                error = %error,
+                                free_mb,
+                                retry_ms = delay.as_millis() as u64,
+                                "reviews.sqlite not opened; pane holders and review clients cannot connect until it opens",
+                            );
+                        }
                     }
                 }
                 cx.clock.sleep(delay).await;

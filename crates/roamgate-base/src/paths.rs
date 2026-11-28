@@ -561,5 +561,46 @@ pub async fn remove_leftover_data_temporaries_async(root: PathBuf, started_at_ms
         .unwrap_or(0)
 }
 
+/// Free bytes on the disk of `dir`, or of its nearest existing parent (the
+/// directory may not exist yet); None where it cannot be told.
+pub fn disk_free(dir: &Path) -> Option<f64> {
+    let mut at = resolve(dir);
+    while !at.exists() && dirname(&at) != at {
+        at = dirname(&at);
+    }
+    free_at(&at)
+}
+
+#[cfg(unix)]
+fn free_at(path: &Path) -> Option<f64> {
+    let stats = rustix::fs::statvfs(path).ok()?;
+    Some(stats.f_bavail as f64 * stats.f_bsize as f64)
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn free_at(path: &Path) -> Option<f64> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut available = 0u64;
+    // SAFETY: a NUL-terminated path and a u64 to write; the other outputs
+    // are optional and left null.
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut available,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    (ok != 0).then_some(available as f64)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn free_at(_path: &Path) -> Option<f64> {
+    None
+}
+
 #[cfg(test)]
 mod tests;
