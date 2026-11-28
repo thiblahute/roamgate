@@ -13,7 +13,7 @@
 //! - Reverse calls: `herdr.call` (the connection's Herdr), and
 //!   `conversation.host {op, connection_id, ...}` for what the front keeps:
 //!   `connection`, `ask` (the prompt card), `ssh_argv`, `idle_stop_minutes`,
-//!   `keep_awake`, `models_offered`, `choose_model`, `register_launch`,
+//!   `permission_timeout_seconds`, `keep_awake`, `models_offered`, `choose_model`, `register_launch`,
 //!   `tell` (the lease changed, an owned agent reported) and `mirror` (what
 //!   the front's synchronous readers see of the service).
 //! - Pushes: `agent_chat.*` events to the sockets watching a pane.
@@ -691,6 +691,24 @@ async fn build_connection(
                 .ok()
                 .and_then(|minutes| minutes.as_f64())
                 .unwrap_or(0.0)
+            })
+        }));
+    }
+    {
+        let cx = cx.clone();
+        let id = id.clone();
+        options.permission_timeout_seconds = Some(Arc::new(move || {
+            let cx = cx.clone();
+            let id = id.clone();
+            Box::pin(async move {
+                cx.reverse(
+                    "conversation.host",
+                    json!({"op": "permission_timeout_seconds", "connection_id": id}),
+                )
+                .await
+                .ok()
+                .and_then(|seconds| seconds.as_u64())
+                .unwrap_or(roamgate_base::settings::DEFAULT_PERMISSION_TIMEOUT_SECONDS as u64)
             })
         }));
     }

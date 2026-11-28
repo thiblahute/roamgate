@@ -87,7 +87,8 @@ steps:
   - call: settings.claude_start.get
     reply: { mode: conversation, $exact: true }
   - call: settings.conversation.get
-    reply: { idle_stop_minutes: 45, $exact: true }
+    reply:
+      { idle_stop_minutes: 45, permission_timeout_seconds: 900, $exact: true }
   - call: settings.limit_resume.get
     reply:
       { enabled: false, message: carry on, margin_seconds: 60, $exact: true }

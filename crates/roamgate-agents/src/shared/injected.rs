@@ -34,9 +34,14 @@ pub struct InjectedMessage {
 /// moves to it from another agent (roamgate-conversation's continuity).
 pub const CONTINUATION_TAG: &str = "roamgate-continuation";
 
+/// The block of the message that tells an agent a permission it asked for
+/// went unanswered and was denied, where its protocol's denial carries no
+/// message (roamgate-conversation's session).
+pub const PERMISSION_TIMEOUT_TAG: &str = "roamgate-permission-timeout";
+
 fn tags() -> String {
     format!(
-        "agent-message|teammate-message|cross-session-message|{AGENT_MESSAGE_TAG}|{CONTINUATION_TAG}|task-notification|system-reminder"
+        "agent-message|teammate-message|cross-session-message|{AGENT_MESSAGE_TAG}|{CONTINUATION_TAG}|{PERMISSION_TIMEOUT_TAG}|task-notification|system-reminder"
     )
 }
 
@@ -154,6 +159,16 @@ fn notice(tag: &str, attrs: &[(String, String)], body: &str) -> Option<InjectedN
             make(
                 "continuation",
                 format!("Continued from {from}"),
+                js::trim(body).to_owned(),
+            )
+        }
+        PERMISSION_TIMEOUT_TAG => {
+            let tool = attr(attrs, "tool")
+                .filter(|value| !value.is_empty())
+                .unwrap_or("a tool");
+            make(
+                "permission",
+                format!("Unanswered permission: {tool} denied"),
                 js::trim(body).to_owned(),
             )
         }

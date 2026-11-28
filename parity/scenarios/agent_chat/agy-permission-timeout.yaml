@@ -1,0 +1,159 @@
+name: an AGY permission nobody answers in time is rejected, and AGY is told why in a message
+family: agent_chat
+description: >
+  ACP's answer to session/request_permission carries no message: with
+  conversation.permission_timeout_seconds at 30, an unanswered AGY
+  permission is answered with its reject option once the half minute is
+  over, and the agent gets a <roamgate-permission-timeout> message after
+  that turn, telling it nobody answered, to do the work another way if it
+  can, and otherwise to say what it needs and go on.
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/work" }]
+    agents:
+      - pane_id: p1
+        agent: agy
+        agent_status: idle
+        cwd: "${ROOT}/work"
+        agent_session:
+          {
+            source: agy,
+            agent: agy,
+            kind: id,
+            value: aaaaaaaa-1111-4222-8333-444444444444,
+          }
+    terminals:
+      p1: { program: agy, args: [--model, gemini-3-pro] }
+  files:
+    "${ROOT}/work/.keep": ""
+  fakes:
+    agy:
+      model: gemini-3-pro
+      turns:
+        - - {
+              jsonrpc: "2.0",
+              method: session/update,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  update:
+                    {
+                      sessionUpdate: tool_call,
+                      toolCallId: tc-1,
+                      title: run_command,
+                      rawInput: { cmd: rm -rf build },
+                    },
+                },
+            }
+          - {
+              jsonrpc: "2.0",
+              id: 7,
+              method: session/request_permission,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  toolCall:
+                    {
+                      toolCallId: tc-1,
+                      title: run_command,
+                      rawInput: { cmd: rm -rf build },
+                    },
+                  options:
+                    [
+                      { optionId: once, name: Allow, kind: allow_once },
+                      { optionId: never, name: Deny, kind: reject_once },
+                    ],
+                },
+            }
+          - { $await_response: true }
+          - {
+              jsonrpc: "2.0",
+              method: session/update,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  update:
+                    {
+                      sessionUpdate: tool_call_update,
+                      toolCallId: tc-1,
+                      status: failed,
+                      rawOutput: "answered {{response_outcome}}",
+                    },
+                },
+            }
+        - - {
+              jsonrpc: "2.0",
+              method: session/update,
+              params:
+                {
+                  sessionId: "{{session_id}}",
+                  update:
+                    {
+                      sessionUpdate: agent_message_chunk,
+                      content:
+                        { type: text, text: I need leave to remove build. },
+                    },
+                },
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - expect_log:
+      { contains: "agent socket listening key=@local", within_ms: 10000 }
+  - call: settings.conversation.update
+    params: { permission_timeout_seconds: 30 }
+    reply: { permission_timeout_seconds: 30 }
+  - call: agent_chat.handover
+    id: handover
+    no_wait: true
+    params: { pane_id: p1, to: conversation }
+  - await: handover
+    advance_every: 200
+    within_ms: 30000
+    reply: { ok: true, owner: conversation }
+  - call: agent_chat.subscribe
+    params: { pane_id: p1 }
+  - call: agent_chat.send
+    params: { pane_id: p1, text: clean the build, uuid: u-1 }
+    within_ms: 20000
+  - call: review.prompts
+    until: { prompts: [{ tool: run_command }] }
+    within_ms: 20000
+    reply:
+      {
+        prompts:
+          [
+            {
+              paneId: p1,
+              agent: AGY,
+              tool: run_command,
+              noTerminal: true,
+              expiresAt: "{{time}}",
+            },
+          ],
+      }
+  # Nobody answers for half a minute: the reject option.
+  - advance: 30000
+  - expect_push: "event:agent_chat.tool_result"
+    within_ms: 20000
+    message:
+      { data: { tool_use_id: tc-1, is_error: true, text: answered never } }
+  - call: review.prompts
+    reply: { prompts: [] }
+  # Then AGY is told, in a message of its own after that turn.
+  - expect_push: "event:agent_chat.user"
+    within_ms: 20000
+    message:
+      {
+        data:
+          {
+            text: "<roamgate-permission-timeout tool=\"run_command\" seconds=\"30\">\nNobody answered this permission request in Roamgate within 30 seconds, so run_command was denied. Do not wait for an answer and do not ask for the same permission again right away. If you can do the work another way that needs no permission, do that. Otherwise say in the chat what you need permission for and why, then go on with the rest of the work.\n</roamgate-permission-timeout>",
+          },
+      }
+  - expect_push: "event:agent_chat.result"
+    within_ms: 20000
+    message: { data: { subtype: success, text: I need leave to remove build. } }

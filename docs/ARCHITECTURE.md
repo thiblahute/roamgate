@@ -2910,6 +2910,25 @@ finished after (that agent is given the history again, first). With
 `conversation.fallback_agent` set, a conversation the limit resumer pauses
 on a usage limit is switched to that agent and its pause skipped.
 
+### Unanswered permissions
+
+`conversation.permission_timeout_seconds` (default 900, 0 never) is the
+time a conversation's permission request waits (crates/roamgate-conversation,
+`ConversationSession.answer_permission`); the service reads it from the
+front (`conversation.host` op `permission_timeout_seconds`) as each request
+comes and asks the prompt card with that `timeout_ms` (0: the card has no
+`expiresAt` and no timer). A card that times out goes; the session then
+denies the request through its codec's `deny_unanswered` with
+`unanswered_permission_message` (nobody answered within the time; do the
+work without the permission if possible, else say in the chat what is
+needed and go on). Claude's codec puts that message in its `deny` control
+response. A codec whose protocol carries none (ACP) keeps the default: the
+session answers `deny` (AGY's reject option) and sends the agent the same
+words in a `<roamgate-permission-timeout tool seconds>` block, queued behind
+the turn, which the chat shows as an injected notice of kind `permission`.
+Questions keep `question_timeout_ms` (30 minutes) and the plain unanswered
+denial.
+
 ### Idle stop
 
 `conversation.idle_stop_minutes` (default 30, 0 off) stops idle headless

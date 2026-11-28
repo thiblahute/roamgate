@@ -16,9 +16,10 @@ use roamgate_base::settings::sections::{
     limit_resume_settings_error, normalize_site_list, normalize_site_roots,
 };
 use roamgate_base::settings::{
-    LEGACY_DEFAULT_CONNECTION_ID, MAX_IDLE_STOP_MINUTES, Settings, SettingsError, SettingsStore,
-    is_fallback_agent, is_idle_stop_minutes, js_trim, normalize_title_suffix,
-    ui_setting_key_is_valid, ui_setting_value_error,
+    LEGACY_DEFAULT_CONNECTION_ID, MAX_IDLE_STOP_MINUTES, MAX_PERMISSION_TIMEOUT_SECONDS, Settings,
+    SettingsError, SettingsStore, is_fallback_agent, is_idle_stop_minutes,
+    is_permission_timeout_seconds, js_trim, normalize_title_suffix, ui_setting_key_is_valid,
+    ui_setting_value_error,
 };
 use roamgate_connections::usage_limit::limit_resume_settings_of;
 use serde_json::{Map, Value, json};
@@ -241,30 +242,33 @@ impl SettingsService {
             }
             "settings.conversation.get" => {
                 let settings = self.store.read().await;
-                let mut result = json!({
-                    "idle_stop_minutes": settings.conversation_idle_stop_minutes()
-                });
-                if let Some(fallback) = settings.conversation_fallback_agent() {
-                    result["fallback_agent"] = json!(fallback);
-                }
-                Ok(read(result))
+                Ok(read(conversation_reply(&settings)))
             }
             "settings.conversation.update" => {
-                let known = |key: &str| matches!(key, "idle_stop_minutes" | "fallback_agent");
+                let known = |key: &str| {
+                    matches!(
+                        key,
+                        "idle_stop_minutes" | "permission_timeout_seconds" | "fallback_agent"
+                    )
+                };
                 let valid = !params_map.is_empty()
                     && params_map.keys().all(|key| known(key))
                     && params_map
                         .get("idle_stop_minutes")
                         .is_none_or(|minutes| is_idle_stop_minutes(Some(minutes)))
                     && params_map
+                        .get("permission_timeout_seconds")
+                        .is_none_or(|seconds| is_permission_timeout_seconds(Some(seconds)))
+                    && params_map
                         .get("fallback_agent")
                         .is_none_or(|agent| is_fallback_agent(Some(agent)));
                 if !valid {
                     return Err(format!(
-                        "settings.conversation.update takes idle_stop_minutes (a whole number of minutes from 0, never, to {MAX_IDLE_STOP_MINUTES}) and fallback_agent (claude, agy or null)"
+                        "settings.conversation.update takes idle_stop_minutes (a whole number of minutes from 0, never, to {MAX_IDLE_STOP_MINUTES}), permission_timeout_seconds (a whole number of seconds from 0, never, to {MAX_PERMISSION_TIMEOUT_SECONDS}) and fallback_agent (claude, agy or null)"
                     ));
                 }
                 let minutes = params_map.get("idle_stop_minutes").cloned();
+                let seconds = params_map.get("permission_timeout_seconds").cloned();
                 let fallback = params_map.get("fallback_agent").cloned();
                 let written = self
                     .write(|current| {
@@ -276,6 +280,9 @@ impl SettingsService {
                         if let Some(minutes) = minutes {
                             conversation.insert("idle_stop_minutes".into(), minutes);
                         }
+                        if let Some(seconds) = seconds {
+                            conversation.insert("permission_timeout_seconds".into(), seconds);
+                        }
                         if let Some(fallback) = fallback {
                             if fallback.is_null() {
                                 conversation.remove("fallback_agent");
@@ -286,14 +293,8 @@ impl SettingsService {
                         current.with("conversation", Some(Value::Object(conversation)))
                     })
                     .await?;
-                let mut result = json!({
-                    "idle_stop_minutes": written.settings.conversation_idle_stop_minutes()
-                });
-                if let Some(fallback) = written.settings.conversation_fallback_agent() {
-                    result["fallback_agent"] = json!(fallback);
-                }
                 Ok(RpcAnswer {
-                    result,
+                    result: conversation_reply(&written.settings),
                     written: Some(written),
                 })
             }
@@ -472,6 +473,18 @@ impl SettingsService {
             }
         }
     }
+}
+
+/// `settings.conversation.get`'s answer, and an update's.
+fn conversation_reply(settings: &Settings) -> Value {
+    let mut result = json!({
+        "idle_stop_minutes": settings.conversation_idle_stop_minutes(),
+        "permission_timeout_seconds": settings.conversation_permission_timeout_seconds(),
+    });
+    if let Some(fallback) = settings.conversation_fallback_agent() {
+        result["fallback_agent"] = json!(fallback);
+    }
+    result
 }
 
 fn auto_rename(settings: &Settings) -> bool {

@@ -6,6 +6,29 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.50
+
+inventory: 70d4b01c5087708a8b0d7a51e7a2eb30bc9dfbafdaae7c453fe4d35ee964af91
+
+A conversation's permission nobody answers in time is denied, and the agent
+is told to work around it.
+
+- rpc: `settings.conversation.get` and `.update` carry
+  `permission_timeout_seconds` (0, never, to 86400; 900 by default); an
+  update takes it alone. Family: settings.
+- channel: `conversation.host` op `permission_timeout_seconds` answers the
+  setting; `ask`'s `timeout_ms` 0 means no time limit. Family:
+  conversation.
+- types: `AgentPermissionPrompt.expiresAt` is optional (absent: the prompt
+  waits until answered). `InjectedKind` adds `permission`: the
+  `<roamgate-permission-timeout tool seconds>` block an agent whose denial
+  carries no message (AGY over ACP) is sent. Family: agent_chat.
+- behaviour: an unanswered permission is denied with a message saying
+  nobody answered within the time, to do the work another way if possible
+  and otherwise to say what is needed and go on (Claude: in its `deny`
+  control response; AGY: its reject option, then that message after the
+  turn). Family: agent_chat.
+
 ## 1.49
 
 inventory: 70d4b01c5087708a8b0d7a51e7a2eb30bc9dfbafdaae7c453fe4d35ee964af91

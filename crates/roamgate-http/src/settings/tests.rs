@@ -93,7 +93,7 @@ async fn connection_settings_validate_and_persist_by_connection() {
         .await
         .unwrap()
         .result,
-        json!({"idle_stop_minutes": 15})
+        json!({"idle_stop_minutes": 15, "permission_timeout_seconds": 900})
     );
     assert!(
         call(
@@ -298,7 +298,10 @@ async fn idle_stop_is_30_minutes_by_default_and_a_whole_number_up_to_a_day() {
         .rpc("settings.conversation.get", &json!({}), None, "")
         .await
         .unwrap();
-    assert_eq!(get.result, json!({"idle_stop_minutes": 30}));
+    assert_eq!(
+        get.result,
+        json!({"idle_stop_minutes": 30, "permission_timeout_seconds": 900})
+    );
     for minutes in [json!(0), json!(1440)] {
         let set = settings
             .rpc(
@@ -322,7 +325,7 @@ async fn idle_stop_is_30_minutes_by_default_and_a_whole_number_up_to_a_day() {
                 )
                 .await
                 .unwrap_err(),
-            "settings.conversation.update takes idle_stop_minutes (a whole number of minutes from 0, never, to 1440) and fallback_agent (claude, agy or null)"
+            "settings.conversation.update takes idle_stop_minutes (a whole number of minutes from 0, never, to 1440), permission_timeout_seconds (a whole number of seconds from 0, never, to 86400) and fallback_agent (claude, agy or null)"
         );
     }
     let fallback = settings
@@ -356,6 +359,38 @@ async fn idle_stop_is_30_minutes_by_default_and_a_whole_number_up_to_a_day() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn permission_timeout_is_a_whole_number_of_seconds_up_to_a_day() {
+    let home = tempfile::tempdir().unwrap();
+    let settings = service(&home.path().join("settings.json"));
+    for seconds in [json!(0), json!(60), json!(86_400)] {
+        let set = settings
+            .rpc(
+                "settings.conversation.update",
+                &json!({"permission_timeout_seconds": seconds}),
+                None,
+                "",
+            )
+            .await
+            .unwrap();
+        assert_eq!(set.result["permission_timeout_seconds"], seconds);
+        assert_eq!(set.result["idle_stop_minutes"], 30);
+    }
+    for seconds in [json!(86_401), json!(2.5), json!("60"), json!(-1)] {
+        assert!(
+            settings
+                .rpc(
+                    "settings.conversation.update",
+                    &json!({"permission_timeout_seconds": seconds}),
+                    None,
+                    "",
+                )
+                .await
+                .is_err()
+        );
+    }
 }
 
 #[tokio::test]

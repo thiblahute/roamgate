@@ -768,6 +768,48 @@ async fn deny_and_no_answer_in_time_deny() {
     }
 }
 
+/// Answers nothing, once the prompt's time ran out (the prompt card's).
+fn answer_when_it_times_out() -> Answer {
+    Arc::new(move |prompt: &ConversationPrompt| {
+        let wait = prompt.timeout_ms;
+        Box::pin(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+            None
+        }) as BoxFuture<'static, Option<Value>>
+    })
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_permission_nobody_answered_in_its_time_is_denied_telling_claude_to_work_around_it() {
+    let context = setup(Setup {
+        answer: Some(answer_when_it_times_out()),
+        ..Setup::default()
+    });
+    context.start_turn("hi").await;
+    let mut body = obj(json!({"subtype": "can_use_tool"}));
+    body.extend(obj(bash()));
+    context
+        .proc()
+        .fake
+        .push(json!({"type": "control_request", "request_id": "r1", "request": body}));
+    tokio::time::sleep(std::time::Duration::from_secs(15 * 60 + 1)).await;
+    settle().await;
+    let response = control_responses(&context.proc().fake)
+        .into_iter()
+        .next()
+        .unwrap();
+    let response = &response["response"]["response"];
+    assert_eq!(response["behavior"], "deny");
+    assert_eq!(response["interrupt"], false);
+    assert_eq!(
+        response["message"],
+        "Nobody answered this permission request in Roamgate within 15 minutes, so Bash was denied. \
+         Do not wait for an answer and do not ask for the same permission again right away. \
+         If you can do the work another way that needs no permission, do that. Otherwise say \
+         in the chat what you need permission for and why, then go on with the rest of the work."
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn ask_user_question_answers_go_in_updated_input_answers() {
     let questions = json!([{"question": "Which colour?", "header": "Colour",

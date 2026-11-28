@@ -8,7 +8,8 @@
 //!   written as they are, after `{{session_id}}`, `{{prompt_id}}` (the
 //!   prompt's request id) and `{{user_text}}` are filled in; except
 //!   `{"$await_response": true}` (waits for the answer to a request the
-//!   turn made, a permission's), `{"$await_cancel": true}` (waits for
+//!   turn made, a permission's: the entries after it may name
+//!   `{{response_outcome}}`, the option it selected or `cancelled`), `{"$await_cancel": true}` (waits for
 //!   `session/cancel`) and `{"$delay_ms": n}`. A turn that does not answer
 //!   its prompt itself ends with `{"stopReason": "end_turn"}` (or
 //!   `"cancelled"` after a cancel). `session/set_model` and
@@ -185,11 +186,7 @@ fn acp(script: &Script) -> i32 {
                     other => other.to_string(),
                 };
                 let text = prompt_text(&message);
-                let vars = [
-                    ("session_id", session.as_str()),
-                    ("prompt_id", prompt_id.as_str()),
-                    ("user_text", text.as_str()),
-                ];
+                let mut outcome = String::new();
                 let mut cancelled = false;
                 let mut answered = false;
                 for entry in &turn {
@@ -209,12 +206,27 @@ fn acp(script: &Script) -> i32 {
                             };
                             if found {
                                 cancelled |= !awaits_response;
+                                if awaits_response {
+                                    let picked = incoming.pointer("/result/outcome");
+                                    outcome = picked
+                                        .and_then(|o| o.get("optionId"))
+                                        .or_else(|| picked.and_then(|o| o.get("outcome")))
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("")
+                                        .to_owned();
+                                }
                                 break;
                             }
                             waiting.push_back(incoming);
                         }
                         continue;
                     }
+                    let vars = [
+                        ("session_id", session.as_str()),
+                        ("prompt_id", prompt_id.as_str()),
+                        ("user_text", text.as_str()),
+                        ("response_outcome", outcome.as_str()),
+                    ];
                     let line = fill(entry, &vars);
                     answered |= line.get("id").is_some_and(|line_id| *line_id == id)
                         && line.get("method").is_none();

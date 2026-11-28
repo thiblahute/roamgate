@@ -319,6 +319,25 @@ fn mr_cache_keeps_each_valid_field_and_falls_back_to_defaults() {
     );
 }
 
+#[test]
+fn permission_timeout_defaults_to_15_minutes_and_bad_values_are_dropped() {
+    assert_eq!(
+        Settings::defaults().conversation_permission_timeout_seconds(),
+        900
+    );
+    for (given, read) in [(json!(0), 0), (json!(90), 90), (json!(86_400), 86_400)] {
+        let settings =
+            Settings::normalize(&json!({"conversation": {"permission_timeout_seconds": given}}));
+        assert_eq!(settings.conversation_permission_timeout_seconds(), read);
+    }
+    for bad in [json!(-1), json!(86_401), json!(1.5), json!("60")] {
+        let settings =
+            Settings::normalize(&json!({"conversation": {"permission_timeout_seconds": bad}}));
+        assert_eq!(settings.get("conversation").unwrap(), &json!({}));
+        assert_eq!(settings.conversation_permission_timeout_seconds(), 900);
+    }
+}
+
 #[tokio::test]
 async fn idle_stop_defaults_to_30_minutes_and_bad_values_are_dropped() {
     assert_eq!(Settings::defaults().conversation_idle_stop_minutes(), 30);

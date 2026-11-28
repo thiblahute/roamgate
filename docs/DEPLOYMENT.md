@@ -785,6 +785,32 @@ waits for you, background work (a background command, a subagent) or a
 used in the last 10 minutes, the voice companion has a job on it, or
 another session's message reached it in the last 10 minutes.
 
+### Denying unanswered permissions
+
+**Configuration > Integrations > Deny unanswered permissions** (the
+`conversation.permission_timeout_seconds` key of `settings.json`, a whole
+number of seconds from 0 to 86400, 900 by default, 0 for never) is how long
+a permission a conversation-mode agent (Claude or AGY) asks for waits in the
+browser. Unanswered by then, Roamgate denies it and tells the agent nobody
+answered within that time: it should do the work another way that needs no
+permission if it can, and otherwise say in the chat what it needs and go on
+with the rest. Claude reads this in the denial itself; ACP's answer carries
+no message, so AGY gets its reject option and the same words as a message
+after that turn, shown in the chat as a notice. At 0 a permission waits
+until it is answered. The setting is read as each permission comes, so a
+change applies to the next one. Questions (`AskUserQuestion`) keep their
+own 30 minutes.
+
+```json
+{ "conversation": { "permission_timeout_seconds": 900 } }
+```
+
+Terminal-mode panes are not concerned: there Claude Code's own dialog asks
+once the permission hook stops waiting (`--timeout`). Claude Code has no
+setting of its own that denies every unanswered prompt after a while; its
+two-minute limit applies only to the critical-path `rm` prompt in `auto`
+and `bypassPermissions` modes.
+
 ## Resuming after a usage limit
 
 When a Claude session stops on a usage limit (the 5-hour or the weekly

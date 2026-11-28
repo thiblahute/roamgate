@@ -131,6 +131,10 @@ pub struct ServiceOptions {
     pub stop_answer_ms: i64,
     pub transcript_stat: Option<TranscriptStat>,
     pub idle_stop_minutes: Option<Arc<dyn Fn() -> BoxFuture<'static, f64> + Send + Sync>>,
+    /// How long a permission request waits for an answer before it is
+    /// denied, in seconds (0: never), read as each one comes; None: the
+    /// session's own `permission_timeout_ms`.
+    pub permission_timeout_seconds: Option<Arc<dyn Fn() -> BoxFuture<'static, u64> + Send + Sync>>,
     pub idle_check_ms: u64,
     pub peer_quiet_ms: Option<i64>,
     /// Why a pane's process must stay up now (a voice call); None: none.
@@ -193,6 +197,7 @@ impl ServiceOptions {
             stop_answer_ms: 10_000,
             transcript_stat: None,
             idle_stop_minutes: None,
+            permission_timeout_seconds: None,
             idle_check_ms: 60_000,
             peer_quiet_ms: None,
             keep_awake: None,
@@ -759,6 +764,12 @@ impl Inner {
             driver,
         );
         options.log = self.options.log.clone();
+        if let Some(seconds) = self.options.permission_timeout_seconds.clone() {
+            options.permission_timeout = Some(Arc::new(move || {
+                let seconds = seconds();
+                Box::pin(async move { seconds.await.saturating_mul(1000) })
+            }));
+        }
         options.queue = carried;
         options.asleep = lease.contains_key("asleep_at");
         {

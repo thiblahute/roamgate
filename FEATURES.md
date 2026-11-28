@@ -764,7 +764,12 @@ Inspector state is scoped to each checkout; see
   back, and the terminal asks anyway once the hook stops waiting. **Dismiss**
   (Esc, or `d` on a permission card) puts either away unanswered: the agent
   is told the user dismissed it and goes on, and its chat shows the step as
-  _Dismissed_. A conversation-mode pane shown as a terminal says when Claude
+  _Dismissed_. In conversation mode (Claude and AGY), a permission nobody
+  answers in time (15 minutes by default; **Configuration > Integrations >
+  Deny unanswered permissions**, or never) is denied: its card goes, and the
+  agent is told nobody answered, to do the work another way if it can, and
+  otherwise to say in the chat what it needs and go on with the rest. A
+  question keeps its own 30 minutes. A conversation-mode pane shown as a terminal says when Claude
   waits on a question, with **Show the question** and **Dismiss it**; on a
   call, "dismiss it" (or "laisse tomber la question") does the same.
   A pane's chat keeps your place in it. Leave it for another pane,

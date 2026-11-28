@@ -13,12 +13,17 @@
         "type": "integer",
         "minimum": 0
       },
+      "permission_timeout_seconds": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 86400
+      },
       "fallback_agent": {
         "enum": ["claude", "agy"]
       }
     },
     "additionalProperties": false,
-    "required": ["idle_stop_minutes"]
+    "required": ["idle_stop_minutes", "permission_timeout_seconds"]
   },
   "status": "typed"
 }

@@ -322,6 +322,11 @@ async fn host(layer: &Arc<Layer>, cx: &FamilyContext, args: &Value) -> Result<Va
                 .await
                 .conversation_idle_stop_minutes()
         )),
+        "permission_timeout_seconds" => Ok(json!(
+            super::super::settings::read_shared(cx)
+                .await
+                .conversation_permission_timeout_seconds()
+        )),
         // A voice call or a companion job keeps a conversation awake: the
         // core's own (its conversation mode asks its voice first).
         "keep_awake" => Ok(Value::Null),

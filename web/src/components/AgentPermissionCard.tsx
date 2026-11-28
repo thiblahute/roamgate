@@ -140,14 +140,7 @@ export function AgentPermissionCard({
             {prompt.noTerminal ? "" : " · t terminal"}
           </small>
         )}
-        <span
-          className="agent-permission-time"
-          title={
-            prompt.noTerminal ? "Then it is denied" : "Then the terminal asks"
-          }
-        >
-          {left}s
-        </span>
+        <TimeLeft left={left} noTerminal={prompt.noTerminal} />
       </div>
       <code className="agent-permission-summary">{prompt.summary}</code>
       {prompt.file_edit && !compact ? (
@@ -231,7 +224,7 @@ function QuestionsForm({
 }: {
   prompt: AgentPermissionPrompt;
   questions: AgentQuestion[];
-  left: number;
+  left: number | null;
   busy: boolean;
   onAnswer: (answers: Record<string, string>) => void;
   /** Put away unanswered: the agent is told so, and goes on. */
@@ -339,14 +332,7 @@ function QuestionsForm({
         <small className="agent-permission-keys">
           1–9 · ↑↓ · Tab · Enter answers · Esc dismisses
         </small>
-        <span
-          className="agent-permission-time"
-          title={
-            prompt.noTerminal ? "Then it is denied" : "Then the terminal asks"
-          }
-        >
-          {left}s
-        </span>
+        <TimeLeft left={left} noTerminal={prompt.noTerminal} />
       </div>
       {questions.map((question, index) => (
         <fieldset key={question.question} className="agent-question">
@@ -422,9 +408,34 @@ function QuestionsForm({
   );
 }
 
-function secondsLeft(prompt: AgentPermissionPrompt): number {
+/** Seconds until it is denied or goes to the terminal; null: no limit. */
+function secondsLeft(prompt: AgentPermissionPrompt): number | null {
+  if (!prompt.expiresAt) return null;
   return Math.max(
     0,
     Math.round((Date.parse(prompt.expiresAt) - Date.now()) / 1000),
+  );
+}
+
+/** The countdown, or nothing when the prompt waits until answered. */
+function TimeLeft({
+  left,
+  noTerminal,
+}: {
+  left: number | null;
+  noTerminal?: boolean;
+}) {
+  if (left === null) return null;
+  return (
+    <span
+      className="agent-permission-time"
+      title={
+        noTerminal
+          ? "Then it is denied, and the agent is told to do without it"
+          : "Then the terminal asks"
+      }
+    >
+      {left}s
+    </span>
   );
 }

@@ -13,9 +13,10 @@
         "task",
         "rewound",
         "context",
-        "continuation"
+        "continuation",
+        "permission"
       ],
-      "description": "Also \"rewound\": the history's notice of the user's messages a rewind cut; \"context\": what Codex says of its environment (codex-injected.ts); \"continuation\": the history another agent left, given to the agent a conversation moved to."
+      "description": "Also \"rewound\": the history's notice of the user's messages a rewind cut; \"context\": what Codex says of its environment (codex-injected.ts); \"continuation\": the history another agent left, given to the agent a conversation moved to; \"permission\": Roamgate telling the agent that a permission it asked for went unanswered and was denied."
     },
     "InjectedMessage": {
       "type": "object",

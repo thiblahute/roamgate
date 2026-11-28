@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeftRight, Info, Moon } from "lucide-react";
+import { ArrowLeftRight, Info, Moon, ShieldAlert } from "lucide-react";
 import {
   CONVERSATION_AGENTS,
   type ConversationAgent,
   DEFAULT_IDLE_STOP_MINUTES,
+  DEFAULT_PERMISSION_TIMEOUT_SECONDS,
   agentDisplayName,
   isConversationAgent,
   isIdleStopMinutes,
+  isPermissionTimeoutSeconds,
 } from "../../../shared/agentChat";
 import {
   useConnectionClient,
@@ -47,11 +49,49 @@ export function idleStopOptions(current: number | null): ThemedSelectOption[] {
   }));
 }
 
+const PERMISSION_TIMEOUT_DESCRIPTION =
+  "A permission an agent in conversation mode asks for that nobody " +
+  "answers this long is denied by Roamgate: the agent is told nobody " +
+  "answered, to do the work another way if it can, and otherwise to say " +
+  "in the chat what it needs and go on with the rest. Never: the request " +
+  "waits until you answer it. Questions keep their own 30 minutes.";
+
+const PERMISSION_PRESETS = [0, 30, 60, 120, 300, 600, 900, 1800, 3600];
+
+/** How a number of seconds reads in the list. */
+export function permissionTimeoutLabel(seconds: number): string {
+  if (seconds === 0) return "Never";
+  const unit = (count: number, word: string) =>
+    `After ${count} ${word}${count === 1 ? "" : "s"}`;
+  if (seconds % 3600 === 0) return unit(seconds / 3600, "hour");
+  if (seconds % 60 === 0) return unit(seconds / 60, "minute");
+  return unit(seconds, "second");
+}
+
+export function permissionTimeoutOptions(
+  current: number | null,
+): ThemedSelectOption[] {
+  const values =
+    current !== null && !PERMISSION_PRESETS.includes(current)
+      ? [...PERMISSION_PRESETS, current].sort((a, b) => a - b)
+      : PERMISSION_PRESETS;
+  return values.map((seconds) => ({
+    value: String(seconds),
+    label: permissionTimeoutLabel(seconds),
+    ...(seconds === DEFAULT_PERMISSION_TIMEOUT_SECONDS
+      ? { detail: "Default" }
+      : {}),
+  }));
+}
+
 /** Configuration > Integrations: when an idle conversation's process stops. */
 export function ConversationIdleSettings() {
   const client = useConnectionClient();
   const ready = useConnectionReady(client);
   const [minutes, setMinutes] = useState<number | null>(null);
+  const [permissionSeconds, setPermissionSeconds] = useState<number | null>(
+    null,
+  );
   const [fallbackAgent, setFallbackAgent] = useState<ConversationAgent | null>(
     null,
   );
@@ -74,6 +114,11 @@ export function ConversationIdleSettings() {
       )
         return;
       setMinutes(result.idle_stop_minutes);
+      setPermissionSeconds(
+        isPermissionTimeoutSeconds(result?.permission_timeout_seconds)
+          ? result.permission_timeout_seconds
+          : null,
+      );
       setFallbackAgent(
         isConversationAgent(result?.fallback_agent)
           ? result.fallback_agent
@@ -97,6 +142,7 @@ export function ConversationIdleSettings() {
     pending.current = false;
     setSaving(false);
     setMinutes(null);
+    setPermissionSeconds(null);
     setError(null);
     if (ready) void load();
     return () => {
@@ -124,6 +170,41 @@ export function ConversationIdleSettings() {
       if (!isIdleStopMinutes(result?.idle_stop_minutes))
         throw new Error("Invalid idle stop setting");
       setMinutes(result.idle_stop_minutes);
+    } catch (e) {
+      if (
+        !mounted.current ||
+        !client.isCurrent() ||
+        request !== sequence.current
+      )
+        return;
+      setError((e as Error).message);
+    } finally {
+      if (mounted.current && request === sequence.current) {
+        pending.current = false;
+        setSaving(false);
+      }
+    }
+  };
+
+  const savePermissionTimeout = async (value: number) => {
+    if (pending.current || !client.isCurrent()) return;
+    pending.current = true;
+    setSaving(true);
+    setError(null);
+    const request = ++sequence.current;
+    try {
+      const result = await client.call("settings.conversation.update", {
+        permission_timeout_seconds: value,
+      });
+      if (
+        !mounted.current ||
+        !client.isCurrent() ||
+        request !== sequence.current
+      )
+        return;
+      if (!isPermissionTimeoutSeconds(result?.permission_timeout_seconds))
+        throw new Error("Invalid permission timeout setting");
+      setPermissionSeconds(result.permission_timeout_seconds);
     } catch (e) {
       if (
         !mounted.current ||
@@ -226,6 +307,57 @@ export function ConversationIdleSettings() {
           onChange={(value) => {
             const next = Number(value);
             if (isIdleStopMinutes(next) && next !== minutes) void save(next);
+          }}
+        />
+      </div>
+      <div className="config-preference-row">
+        <span className="config-item-icon">
+          <ShieldAlert size={15} />
+        </span>
+        <div className="config-item-copy">
+          <div className="configuration-setting-label">
+            <strong id="permission-timeout-label">
+              Deny unanswered permissions
+            </strong>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="configuration-help"
+                  aria-label="About denying unanswered permissions"
+                  title={PERMISSION_TIMEOUT_DESCRIPTION}
+                >
+                  <Info size={14} aria-hidden="true" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                className="configuration-help-content"
+                aria-label="About denying unanswered permissions"
+                collisionPadding={12}
+              >
+                {PERMISSION_TIMEOUT_DESCRIPTION}
+              </PopoverContent>
+            </Popover>
+          </div>
+          <span role="status">
+            {permissionSeconds === null
+              ? minutes === null
+                ? ""
+                : "Unavailable"
+              : permissionSeconds === 0
+                ? "A permission request waits until you answer it"
+                : `${permissionTimeoutLabel(permissionSeconds)} unanswered, a permission is denied and the agent works around it`}
+          </span>
+        </div>
+        <ThemedSelect
+          aria-label="Deny unanswered permissions"
+          value={permissionSeconds === null ? "" : String(permissionSeconds)}
+          options={permissionTimeoutOptions(permissionSeconds)}
+          disabled={permissionSeconds === null || saving || !client.isCurrent()}
+          onChange={(value) => {
+            const next = Number(value);
+            if (isPermissionTimeoutSeconds(next) && next !== permissionSeconds)
+              void savePermissionTimeout(next);
           }}
         />
       </div>

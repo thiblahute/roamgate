@@ -33,6 +33,55 @@ pub const UNNAMED_SESSION_ID: &str = "new";
 /// The agents conversation mode drives (`ConversationAgent`).
 pub const CONVERSATION_AGENTS: &[&str] = &["claude", "agy"];
 
+/// The block a message telling the agent of a permission nobody answered
+/// is in, where its protocol's denial carries no message: the chat shows
+/// it as a notice, never as the user's words (`shared/injectedMessage.ts`).
+pub use roamgate_agents::shared::injected::PERMISSION_TIMEOUT_TAG;
+
+/// "90 seconds", "1 minute", "15 minutes", "2 hours".
+pub fn wait_words(seconds: u64) -> String {
+    let (count, unit) = if seconds >= 3600 && seconds.is_multiple_of(3600) {
+        (seconds / 3600, "hour")
+    } else if seconds >= 60 && seconds.is_multiple_of(60) {
+        (seconds / 60, "minute")
+    } else {
+        (seconds, "second")
+    };
+    format!("{count} {unit}{}", if count == 1 { "" } else { "s" })
+}
+
+/// What an agent is told of a permission request nobody answered in
+/// `seconds`: denied, and to work around it if it can, else to say what
+/// it needs and go on with the rest.
+pub fn unanswered_permission_message(tool: &str, seconds: u64) -> String {
+    let tool = if tool.trim().is_empty() {
+        "this tool"
+    } else {
+        tool
+    };
+    format!(
+        "Nobody answered this permission request in Roamgate within {}, so {tool} was denied. \
+         Do not wait for an answer and do not ask for the same permission again right away. \
+         If you can do the work another way that needs no permission, do that. Otherwise say \
+         in the chat what you need permission for and why, then go on with the rest of the work.",
+        wait_words(seconds)
+    )
+}
+
+/// The message that tells an agent of a permission nobody answered,
+/// where its denial cannot ([`DriverCodec::deny_unanswered`]).
+pub fn unanswered_permission_note(tool: &str, seconds: u64) -> String {
+    let attribute = tool
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!(
+        "<{PERMISSION_TIMEOUT_TAG} tool=\"{attribute}\" seconds=\"{seconds}\">\n{}\n</{PERMISSION_TIMEOUT_TAG}>",
+        unanswered_permission_message(tool, seconds)
+    )
+}
+
 /// What the browser is asked for a prompt request.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DriverPrompt {
@@ -127,6 +176,16 @@ pub trait DriverCodec: Send {
     /// event); None: nobody answered in time. The answer is the browser's
     /// `AgentPromptAnswer`.
     fn answer(&mut self, request: &DriverEvent, answer: Option<&Value>) -> Vec<String>;
+    /// The lines that deny a permission request nobody answered within
+    /// the `conversation.permission_timeout_seconds` setting, `message`
+    /// (see [`unanswered_permission_message`]) telling the agent why and
+    /// what to do. None: the protocol's answer carries no message (ACP's);
+    /// the session then denies it with [`DriverCodec::answer`] and tells
+    /// the agent in a message of its own, in a
+    /// [`PERMISSION_TIMEOUT_TAG`] block.
+    fn deny_unanswered(&mut self, _request: &DriverEvent, _message: &str) -> Option<Vec<String>> {
+        None
+    }
     /// A request of the agent's own (rewind steps...); None: not supported.
     fn request(&mut self, kind: &str, params: &Object, request_id: &str) -> Option<Vec<String>>;
     /// Lines to write right after a fresh headless process starts (not on
@@ -509,4 +568,29 @@ impl Drivers {
 /// Whether conversation mode can drive this agent (`isConversationAgent`).
 pub fn is_conversation_agent(agent: &str) -> bool {
     CONVERSATION_AGENTS.contains(&agent)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wait_reads_in_its_largest_whole_unit() {
+        assert_eq!(wait_words(1), "1 second");
+        assert_eq!(wait_words(90), "90 seconds");
+        assert_eq!(wait_words(60), "1 minute");
+        assert_eq!(wait_words(900), "15 minutes");
+        assert_eq!(wait_words(7200), "2 hours");
+    }
+
+    #[test]
+    fn the_note_names_the_tool_in_a_block_the_chat_shows_as_a_notice() {
+        let note = unanswered_permission_note("run \"x\" <y>", 60);
+        assert!(note.starts_with(
+            "<roamgate-permission-timeout tool=\"run &quot;x&quot; &lt;y&gt;\" seconds=\"60\">\n"
+        ));
+        assert!(note.contains("within 1 minute, so run \"x\" <y> was denied."));
+        assert!(note.ends_with("\n</roamgate-permission-timeout>"));
+        assert!(unanswered_permission_message(" ", 5).contains("so this tool was denied"));
+    }
 }

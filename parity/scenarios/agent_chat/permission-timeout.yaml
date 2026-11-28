@@ -1,0 +1,195 @@
+name: a conversation's permission nobody answers in time is denied, the agent told to work around it
+family: agent_chat
+description: >
+  With conversation.permission_timeout_seconds at 60, a Claude permission
+  card left unanswered for a minute goes away and the tool is denied with
+  a message telling Claude nobody answered, to do the work another way if
+  it can, and otherwise to say what it needs and go on. At 0 (never) the
+  card has no expiry and waits for its answer.
+# Conversation mode's pane holder is typed into the pane's POSIX shell (sh,
+# bash, zsh or fish, with job control), which a Windows pane does not have.
+platforms: [linux, macos]
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/work" }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        cwd: "${ROOT}/work"
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+    terminals:
+      p1: { args: [--model, opus] }
+  files:
+    "${ROOT}/work/.keep": ""
+  fakes:
+    claude:
+      turns:
+        - - {
+              type: system,
+              subtype: init,
+              session_id: "{{session_id}}",
+              cwd: /work,
+              model: claude-opus,
+            }
+          - {
+              type: assistant,
+              message:
+                {
+                  id: msg_1,
+                  role: assistant,
+                  model: claude-opus,
+                  content:
+                    [
+                      {
+                        type: tool_use,
+                        id: toolu_1,
+                        name: Bash,
+                        input: { command: rm -rf build },
+                      },
+                    ],
+                },
+            }
+          - {
+              type: control_request,
+              request_id: perm-1,
+              request:
+                {
+                  subtype: can_use_tool,
+                  tool_name: Bash,
+                  input: { command: rm -rf build },
+                  tool_use_id: toolu_1,
+                },
+            }
+          - { $await_response: true }
+          - {
+              type: user,
+              message:
+                {
+                  role: user,
+                  content:
+                    [
+                      {
+                        type: tool_result,
+                        tool_use_id: toolu_1,
+                        content: "{{response_behavior}}: {{response_message}}",
+                        is_error: true,
+                      },
+                    ],
+                },
+            }
+          - {
+              type: result,
+              subtype: success,
+              is_error: false,
+              result: I need leave to remove build,
+              session_id: "{{session_id}}",
+            }
+        - - {
+              type: control_request,
+              request_id: perm-2,
+              request:
+                {
+                  subtype: can_use_tool,
+                  tool_name: Bash,
+                  input: { command: rm -rf dist },
+                  tool_use_id: toolu_2,
+                },
+            }
+          - { $await_response: true }
+          - {
+              type: result,
+              subtype: success,
+              is_error: false,
+              result: "{{response_behavior}}",
+              session_id: "{{session_id}}",
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - expect_log:
+      { contains: "agent socket listening key=@local", within_ms: 10000 }
+  - call: settings.conversation.update
+    params: { permission_timeout_seconds: 60 }
+    reply: { idle_stop_minutes: 30, permission_timeout_seconds: 60 }
+  - call: agent_chat.handover
+    id: handover
+    no_wait: true
+    params: { pane_id: p1, to: conversation }
+  - await: handover
+    advance_every: 200
+    within_ms: 30000
+    reply: { ok: true, owner: conversation }
+  - call: agent_chat.subscribe
+    params: { pane_id: p1 }
+  - drain: {}
+  - call: agent_chat.send
+    params: { pane_id: p1, text: clean the build, uuid: u-1 }
+    within_ms: 30000
+  - call: review.prompts
+    until: { prompts: [{ tool: Bash }] }
+    within_ms: 20000
+    reply:
+      {
+        prompts:
+          [
+            {
+              paneId: p1,
+              agent: Claude,
+              tool: Bash,
+              summary: rm -rf build,
+              noTerminal: true,
+              expiresAt: "{{time}}",
+            },
+          ],
+      }
+  # Nobody answers for a minute.
+  - advance: 60000
+  - expect_push: "event:agent_chat.tool_result"
+    within_ms: 20000
+    message:
+      {
+        data:
+          {
+            tool_use_id: toolu_1,
+            is_error: true,
+            text: "deny: Nobody answered this permission request in Roamgate within 1 minute, so Bash was denied. Do not wait for an answer and do not ask for the same permission again right away. If you can do the work another way that needs no permission, do that. Otherwise say in the chat what you need permission for and why, then go on with the rest of the work.",
+          },
+      }
+  - expect_push: "event:agent_chat.result"
+    within_ms: 20000
+    message: { data: { subtype: success, text: I need leave to remove build } }
+  - call: review.prompts
+    reply: { prompts: [] }
+  # Never: the card waits for its answer, with no expiry.
+  - call: settings.conversation.update
+    params: { permission_timeout_seconds: 0 }
+    reply: { permission_timeout_seconds: 0 }
+  - call: agent_chat.send
+    params: { pane_id: p1, text: clean dist, uuid: u-2 }
+    within_ms: 30000
+  - call: review.prompts
+    until: { prompts: [{ tool: Bash }] }
+    within_ms: 20000
+    reply:
+      {
+        prompts:
+          [{ summary: rm -rf dist, noTerminal: true, expiresAt: "{{absent}}" }],
+      }
+    save: { permission: /result/prompts/0/id }
+  - advance: 1000000
+  - call: review.prompts
+    reply: { prompts: [{ summary: rm -rf dist }] }
+  - call: review.prompt.answer
+    params: { id: "${permission}", answer: allow }
+    reply: { answered: true }
+  - expect_push: "event:agent_chat.result"
+    within_ms: 20000
+    message: { data: { subtype: success, text: allow } }

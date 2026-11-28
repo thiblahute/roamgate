@@ -277,6 +277,27 @@ export function isIdleStopMinutes(value: unknown): value is number {
   );
 }
 
+/**
+ * How long a conversation's permission request waits for an answer before
+ * Roamgate denies it and tells the agent to do without it (seconds).
+ */
+export const DEFAULT_PERMISSION_TIMEOUT_SECONDS = 15 * 60;
+/** The longest wait the setting takes: a day. */
+export const MAX_PERMISSION_TIMEOUT_SECONDS = 24 * 60 * 60;
+
+/**
+ * A valid `conversation.permission_timeout_seconds`: 0 (never) to a day,
+ * whole.
+ */
+export function isPermissionTimeoutSeconds(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= MAX_PERMISSION_TIMEOUT_SECONDS
+  );
+}
+
 export type AgentChatStuck = {
   /** When Claude last said something. */
   since: string;

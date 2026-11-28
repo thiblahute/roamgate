@@ -299,6 +299,17 @@ impl DriverCodec for ClaudeCodec {
         }))]
     }
 
+    fn deny_unanswered(&mut self, request: &DriverEvent, message: &str) -> Option<Vec<String>> {
+        Some(vec![line(Value::Object(obj! {
+            "type" => "control_response",
+            "response" => obj! {
+                "subtype" => "success",
+                "request_id" => request.get("request_id").cloned(),
+                "response" => obj! {"behavior" => "deny", "message" => message, "interrupt" => false},
+            },
+        }))])
+    }
+
     fn request(&mut self, kind: &str, params: &Obj, request_id: &str) -> Option<Vec<String>> {
         let mut request = obj! {"subtype" => kind};
         for (key, value) in params {

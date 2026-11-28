@@ -36,6 +36,11 @@ pub const WORKTREE_COMMAND_MAX_LENGTH: usize = 4096;
 pub const UI_SETTING_MAX_BYTES: usize = 64 * 1024;
 pub const DEFAULT_IDLE_STOP_MINUTES: i64 = 30;
 pub const MAX_IDLE_STOP_MINUTES: i64 = 24 * 60;
+/// How long a conversation's permission request waits for an answer
+/// before Roamgate denies it (`conversation.permission_timeout_seconds`).
+pub const DEFAULT_PERMISSION_TIMEOUT_SECONDS: i64 = 15 * 60;
+/// The longest wait the setting takes: a day.
+pub const MAX_PERMISSION_TIMEOUT_SECONDS: i64 = 24 * 60 * 60;
 pub const MAX_TITLE_SUFFIX_LENGTH: usize = 32;
 pub const DEFAULT_TIME_REPORT_TIMEOUT_SECONDS: i64 = 60;
 
@@ -256,6 +261,11 @@ pub fn is_idle_stop_minutes(value: Option<&Value>) -> bool {
     integer(value).is_some_and(|minutes| (0..=MAX_IDLE_STOP_MINUTES).contains(&minutes))
 }
 
+/// `conversation.permission_timeout_seconds`: 0 (never) to a day, whole.
+pub fn is_permission_timeout_seconds(value: Option<&Value>) -> bool {
+    integer(value).is_some_and(|seconds| (0..=MAX_PERMISSION_TIMEOUT_SECONDS).contains(&seconds))
+}
+
 /// The agents a conversation that hit its usage limit can move to
 /// (`conversation.fallback_agent`): conversation mode's.
 pub const FALLBACK_AGENTS: [&str; 2] = ["claude", "agy"];
@@ -276,6 +286,10 @@ fn normalize_conversation(raw: Option<&Value>) -> Option<Value> {
     let minutes = object.get("idle_stop_minutes");
     if is_idle_stop_minutes(minutes) {
         kept.insert("idle_stop_minutes".into(), json!(integer(minutes)));
+    }
+    let seconds = object.get("permission_timeout_seconds");
+    if is_permission_timeout_seconds(seconds) {
+        kept.insert("permission_timeout_seconds".into(), json!(integer(seconds)));
     }
     if let Some(agent) = object.get("fallback_agent").and_then(Value::as_str)
         && FALLBACK_AGENTS.contains(&agent)
@@ -776,6 +790,17 @@ impl Settings {
                 .and_then(|conversation| conversation.get("idle_stop_minutes")),
         )
         .unwrap_or(DEFAULT_IDLE_STOP_MINUTES)
+    }
+
+    /// How long a conversation's permission request waits for an answer
+    /// before it is denied, in seconds (0: never).
+    pub fn conversation_permission_timeout_seconds(&self) -> i64 {
+        integer(
+            self.0
+                .get("conversation")
+                .and_then(|conversation| conversation.get("permission_timeout_seconds")),
+        )
+        .unwrap_or(DEFAULT_PERMISSION_TIMEOUT_SECONDS)
     }
 
     /// The agent a conversation that hit its usage limit moves to, if

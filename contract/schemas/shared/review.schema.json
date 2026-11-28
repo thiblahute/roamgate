@@ -47,7 +47,7 @@
         },
         "expiresAt": {
           "type": "string",
-          "description": "When the hook stops waiting and the terminal asks instead."
+          "description": "When the hook stops waiting and the terminal asks instead; in conversation mode, when it is denied (the agent told to do without it). Absent: it waits until answered (the setting at never)."
         },
         "questions": {
           "type": "array",
@@ -69,8 +69,7 @@
         "tool",
         "summary",
         "canAlways",
-        "createdAt",
-        "expiresAt"
+        "createdAt"
       ],
       "additionalProperties": false,
       "description": "An agent asking leave to use a tool (Claude Code's permission prompt), sent by its hook: answered from the phone, or by the terminal once it gives up."

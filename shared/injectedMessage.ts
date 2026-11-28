@@ -17,7 +17,8 @@ import {
  * Also "rewound": the history's notice of the user's messages a rewind cut;
  * "context": what Codex says of its environment (codex-injected.ts);
  * "continuation": the history another agent left, given to the agent a
- * conversation moved to.
+ * conversation moved to; "permission": Roamgate telling the agent that a
+ * permission it asked for went unanswered and was denied.
  */
 export type InjectedKind =
   | "report"
@@ -27,7 +28,8 @@ export type InjectedKind =
   | "task"
   | "rewound"
   | "context"
-  | "continuation";
+  | "continuation"
+  | "permission";
 
 export type InjectedNotice = {
   kind: InjectedKind;
@@ -46,7 +48,13 @@ export type InjectedMessage = {
 /** The block that starts what an agent is given when a conversation moves to it. */
 export const CONTINUATION_TAG = "roamgate-continuation";
 
-const TAGS = `agent-message|teammate-message|cross-session-message|${AGENT_MESSAGE_TAG}|${CONTINUATION_TAG}|task-notification|system-reminder`;
+/**
+ * The block of the message Roamgate sends an agent whose permission request
+ * nobody answered in time, where its protocol's denial carries no message.
+ */
+export const PERMISSION_TIMEOUT_TAG = "roamgate-permission-timeout";
+
+const TAGS = `agent-message|teammate-message|cross-session-message|${AGENT_MESSAGE_TAG}|${CONTINUATION_TAG}|${PERMISSION_TIMEOUT_TAG}|task-notification|system-reminder`;
 // A block closes at a closing tag on a line of its own when it has one
 // (the harness indents a report's lines, so one inside it never is), else
 // at the first.
@@ -128,6 +136,12 @@ function notice(
       return {
         kind: "continuation",
         label: `Continued from ${attrs["from-name"] || attrs.from || "another agent"}`,
+        body: body.trim(),
+      };
+    case PERMISSION_TIMEOUT_TAG:
+      return {
+        kind: "permission",
+        label: `Unanswered permission: ${attrs.tool || "a tool"} denied`,
         body: body.trim(),
       };
     case "cross-session-message":

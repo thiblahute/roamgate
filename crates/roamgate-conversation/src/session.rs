@@ -55,7 +55,8 @@ use tokio_util::sync::CancellationToken;
 use crate::driver::{
     BoxFuture, CommandContext, CommandNotice, CommandOutput, ControlAnswer, DriverCodec,
     DriverEvent, DriverImage, DriverMessage, HeadlessProcess, ModelContext, Object, ProtocolDriver,
-    RewindContext, RewindInput, Transcript,
+    RewindContext, RewindInput, Transcript, unanswered_permission_message,
+    unanswered_permission_note,
 };
 use crate::headless::{HeadlessSpawnOptions, SpawnHeadless};
 use crate::images::ConversationImage;
@@ -138,7 +139,11 @@ pub struct SessionOptions {
     /// Messages left queued by an earlier process (`AgentChatQueued`).
     pub queue: Vec<Obj>,
     pub coalesce_ms: u64,
+    /// How long a permission request waits for an answer before it is
+    /// denied (0: never), unless `permission_timeout` says.
     pub permission_timeout_ms: u64,
+    /// The setting's wait in ms (0: never), read as each request comes.
+    pub permission_timeout: Option<Arc<dyn Fn() -> BoxFuture<'static, u64> + Send + Sync>>,
     pub question_timeout_ms: u64,
     pub interrupt_wait_ms: u64,
     pub stop_wait_ms: u64,
@@ -184,6 +189,7 @@ impl SessionOptions {
             queue: Vec::new(),
             coalesce_ms: 16,
             permission_timeout_ms: 15 * 60_000,
+            permission_timeout: None,
             question_timeout_ms: 30 * 60_000,
             interrupt_wait_ms: 3000,
             stop_wait_ms: 10_000,
@@ -1111,11 +1117,17 @@ impl ConversationSession {
             number
         });
         let prompt = self.o().driver.prompt_of(&item);
-        let timeout_ms = if prompt.questions.as_ref().is_some_and(|q| !q.is_empty()) {
+        let question = prompt.questions.as_ref().is_some_and(|q| !q.is_empty());
+        let timeout_ms = if question {
             self.o().question_timeout_ms
         } else {
-            self.o().permission_timeout_ms
+            match self.o().permission_timeout.clone() {
+                Some(read) => read().await,
+                None => self.o().permission_timeout_ms,
+            }
         };
+        let tool = prompt.tool.clone();
+        let asked_at = self.o().clock.now();
         let asked = (self.o().ask)(ConversationPrompt {
             tool: prompt.tool,
             input: prompt.input,
@@ -1132,25 +1144,61 @@ impl ConversationSession {
                 None
             }
         };
-        self.with(|st, fx| {
+        // A permission nobody answered in its time: denied, the agent told
+        // to do without it if it can, else to say what it needs and go on.
+        let timed_out = answer.is_none()
+            && !question
+            && !token.is_cancelled()
+            && timeout_ms > 0
+            && self.o().clock.now() - asked_at >= timeout_ms as i64;
+        let seconds = timeout_ms.div_ceil(1000);
+        let note = self.with(|st, fx| {
             if st.prompts.get(&id).map(|(n, _)| *n) != Some(number) {
-                return;
+                return None;
             }
             st.prompts.shift_remove(&id);
             st.asking.shift_remove(&id);
+            let mut note = None;
             // Cancelled by the agent (an interrupt): it expects no answer.
             if !token.is_cancelled() && st.proc.is_some() {
-                let lines = st.codec.answer(&item, answer.as_ref());
+                let lines = if timed_out {
+                    let message = unanswered_permission_message(&tool, seconds);
+                    self.log(
+                        fx,
+                        "permission unanswered, denied",
+                        obj(json!({"tool": tool, "seconds": seconds})),
+                    );
+                    st.codec
+                        .deny_unanswered(&item, &message)
+                        .unwrap_or_else(|| {
+                            note = Some(unanswered_permission_note(&tool, seconds));
+                            st.codec.answer(&item, Some(&json!("deny")))
+                        })
+                } else {
+                    st.codec.answer(&item, answer.as_ref())
+                };
                 if let Err(error) = Self::write(st, &lines) {
                     self.log(
                         fx,
                         "permission answer not written",
                         obj(json!({"error": error})),
                     );
+                    note = None;
                 }
             }
             self.push_status(st, fx);
+            note
         });
+        // Its protocol's denial says nothing: the agent is told in a
+        // message, queued behind the turn that asked.
+        if let Some(note) = note
+            && let Err(error) = self.send(&note, Vec::new(), None).await
+        {
+            self.log_now(
+                "permission timeout note not sent",
+                obj(json!({"error": error})),
+            );
+        }
     }
 
     /// Whether a message written now would start a turn at once.

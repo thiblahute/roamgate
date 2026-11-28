@@ -32,7 +32,8 @@ steps:
     reply: { idle_stop_minutes: "{{integer}}" }
   - call: settings.conversation.update
     params: { idle_stop_minutes: 15 }
-    reply: { idle_stop_minutes: 15, $exact: true }
+    reply:
+      { idle_stop_minutes: 15, permission_timeout_seconds: 900, $exact: true }
   - call: settings.conversation.update
     params: { idle_stop_minutes: -1 }
     error:
@@ -42,12 +43,35 @@ steps:
   # A conversation that hits its usage limit can move to another agent.
   - call: settings.conversation.update
     params: { fallback_agent: agy }
-    reply: { idle_stop_minutes: 15, fallback_agent: agy, $exact: true }
+    reply:
+      {
+        idle_stop_minutes: 15,
+        permission_timeout_seconds: 900,
+        fallback_agent: agy,
+        $exact: true,
+      }
   - call: settings.conversation.get
-    reply: { idle_stop_minutes: 15, fallback_agent: agy, $exact: true }
+    reply:
+      {
+        idle_stop_minutes: 15,
+        permission_timeout_seconds: 900,
+        fallback_agent: agy,
+        $exact: true,
+      }
   - call: settings.conversation.update
     params: { fallback_agent: null }
-    reply: { idle_stop_minutes: 15, $exact: true }
+    reply:
+      { idle_stop_minutes: 15, permission_timeout_seconds: 900, $exact: true }
+  # How long a permission waits before it is denied: seconds, 0 never.
+  - call: settings.conversation.update
+    params: { permission_timeout_seconds: 120 }
+    reply: { idle_stop_minutes: 15, permission_timeout_seconds: 120 }
+  - call: settings.conversation.update
+    params: { permission_timeout_seconds: 86401 }
+    error:
+      {
+        message: "{{contains:permission_timeout_seconds (a whole number of seconds from 0, never, to 86400)}}",
+      }
   - call: settings.conversation.update
     params: { fallback_agent: gpt }
     error: { message: "{{contains:fallback_agent (claude, agy or null)}}" }
@@ -88,7 +112,7 @@ steps:
       json:
         auto_rename_agent_tabs: false
         claude_start_mode: conversation
-        conversation: { idle_stop_minutes: 15 }
+        conversation: { idle_stop_minutes: 15, permission_timeout_seconds: 120 }
         limit_resume: { enabled: false, message: go on, margin_seconds: 30 }
         terminal_transport: { legacy-default: { surface_codecs: false } }
   - restart: {}
@@ -97,7 +121,7 @@ steps:
   - call: settings.claude_start.get
     reply: { mode: conversation }
   - call: settings.conversation.get
-    reply: { idle_stop_minutes: 15 }
+    reply: { idle_stop_minutes: 15, permission_timeout_seconds: 120 }
   - call: settings.terminal_transport.get
     reply: { surface_codecs: false }
 contract_exceptions:

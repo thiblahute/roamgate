@@ -27,6 +27,8 @@ pub struct PermissionRequest {
     pub questions: Option<Value>,
     /// No terminal asks instead (a headless claude).
     pub no_terminal: bool,
+    /// 0: it waits until answered or cancelled (a conversation's
+    /// permission with the setting at never).
     pub timeout_ms: u64,
     /// Resolves when the hook went away: the terminal asks now.
     pub cancel: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
@@ -148,10 +150,12 @@ impl AgentPrompts {
         }
         prompt.insert("canAlways".into(), json!(params.can_always));
         prompt.insert("createdAt".into(), json!(crate::js::iso(created)));
-        prompt.insert(
-            "expiresAt".into(),
-            json!(crate::js::iso(created + params.timeout_ms as i64)),
-        );
+        if params.timeout_ms > 0 {
+            prompt.insert(
+                "expiresAt".into(),
+                json!(crate::js::iso(created + params.timeout_ms as i64)),
+            );
+        }
         if let Some(questions) = &params.questions {
             prompt.insert("questions".into(), questions.clone());
         }
@@ -171,12 +175,19 @@ impl AgentPrompts {
         );
         self.publish_for(&params.connection_id);
         let this = self.clone();
-        let sleep = self.clock.sleep(Duration::from_millis(params.timeout_ms));
+        let timeout_ms = params.timeout_ms;
+        let sleep = (timeout_ms > 0).then(|| self.clock.sleep(Duration::from_millis(timeout_ms)));
         let cancel = params.cancel.take();
         async move {
             let cancel = async move {
                 match cancel {
                     Some(cancel) => cancel.await,
+                    None => std::future::pending().await,
+                }
+            };
+            let sleep = async move {
+                match sleep {
+                    Some(sleep) => sleep.await,
                     None => std::future::pending().await,
                 }
             };
@@ -291,6 +302,23 @@ mod tests {
         drop(hook);
         assert_eq!(waiting.await, None);
         assert!(prompts.list("local").is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_prompt_with_no_time_limit_waits_and_has_no_expiry() {
+        let (_, prompts) = setup();
+        let mut waiting = Box::pin(ask(&prompts, |r| {
+            r.no_terminal = true;
+            r.timeout_ms = 0;
+        }));
+        assert!(prompts.list("local")[0].get("expiresAt").is_none());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut waiting)
+                .await
+                .is_err()
+        );
+        prompts.answer("local", &first_id(&prompts), json!("allow"));
+        assert_eq!(waiting.await, Some(json!("allow")));
     }
 
     #[tokio::test]

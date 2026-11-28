@@ -302,6 +302,22 @@
             ],
             "rest": "and mine"
           }
+        },
+        {
+          "fn": "injectedMessage.parseInjectedMessage",
+          "args": [
+            "<roamgate-permission-timeout tool=\"run_command\" seconds=\"60\">\nNobody answered this permission request in Roamgate within 1 minute, so run_command was denied.\n</roamgate-permission-timeout>"
+          ],
+          "result": {
+            "notices": [
+              {
+                "kind": "permission",
+                "label": "Unanswered permission: run_command denied",
+                "body": "Nobody answered this permission request in Roamgate within 1 minute, so run_command was denied."
+              }
+            ],
+            "rest": ""
+          }
         }
       ]
     }

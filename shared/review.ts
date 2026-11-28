@@ -616,8 +616,12 @@ export type AgentPermissionPrompt = {
   /** "Allow, and don't ask again" applies, as the terminal offers it. */
   canAlways: boolean;
   createdAt: string;
-  /** When the hook stops waiting and the terminal asks instead. */
-  expiresAt: string;
+  /**
+   * When the hook stops waiting and the terminal asks instead; in
+   * conversation mode, when it is denied (the agent told to do without it).
+   * Absent: it waits until answered (the setting at never).
+   */
+  expiresAt?: string;
   /** Claude's multiple-choice questions (AskUserQuestion), not a permission. */
   questions?: AgentQuestion[];
   /**

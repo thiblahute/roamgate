@@ -493,6 +493,7 @@
               "claude_start_mode": "conversation",
               "conversation": {
                 "idle_stop_minutes": 45,
+                "permission_timeout_seconds": 120,
                 "fallback_agent": "agy"
               },
               "mr_cache": {
@@ -533,6 +534,7 @@
             "claude_start_mode": "conversation",
             "conversation": {
               "idle_stop_minutes": 45,
+              "permission_timeout_seconds": 120,
               "fallback_agent": "agy"
             },
             "mr_cache": {
@@ -560,6 +562,7 @@
               "claude_start_mode": "sideways",
               "conversation": {
                 "idle_stop_minutes": 1441,
+                "permission_timeout_seconds": 86401,
                 "fallback_agent": "gpt"
               },
               "time_report": {

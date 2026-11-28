@@ -12,6 +12,10 @@
 //!   Turn entries may also be `{"$await_control": "<subtype>"}` (wait for
 //!   that control request, answer it, then go on: an interrupt mid-turn;
 //!   `"never"` waits until stdin closes, a turn that hangs),
+//!   `{"$await_response": true}` (wait for Roamgate's `control_response`
+//!   to a request the turn made, a `can_use_tool`'s; the entries after it
+//!   may name `{{response_behavior}}` and `{{response_message}}`, its
+//!   answer's),
 //!   `{"$echo_user": true}` (the user line replayed, as
 //!   `--replay-user-messages` does), `{"$exit": <code>}` (the process dies
 //!   mid-turn); strings may name `{{user_text}}` and `{{user_uuid}}`.
@@ -146,13 +150,23 @@ struct Current {
     text: String,
     uuid: String,
     message: Value,
+    /// The answer of the last `control_response` awaited.
+    response: Value,
 }
 
 fn fill_user(value: &Value, current: &Current) -> Value {
     match value {
         Value::String(text) => Value::String(
             text.replace("{{user_text}}", &current.text)
-                .replace("{{user_uuid}}", &current.uuid),
+                .replace("{{user_uuid}}", &current.uuid)
+                .replace(
+                    "{{response_behavior}}",
+                    current.response["behavior"].as_str().unwrap_or(""),
+                )
+                .replace(
+                    "{{response_message}}",
+                    current.response["message"].as_str().unwrap_or(""),
+                ),
         ),
         Value::Array(items) => {
             Value::Array(items.iter().map(|item| fill_user(item, current)).collect())
@@ -226,7 +240,7 @@ fn converse(turns: &[Value], script: &Script, session: &str, out: &mut impl Writ
                         .join("\n"),
                     _ => String::new(),
                 };
-                let current = Current {
+                let mut current = Current {
                     text,
                     uuid: message
                         .get("uuid")
@@ -234,6 +248,7 @@ fn converse(turns: &[Value], script: &Script, session: &str, out: &mut impl Writ
                         .unwrap_or("")
                         .to_owned(),
                     message: message.get("message").cloned().unwrap_or(Value::Null),
+                    response: Value::Null,
                 };
                 // `answers`: the first whose `match` (a regex) finds the
                 // user text answers it, without taking a turn.
@@ -282,6 +297,26 @@ fn converse(turns: &[Value], script: &Script, session: &str, out: &mut impl Writ
                                 }
                             } else {
                                 waiting.push_back(incoming);
+                            }
+                        }
+                        continue;
+                    }
+                    if entry.get("$await_response").is_some() {
+                        let _ = out.flush();
+                        loop {
+                            let Ok(incoming) = lines.recv() else { return 0 };
+                            match incoming.get("type").and_then(Value::as_str) {
+                                Some("control_response") => {
+                                    current.response = incoming
+                                        .pointer("/response/response")
+                                        .cloned()
+                                        .unwrap_or(Value::Null);
+                                    break;
+                                }
+                                Some("control_request") => {
+                                    control_answer(out, &controls, &incoming, session)
+                                }
+                                _ => waiting.push_back(incoming),
                             }
                         }
                         continue;
